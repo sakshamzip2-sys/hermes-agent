@@ -583,6 +583,34 @@ def _openai_error(message: str, err_type: str = "invalid_request_error", param: 
     }
 
 
+def _humanize_agent_error(raw: str) -> str:
+    """Turn a raw provider/agent error string into a short, user-facing line.
+
+    Used by the streaming SSE writers so a failed model call surfaces a visible
+    message instead of an empty "stop" (the old silent failure). Maps the common
+    router/provider failures to friendly guidance and otherwise returns a
+    trimmed version of the raw message. Never echoes more than ~240 chars so a
+    verbose provider payload can't flood the chat.
+    """
+    low = (raw or "").lower()
+    if "does not support the effort parameter" in low:
+        return ("This model doesn't support the selected reasoning effort. "
+                "Turn thinking off or pick another model (e.g. Opus or Sonnet).")
+    if "more credits" in low or "requires more credits" in low or "code': 402" in low or "http 402" in low:
+        return ("The model provider is out of credits, so the request couldn't "
+                "be completed. Add credits or switch providers.")
+    if "no available accounts" in low or "http 503" in low:
+        return ("No available account for this model right now. Try again in a "
+                "moment or pick another model.")
+    if "invalid api key" in low or "http 401" in low or "unauthorized" in low:
+        return ("The model provider rejected the credentials for this model. "
+                "Check the provider login or API key.")
+    if "rate limit" in low or "http 429" in low:
+        return "The model provider is rate-limiting requests. Try again shortly."
+    msg = " ".join((raw or "The model request failed.").split())
+    return msg[:240] + ("…" if len(msg) > 240 else "")
+
+
 if AIOHTTP_AVAILABLE:
     @web.middleware
     async def body_limit_middleware(request, handler):
@@ -2235,13 +2263,48 @@ class APIServerAdapter(BasePlatformAdapter):
 
                 last_activity = await _emit(delta)
 
-            # Get usage from completed agent
+            # Get usage + result from the completed agent. There are TWO failure
+            # shapes that must both reach the client instead of a silent "stop":
+            #   • the agent RAISES (rare: unexpected/infra errors) → caught here;
+            #   • the agent RETURNS ``result["failed"]=True`` with an ``error``
+            #     string — the COMMON path for provider HTTP 4xx/5xx (400 "effort
+            #     not supported", 402 "out of credits", 503 "no available
+            #     accounts"). This used to fall straight through to a clean
+            #     ``finish_reason: "stop"`` with empty content, so the UI showed
+            #     nothing at all.
             usage = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
+            agent_error = None
             try:
                 result, agent_usage = await agent_task
                 usage = agent_usage or usage
+                if isinstance(result, dict) and result.get("failed"):
+                    agent_error = result.get("error") or "The model request failed."
+            except asyncio.CancelledError:
+                raise
             except Exception as exc:
-                logger.warning("Agent task %s failed, usage data lost: %s", completion_id, exc)
+                agent_error = str(exc) or "The model request failed."
+                logger.warning("Agent task %s failed: %s", completion_id, exc)
+
+            if agent_error:
+                # Surface the failure: a visible content delta so the UI shows a
+                # message, plus ``finish_reason: "error"`` and an OpenAI-style
+                # ``error`` envelope for programmatic clients.
+                friendly = _humanize_agent_error(agent_error)
+                err_delta = {
+                    "id": completion_id, "object": "chat.completion.chunk",
+                    "created": created, "model": model,
+                    "choices": [{"index": 0, "delta": {"content": f"⚠️ {friendly}"}, "finish_reason": None}],
+                }
+                await response.write(f"data: {json.dumps(err_delta)}\n\n".encode())
+                error_finish = {
+                    "id": completion_id, "object": "chat.completion.chunk",
+                    "created": created, "model": model,
+                    "choices": [{"index": 0, "delta": {}, "finish_reason": "error"}],
+                    "error": {"message": friendly, "type": "upstream_error"},
+                }
+                await response.write(f"data: {json.dumps(error_finish)}\n\n".encode())
+                await response.write(b"data: [DONE]\n\n")
+                return response
 
             # Finish chunk
             finish_chunk = {
