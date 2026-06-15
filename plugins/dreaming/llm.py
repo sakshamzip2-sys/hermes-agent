@@ -188,3 +188,47 @@ def aux_client_available() -> bool:
         return client is not None and bool(model)
     except Exception:  # noqa: BLE001
         return False
+
+
+def _embed_model() -> str:
+    """The embeddings model for the diversity gate, from config (opt-in).
+
+    Empty string disables semantic embeddings (lexical fallback is used). Read from
+    ``dreaming.embed_model`` in config.yaml; no behaviour change unless configured.
+    """
+    try:
+        from hermes_cli.config import load_config
+
+        cfg = load_config() or {}
+        block = cfg.get("dreaming", {})
+        if isinstance(block, dict):
+            return str(block.get("embed_model", "") or "").strip()
+    except Exception:  # noqa: BLE001
+        pass
+    return ""
+
+
+async def semantic_embed(texts: list[str]) -> list[list[float]]:
+    """Semantic embeddings via the auxiliary provider's ``/embeddings`` endpoint.
+
+    Opt-in: only used when ``dreaming.embed_model`` is configured AND the provider
+    exposes an embeddings endpoint. Falls back to :func:`lexical_embed` on any failure,
+    absence, or shape mismatch — so the diversity gate never crashes and stays
+    deterministic offline.
+    """
+    model = _embed_model()
+    if not model or not texts:
+        return await lexical_embed(texts)
+    try:
+        from agent.auxiliary_client import get_async_text_auxiliary_client
+
+        client, _chat_model = get_async_text_auxiliary_client(_AUX_TASK)
+        if client is None:
+            return await lexical_embed(texts)
+        resp = await client.embeddings.create(model=model, input=list(texts))
+        vectors = [list(item.embedding) for item in resp.data]
+        if len(vectors) == len(texts) and all(vectors):
+            return vectors
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("dreaming: semantic embeddings unavailable (%s); using lexical", exc)
+    return await lexical_embed(texts)

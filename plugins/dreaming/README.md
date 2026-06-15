@@ -38,21 +38,27 @@ high-similarity contradiction can *supersede* a stale entry in place.
 - **Trigger.** v1 ran on a 60s system tick; v2 runs opportunistically on session-boundary
   hooks (debounced) + manual `/dream` / `opencomputer dream run`.
 
-## Deferred vs v1 (known scope gaps, not bugs)
+## Ported from v1's enhancement set
 
-These v1 "parity audit" features are **not** ported in this first version:
+- **DREAMS.md re-scoring** — held facts graduate as recall accumulates (`runner._rescore_dreams`).
+- **Semantic embeddings** (`llm.semantic_embed`) — opt-in via `dreaming.embed_model`; calls
+  the aux provider's `/embeddings` endpoint, **falls back to the lexical embedder** on any
+  failure/absence (so the diversity gate stays deterministic offline).
+- **Clustering pre-gate** (`cluster.py`) — greedy single-linkage (cosine ≥
+  `cluster_similarity_threshold`, default 0.7) collapses near-duplicate facts beyond the
+  exact-text dedup; keyword/lexical fallback when no embedder.
+- **Cron-miss catch-up** — a long gap since the last run widens the fetch limit for one
+  recovery pass so an outage doesn't silently drop facts.
 
-1. **Review-mode queue + rollback** (v1 `dreaming_review.py`) — v2 promotes straight to
-   `MEMORY.md` with no human approval gate.
-2. **Outcome-driven threshold tuning** (v1 `dreaming_outcomes.py`).
-3. **Embedding-based clustering pre-gate** (v1 `dreaming_cluster.py`) — replaced by a
-   cheaper exact-text dedup in `runner.py`.
-4. **Bias-amplification detection** (v1 `_detect_single_domain_bias`).
-5. **External-memory sinks** (`on_promoted`/`on_superseded` → Honcho reconcile).
-6. **Cron-miss catch-up passes.**
+## Honestly deferred (not faked)
 
-DREAMS.md **re-scoring** (so held facts graduate as recall accumulates) IS ported and
-runs automatically each cycle.
+- **Outcome-driven threshold tuning** (v1 `dreaming_outcomes.py`) — needs a per-turn
+  `turn_score` signal v2 does not capture; wiring it would touch core, out of scope for an
+  edge plugin. Documented, not stubbed.
+- **Review-mode queue + HMAC rollback** (v1 `dreaming_review.py`) — a human approval gate
+  before auto-writing `MEMORY.md`. Partially mitigated today by the opt-in install + the
+  `DREAMS.md` holding pen; the full HMAC queue is the next addition.
+- **Bias-amplification detection** and **external-memory sinks** (Honcho reconcile).
 
 ## Config
 

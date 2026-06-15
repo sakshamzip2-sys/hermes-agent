@@ -29,6 +29,10 @@ def setup(subparser: argparse.ArgumentParser) -> None:
     p_commit = sub.add_parser("commitments", help="show commitments tracked from conversations")
     p_commit.set_defaults(func=_cmd_commitments)
 
+    p_sched = sub.add_parser("schedule", help="register a recurring cron job for autonomous push/digest")
+    p_sched.add_argument("--every", dest="every_min", type=int, default=30, help="interval in minutes")
+    p_sched.set_defaults(func=_cmd_schedule)
+
     p_en = sub.add_parser("enable", help="enable proactive check-ins (consent)")
     p_en.set_defaults(func=_cmd_enable)
     p_dis = sub.add_parser("disable", help="disable proactive check-ins")
@@ -78,6 +82,13 @@ def _cmd_commitments(args: argparse.Namespace) -> int:
     from . import _handle_commitments
 
     print(_handle_commitments(""))
+    return 0
+
+
+def _cmd_schedule(args: argparse.Namespace) -> int:
+    from . import schedule_background_job
+
+    print(schedule_background_job(every_minutes=int(getattr(args, "every_min", 30))))
     return 0
 
 

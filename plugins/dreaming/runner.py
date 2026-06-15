@@ -26,6 +26,9 @@ logger = logging.getLogger("hermes.plugins.dreaming.runner")
 # How far back to look on the very first run (no last_run_ts yet), in seconds.
 _FIRST_RUN_LOOKBACK = 30 * 24 * 60 * 60  # 30 days
 
+# If the gap since the last run exceeds this many intervals, do one wider catch-up pass.
+_CATCH_UP_FACTOR = 2.0
+
 _run_lock = threading.Lock()
 
 
@@ -92,9 +95,15 @@ async def run_dream_cycle(
         existing_facts = memory_io.read_memory_facts()  # refresh after promotions
 
     # --- Pass 2: new sessions since the last run ---------------------------
-    digests = candmod.build_session_digests(
-        sdb, since_ts=since, limit=cfg.candidate_fetch_limit
-    )
+    # Cron-miss catch-up: if we missed several intervals (outage), widen the fetch
+    # for this one recovery pass so a long gap doesn't silently drop facts.
+    fetch_limit = cfg.candidate_fetch_limit
+    interval_s = cfg.min_interval_seconds
+    if last_run and interval_s > 0 and (now - last_run) > _CATCH_UP_FACTOR * interval_s:
+        fetch_limit = cfg.candidate_fetch_limit * 4
+        logger.info("dreaming: catch-up pass (gap %.1fh); fetch limit %d",
+                    (now - last_run) / 3600.0, fetch_limit)
+    digests = candmod.build_session_digests(sdb, since_ts=since, limit=fetch_limit)
 
     # A durable fact often recurs across sessions, so identical extracted facts
     # collapse to one candidate (the v1 clustering pre-gate analog) — preventing
@@ -128,6 +137,17 @@ async def run_dream_cycle(
                     metadata={"session_id": dg.session_id},
                 )
             )
+
+    # Semantic clustering pre-gate: collapse near-duplicate extracted facts (beyond the
+    # exact-text dedup above) so paraphrases of the same fact don't each get promoted.
+    if len(cand_facts) > 1:
+        from .cluster import cluster_candidates
+
+        cand_facts = await cluster_candidates(
+            cand_facts,
+            embed_fn=llm.semantic_embed,
+            similarity_threshold=cfg.cluster_similarity_threshold,
+        )
 
     session_summary = DreamRunSummary()
     if cand_facts:
@@ -173,7 +193,7 @@ def _build_pipeline(cfg, sdb: Path, fact_by_id: dict[str, str], *, hold_fn) -> D
         recall_count_fn=_build_recall_fn(sdb, fact_by_id),
         promote_fn=memory_io.promote,
         hold_fn=hold_fn,
-        embed_fn=llm.lexical_embed,
+        embed_fn=llm.semantic_embed,  # semantic (config-driven), lexical fallback
         decision_fn=llm.decide_supersede,
         replace_fn=memory_io.replace,
     )

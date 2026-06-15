@@ -65,6 +65,20 @@ def test_surface_disabled_returns_none(env):
     assert env["eng"].surface_in_context(NOW, local_hour=14) is None
 
 
+def test_future_dated_moment_not_expired_on_early_poll(env):
+    # A moment that isn't relevant yet (future trigger_at) must NOT be retired — it
+    # stays PENDING so it can surface later (regression: was wrongly EXPIRED).
+    env["ms"].upsert(ProactiveMoment(
+        id="future", source_id="commitment", category=Category.COMMITMENT,
+        title="ship by Friday", body="You said you'd ship by Friday.",
+        sensitivity=Sensitivity.TOLD_FACT, urgency=0.7, dedup_key="future",
+        trigger_at=NOW + 5 * HOUR, created_at=NOW,
+    ))
+    out = env["eng"].surface_in_context(NOW, local_hour=14)
+    assert out is None  # not surfaced yet
+    assert env["ms"].get("future").state is MomentState.PENDING  # still pending, not expired
+
+
 def test_surface_one_per_turn(env):
     _ended_event(env["es"], eid="e1", title="event one")
     _ended_event(env["es"], eid="e2", title="event two")

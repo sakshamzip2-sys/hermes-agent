@@ -40,6 +40,7 @@ class Category(str, enum.Enum):
 class MomentState(str, enum.Enum):
     PENDING = "pending"      # emitted, not yet decided
     SURFACED = "surfaced"    # shown in-context
+    DIGEST = "digest"        # held for the periodic briefing
     DELIVERED = "delivered"  # pushed out-of-band / included in a digest
     ACTED = "acted"          # user responded / loop closed
     DISMISSED = "dismissed"  # user said "not useful" / muted

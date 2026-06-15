@@ -45,7 +45,7 @@ def test_proactivity_pre_llm_call_surfaces_when_enabled(tmp_path, monkeypatch):
     monkeypatch.setattr(pconfig, "load_proactivity_config", lambda block=None: ProactivityConfig(enabled=True))
 
     now = time.time()
-    store = proactivity._store()
+    store = proactivity._event_store()
     store.add_event(TrackedEvent(
         id="e1", title="the summit", starts_at=now - 7200, ends_at=now - 3600,
         source="user_told", sensitivity=Sensitivity.TOLD_FACT,
@@ -57,8 +57,9 @@ def test_proactivity_pre_llm_call_surfaces_when_enabled(tmp_path, monkeypatch):
     out = proactivity._on_pre_llm_call(**kwargs)
     assert isinstance(out, dict) and "context" in out
     assert "the summit" in out["context"]
-    # the event moved to SURFACED via the real entrypoint
-    assert store.get("e1").state is EventState.SURFACED
+    # the underlying event was acked/surfaced via the real entrypoint (the moment
+    # pipeline promotes the ended event and surfaces a check-in)
+    assert store.get("e1").state is not EventState.TRACKED
 
 
 def test_proactivity_pre_llm_call_returns_none_when_disabled(monkeypatch):
@@ -69,7 +70,7 @@ def test_proactivity_pre_llm_call_returns_none_when_disabled(monkeypatch):
 def test_proactivity_pre_llm_call_never_raises_on_bad_state(monkeypatch):
     # Even if the store path is unwritable-ish, the hook must be fail-open (return None).
     monkeypatch.setattr(pconfig, "load_proactivity_config", lambda block=None: ProactivityConfig(enabled=True))
-    monkeypatch.setattr(proactivity, "_store", lambda: (_ for _ in ()).throw(RuntimeError("boom")))
+    monkeypatch.setattr(proactivity, "_engine", lambda config: (_ for _ in ()).throw(RuntimeError("boom")))
     # Should swallow and return None, not raise.
     assert proactivity._on_pre_llm_call(**_HOST_PRE_LLM_KWARGS) is None
 

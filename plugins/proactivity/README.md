@@ -1,83 +1,80 @@
-# proactivity — event check-ins plugin
+# proactivity — a general, source-agnostic proactivity engine
 
-Ports OpenComputer **v1's** proactivity subsystem (the "productivity feature" from
-`intelligence/proactivity/`) into **v2** as an edge plugin.
+Proactivity is a **pipeline**, not a sensor list: pluggable sources emit
+`ProactiveMoment`s → a deterministic gate (motivation × timing × budget × quiet-hours)
+→ delivery (in-context, or out-of-band **push / digest through the gateway**). Calendar/
+email/Luma are just future sources behind the same interface — none are the core.
 
-## What it does
+Design + research basis: `docs/superpowers/specs/2026-06-15-proactivity-and-dreaming-v2-design.md`.
 
-Tracks events the user is attending (told the agent about). After an event ends it
-surfaces a warm, in-context check-in ("how'd X go?"), captures the reply into
-`MEMORY.md` (the learning loop), and adapts its reminder cadence from the user's
-feedback ("stop reminding me so much" → tighten; "you never check in" → loosen;
-"mute the calendar stuff" → mute).
+## Pipeline
+
+```
+sources ──poll()──> ProactiveMoment ──> gate ──> delivery
+ commitment          {category, urgency,  motivation   in-context (pre_llm_call hook)
+ event-tracker        sensitivity,         × budget     push  (gateway: cron _deliver_result)
+ inactivity           confidence, TTL,     × timing     digest(gateway)
+ (calendar/email…)     dedup, reasoning}   × quiet-hrs
+```
+
+| Unit | Role |
+|------|------|
+| `moment.py` | `ProactiveMoment` + 11 `Category`s + `MomentState` |
+| `sources/` | `ProactiveSource` interface + `commitment`, `event_tracker`, `inactivity` |
+| `moment_gate.py` | deterministic `decide` → INJECT / PUSH / DIGEST / DROP (+ `score_moment`) |
+| `moment_store.py` | moment persistence (dedup) + shared notification-budget ledger |
+| `gateway_delivery.py` | push/digest OUT via `cron.scheduler._deliver_result` (the gateway path) |
+| `engine.py` | orchestrator: cheap in-context surfacing + full background poll/push/digest |
+| `session_reader.py` | read conversation history from `state.db` (read-only) |
+| `llm.py` | aux-LLM commitment extraction (cheap regex pre-filter) |
+| `store.py` / `gate.py` / `cadence.py` / `feedback.py` | tracked-events store + bounded self-tuning (kept from v1) |
+| `__init__.py` / `cli.py` | `pre_llm_call` hook + `/track` `/proactivity` `/commitments` + `opencomputer proactivity {status,track,run,enable}` |
+
+## The sources (highest-value first)
+
+1. **commitment** — extracts "you said you'd do X / remind me to Y" from recent
+   conversation via the aux LLM (regex pre-filter gates the paid call). The killer
+   feature: a personal agent owns the chat log; Google/Apple don't.
+2. **event-tracker** — the `/track` flow; emits a check-in when a tracked event ends.
+3. **inactivity** — gentle re-engagement after a long silence. Push-FORBIDDEN
+   (re-engagement is the highest-abuse category) → only ever in-context or digest.
+
+New sources are drop-in: implement `ProactiveSource.poll(ctx) -> list[ProactiveMoment]`.
 
 ## PROTECTED INVARIANT — default-OFF, consent-gated
 
-Carried verbatim from v1 (a documented owner invariant): **proactive surfacing is
-default-OFF**. Installing the plugin does nothing until `proactivity.enabled: true`
-(or `opencomputer proactivity enable`). Surfacing is **in-context only** — delivered through
-the `pre_llm_call` hook while the user is already chatting. There is **no out-of-band
-push** in this port, so the user is never messaged unprompted. The gate further
-guarantees:
+`proactivity.enabled` defaults **False**. In-context surfacing (free, preferred) rides
+the `pre_llm_call` hook; out-of-band **push only fires for urgent, push-eligible moments
+that clear the full gate** (budget, quiet hours), delivered through the gateway. The gate
+hard-suppresses `SENSITIVE`, only allows push for `TOLD_FACT`/`USER_LOOP` sensitivities,
+never pushes re-engagement, and respects a daily notification budget (default 3).
 
-- Only `TOLD_FACT` / `USER_LOOP` sensitivities are ever push-eligible.
-- `SENSITIVE` events are hard-suppressed (never surfaced).
-- Muting is subtractive-only; auto-tuned cadence can never exceed a hard cap.
+## How push/digest goes "through the gateway"
 
-## Files
-
-| File | Role |
-|------|------|
-| `models.py` | `TrackedEvent`, `EventState`, `Sensitivity`, `SurfaceTier`, `EventContext` |
-| `gate.py` | Deterministic `decide_tier` + warm check-in renderers (pure) |
-| `cadence.py` | Self-evolving push cap + mute keywords (bounded, fail-soft) |
-| `feedback.py` | NL + behavioural cadence signals (pure, regex) |
-| `store.py` | SQLite event store + lifecycle state transitions |
-| `surface.py` | Per-turn: capture reply → apply feedback → gate → inject one check-in |
-| `writeback.py` | Closed check-in reply → `MEMORY.md` (two-hats: user words only) |
-| `config.py` | `proactivity:` block loader (`enabled` defaults to **False**) |
-| `cli.py` | `opencomputer proactivity {status,track,enable,disable}` |
-| `__init__.py` | `register(ctx)` — `pre_llm_call` hook + `/track` + `/proactivity` |
-
-## How v2 differs from v1 (deferred scope)
-
-The pure core (tracking + gate + cadence + feedback + writeback) is ported faithfully.
-Deferred because they depend on v2 infrastructure that differs or is absent:
-
-- **Out-of-band PUSH delivery** (v1 `OutgoingQueue` + channels) — this port surfaces
-  in-context only; the `PUSH` tier is computed but never delivered out-of-band.
-- **Sensors** (v1 calendar / Luma discovery) — events are added via `/track`, not
-  auto-discovered.
-- **Agentic action lane** (v1 read-only drafting subagent) and the cross-system
-  shared-send rate ledger.
-- **Memory-aware `EventContext`** (name + history from MEMORY.md) is stubbed empty;
-  renderers fall back to the byte-stable legacy strings.
-
-## Usage
-
-```
-opencomputer proactivity enable                 # opt in (consent gate)
-opencomputer proactivity track "infra meetup"   # an event that just ended
-/track dentist in 2h                       # an upcoming event (in-session)
-opencomputer proactivity status
-```
+`gateway_delivery.deliver()` calls v2's proven cron outbound path
+(`cron.scheduler._deliver_result` → live `adapter.send` or the standalone platform
+sender), so a proactive message reaches the user's configured home channel(s) exactly
+like a cron job's output. Trigger the background cycle with `opencomputer proactivity run`
+(or schedule it as a cron job).
 
 ## Config
 
 ```yaml
 proactivity:
-  enabled: false        # INVARIANT: default-OFF, consent-gated
-  push_cap_per_day: 1
+  enabled: false                 # default-OFF, consent-gated
+  push_cap_per_day: 3            # notification budget
   quiet_start_hour: 22
   quiet_end_hour: 8
-  cadence_evolution: true
-  event_ttl_days: 14
+  min_motivation: 3             # motivation score (1-5) required to surface
+  inactivity_days: 7
+  recent_window_days: 7
+  background_interval_minutes: 30
+auxiliary:
+  proactivity: { provider: auto }  # model for commitment extraction
 ```
 
 ## Tests
 
-`tests/plugins/test_proactivity_*.py`. Run:
-
-```
-.venv/bin/python -m pytest tests/plugins/test_proactivity_*.py -q -p no:cacheprovider
-```
+`tests/plugins/test_proactivity_*.py` — moment/gate/store, engine end-to-end (surface,
+push, digest, capture-reply), sources (commitment, inactivity), gateway delivery, plus
+the real-loader + hook-contract tests. ~110 tests.

@@ -170,6 +170,53 @@ def _handle_commitments(raw_args: str):
 # ---------------------------------------------------------------------------
 # Background cycle (poll all sources -> push urgent + digest) — the gateway path
 # ---------------------------------------------------------------------------
+def _launcher_path():
+    """Write (idempotently) the tiny launcher the cron job runs, return its path."""
+    home = _home_dir()
+    home.mkdir(parents=True, exist_ok=True)
+    script = home / "proactivity_tick.py"
+    body = (
+        "# Auto-generated proactivity background tick. Runs one poll/push/digest cycle.\n"
+        "try:\n"
+        "    from plugins.proactivity import run_background_cycle\n"
+        "    run_background_cycle(deliver_digest=True)\n"
+        "except Exception:\n"
+        "    pass\n"
+    )
+    try:
+        if not script.exists() or script.read_text(encoding='utf-8') != body:
+            script.write_text(body, encoding="utf-8")
+    except OSError:
+        pass
+    return script
+
+
+def schedule_background_job(*, every_minutes: int = 30) -> str:
+    """Register a recurring cron job that runs the background cycle through the gateway.
+
+    Makes proactive push/digest autonomous: the gateway's cron ticker fires this job on
+    the interval, and the engine delivers via the gateway's outbound path. Best-effort —
+    returns a human message; never raises.
+    """
+    try:
+        from cron.jobs import create_job
+
+        script = _launcher_path()
+        job = create_job(
+            prompt=None,
+            schedule=f"every {max(5, int(every_minutes))} minutes",
+            name="proactivity-tick",
+            script=str(script),
+            no_agent=True,
+        )
+        return f"Scheduled proactivity background tick every {every_minutes} min (job {job.get('id', '?')})."
+    except Exception as exc:  # noqa: BLE001
+        return (
+            f"Could not register the cron job ({type(exc).__name__}: {exc}). "
+            f"Proactive push/digest still runs whenever you invoke `opencomputer proactivity run`."
+        )
+
+
 def run_background_cycle(*, deliver_digest: bool = False, adapters=None, loop=None) -> dict:
     """One full proactivity cycle. Safe to call from the CLI or a cron job.
 

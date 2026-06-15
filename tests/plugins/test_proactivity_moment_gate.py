@@ -93,8 +93,10 @@ def test_quiet_hours_no_push():
 
 
 def test_non_push_eligible_digests_out_of_band():
-    # re-engagement is push-forbidden -> digest, never push, even out of band
-    assert decide(_m(category=Category.RE_ENGAGEMENT, urgency=0.9), _gi()) is Decision.DIGEST
+    # high-scoring (passes motivation) but a non-push-eligible sensitivity -> digest,
+    # never push, even out of band.
+    m = _m(category=Category.COMMITMENT, urgency=0.9, sensitivity=Sensitivity.INFERRED_SELF)
+    assert decide(m, _gi()) is Decision.DIGEST
 
 
 def test_low_urgency_low_score_digests_not_drops():

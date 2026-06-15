@@ -76,7 +76,11 @@ class Engine:
             if d is Decision.DIGEST:
                 self.moments.set_state(m.dedup_key, MomentState.DIGEST)
             elif d is Decision.DROP:
-                self.moments.set_state(m.dedup_key, MomentState.EXPIRED)
+                # Only retire a moment that is genuinely expired; a not-yet-relevant
+                # (future trigger_at) or merely below-bar moment stays PENDING so it
+                # can surface on a later turn when the context changes.
+                if m.expires_at and m.expires_at < now:
+                    self.moments.set_state(m.dedup_key, MomentState.EXPIRED)
         return None
 
     # -- full, background path ---------------------------------------------
@@ -141,11 +145,14 @@ class Engine:
         return "\n".join(lines)
 
     def deliver_digest(self, now: float, *, adapters=None, loop=None) -> bool:
-        text = self.build_digest(now, mark=False)
-        if not text:
+        # Snapshot the queue ONCE so we mark exactly the moments we rendered (a
+        # concurrent poll can't sneak a moment into "delivered" that wasn't sent).
+        queue = self.moments.digest_queue()
+        if not queue:
             return False
+        text = "\n".join(["Here's what I've been holding for you:"] + [f"• {m.body}" for m in queue])
         if gateway_delivery.deliver(text, adapters=adapters, loop=loop):
-            for m in self.moments.digest_queue():
+            for m in queue:
                 self.moments.set_state(m.dedup_key, MomentState.DELIVERED, delivered_at=now)
             self.moments.record_send(now, "digest")
             return True
@@ -167,7 +174,11 @@ class Engine:
         if not shown or (now - shown) > window_seconds:
             return None
         self.moments.set_state(m.dedup_key, MomentState.ACTED, acked_at=now)
+        # The moment store doesn't persist free-form metadata, so recover the event
+        # link from the canonical "event:<id>" key the event source assigns.
         ev_id = m.metadata.get("event_id") if m.metadata else None
+        if not ev_id and m.dedup_key.startswith("event:"):
+            ev_id = m.dedup_key.split(":", 1)[1]
         if ev_id:
             try:
                 self._event_source.mark_acked(ev_id, now)

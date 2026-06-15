@@ -38,6 +38,7 @@ DEFAULTS = {
     "candidate_fetch_limit": 50,
     "supersede_enabled": True,
     "recall_gate_enabled": True,
+    "cluster_similarity_threshold": 0.7,
 }
 
 
@@ -47,6 +48,7 @@ class DreamingPluginConfig:
     min_interval_hours: float
     candidate_fetch_limit: int
     engine: DreamingConfig
+    cluster_similarity_threshold: float = 0.7
 
     @property
     def min_interval_seconds(self) -> float:
@@ -94,6 +96,7 @@ def load_dreaming_config(block: dict | None = None) -> DreamingPluginConfig:
         enabled=_b(block, "enabled"),
         min_interval_hours=_f(block, "min_interval_hours"),
         candidate_fetch_limit=_i(block, "candidate_fetch_limit"),
+        cluster_similarity_threshold=_f(block, "cluster_similarity_threshold"),
         engine=DreamingConfig(
             enabled=_b(block, "enabled"),
             score_threshold=_f(block, "score_threshold"),
