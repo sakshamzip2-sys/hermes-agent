@@ -38,7 +38,9 @@ class CustomProfile(ProviderProfile):
             if _effort == "none" or _enabled is False:
                 # Ollama-style off switch (ignored by remote OpenAI-compat routers).
                 extra_body["think"] = False
-            elif ctx.get("supports_reasoning"):
+            elif ctx.get("supports_reasoning") and "haiku" not in (
+                ctx.get("model") or ""
+            ).lower():
                 # Remote OpenAI-compatible routers (e.g. the OpenComputer router,
                 # which proxies Anthropic/xAI) honour the OpenAI-style top-level
                 # ``reasoning_effort`` and return ``reasoning_content`` — they
@@ -46,6 +48,13 @@ class CustomProfile(ProviderProfile):
                 # This branch only fires when the route is known reasoning-capable
                 # (see run_agent._supports_reasoning_extra_body), so Ollama/local
                 # endpoints — which report no reasoning support — are unaffected.
+                #
+                # Claude Haiku is excluded above: the router advertises it as
+                # reasoning-capable but rejects the ``reasoning_effort`` parameter
+                # for it with HTTP 400 ("This model does not support the effort
+                # parameter"), which silently fails every Haiku request when a
+                # reasoning effort is set (the default). Skipping reasoning for
+                # Haiku makes it answer normally instead.
                 _clamp = {
                     "minimal": "low",
                     "low": "low",
@@ -60,9 +69,10 @@ class CustomProfile(ProviderProfile):
                 # same router (e.g. xAI/Grok) have no such constraint and prefer
                 # the caller's temperature, so don't override it for them.
                 # ``top_level`` merges after the base temperature in
-                # _build_kwargs_from_profile, so this wins for Claude.
+                # _build_kwargs_from_profile, so this wins for Claude. (Haiku
+                # never reaches here, so it keeps the caller's temperature.)
                 _model = (ctx.get("model") or "").lower()
-                if any(p in _model for p in ("claude", "opus", "sonnet", "haiku")):
+                if any(p in _model for p in ("claude", "opus", "sonnet")):
                     top_level["temperature"] = 1
 
         return extra_body, top_level
