@@ -326,10 +326,15 @@ class ChatCompletionsTransport(ProviderTransport):
         is_tokenhub = params.get("is_tokenhub", False)
         reasoning_config = params.get("reasoning_config")
 
-        if ephemeral is not None and max_tokens_fn:
-            api_kwargs.update(max_tokens_fn(ephemeral))
-        elif max_tokens is not None and max_tokens_fn:
-            api_kwargs.update(max_tokens_fn(max_tokens))
+        # The model's hard output ceiling (anthropic_max_out) must CAP the
+        # resolved value, not merely act as a fallback — otherwise a default/user
+        # max_tokens above the model limit (e.g. 65536 > claude-haiku-4-5's
+        # 64000) is sent verbatim and the provider returns HTTP 400.
+        _resolved_mt = ephemeral if ephemeral is not None else max_tokens
+        if anthropic_max_out is not None and _resolved_mt is not None:
+            _resolved_mt = min(_resolved_mt, anthropic_max_out)
+        if _resolved_mt is not None and max_tokens_fn:
+            api_kwargs.update(max_tokens_fn(_resolved_mt))
         elif anthropic_max_out is not None:
             api_kwargs["max_tokens"] = anthropic_max_out
 
@@ -514,12 +519,22 @@ class ChatCompletionsTransport(ProviderTransport):
         # (e.g. opencode-go: mimo-v2.5-pro = 131072).
         profile_max = profile.get_max_tokens(model)
 
-        if ephemeral is not None and max_tokens_fn:
-            api_kwargs.update(max_tokens_fn(ephemeral))
-        elif user_max is not None and max_tokens_fn:
-            api_kwargs.update(max_tokens_fn(user_max))
-        elif profile_max and max_tokens_fn:
-            api_kwargs.update(max_tokens_fn(profile_max))
+        # Resolve priority ephemeral > user > profile default, THEN hard-cap to
+        # the model's output ceiling (anthropic_max). The cap must always apply —
+        # not just when the others are absent — so a default/user max_tokens above
+        # the model limit (65536 > claude-haiku-4-5's 64000) can't 400 the
+        # provider. This is the OC-router (custom provider) Claude path.
+        _resolved = (
+            ephemeral
+            if ephemeral is not None
+            else user_max
+            if user_max is not None
+            else (profile_max or None)
+        )
+        if anthropic_max is not None and _resolved is not None:
+            _resolved = min(_resolved, anthropic_max)
+        if _resolved is not None and max_tokens_fn:
+            api_kwargs.update(max_tokens_fn(_resolved))
         elif anthropic_max is not None:
             api_kwargs["max_tokens"] = anthropic_max
 

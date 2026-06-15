@@ -505,6 +505,31 @@ class TestChatCompletionsBuildKwargs:
         # Anthropic Messages API which requires the field.
         assert kw["max_tokens"] == 64000
 
+    def test_anthropic_max_output_caps_user_max_tokens(self, transport):
+        # Regression: a user/default max_tokens ABOVE the model output ceiling
+        # must be capped down, not sent verbatim. claude-haiku-4-5 caps at 64000;
+        # the prior code sent 65536 and the router 400'd ("max_tokens 65536 >
+        # 64000"), which the agent then misreported as "context length exceeded".
+        msgs = [{"role": "user", "content": "Hi"}]
+        kw = transport.build_kwargs(
+            model="claude-haiku-4-5", messages=msgs,
+            max_tokens=65536,
+            anthropic_max_output=64000,
+            max_tokens_param_fn=lambda n: {"max_tokens": n},
+        )
+        assert kw["max_tokens"] == 64000
+
+    def test_max_tokens_below_cap_unchanged(self, transport):
+        # When the request is under the model ceiling, it passes through intact.
+        msgs = [{"role": "user", "content": "Hi"}]
+        kw = transport.build_kwargs(
+            model="claude-opus-4-6", messages=msgs,
+            max_tokens=32000,
+            anthropic_max_output=128000,
+            max_tokens_param_fn=lambda n: {"max_tokens": n},
+        )
+        assert kw["max_tokens"] == 32000
+
     def test_request_overrides_last(self, transport):
         msgs = [{"role": "user", "content": "Hi"}]
         kw = transport.build_kwargs(

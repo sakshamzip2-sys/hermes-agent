@@ -705,9 +705,13 @@ def build_api_kwargs(agent, api_messages: list) -> dict:
     if agent.provider_data_collection:
         _prefs["data_collection"] = agent.provider_data_collection
 
-    # Claude max-output override on aggregators
+    # Claude max-output cap. The output-token ceiling is a property of the
+    # MODEL, not the aggregator: the OpenComputer router (custom provider) and
+    # other OpenAI-compat proxies enforce it too — e.g. claude-haiku-4-5 caps at
+    # 64000 and returns HTTP 400 on max_tokens 65536. Compute it for ANY Claude
+    # model (not just OpenRouter/Nous) so the transport can cap the request.
     _ant_max = None
-    if (_is_or or _is_nous) and "claude" in (agent.model or "").lower():
+    if "claude" in (agent.model or "").lower():
         try:
             from agent.anthropic_adapter import _get_anthropic_max_output
             _ant_max = _get_anthropic_max_output(agent.model)
