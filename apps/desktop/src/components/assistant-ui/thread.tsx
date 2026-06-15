@@ -397,7 +397,7 @@ const StreamStallIndicator: FC = () => {
   }
 
   return (
-    <StatusRow className="mt-1.5" data-slot="aui_stream-stall" label="Hermes is thinking">
+    <StatusRow className="mt-1.5" data-slot="aui_stream-stall" label="OpenComputer is thinking">
       <span aria-hidden="true" className="dither inline-block size-3 rounded-[2px] text-midground/80 animate-pulse" />
       <ActivityTimerText seconds={elapsed} />
     </StatusRow>

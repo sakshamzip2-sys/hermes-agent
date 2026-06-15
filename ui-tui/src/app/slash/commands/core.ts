@@ -117,11 +117,11 @@ export const coreCommands: SlashCommand[] = [
   },
 
   {
-    help: 'update Hermes Agent to the latest version (exits TUI)',
+    help: 'update OpenComputer to the latest version (exits TUI)',
     name: 'update',
     run: (_arg, ctx) => {
       ctx.transcript.sys('exiting TUI to run update...')
-      // Exit code 42 signals the Python wrapper to exec `hermes update`.
+      // Exit code 42 signals the Python wrapper to exec `oc update`.
       // Use dieWithCode for proper cleanup (gateway kill + Ink unmount).
       setTimeout(() => ctx.session.dieWithCode(42), 100)
     }
@@ -462,7 +462,7 @@ export const coreCommands: SlashCommand[] = [
       const preview = Math.max(80, parseInt(arg, 10) || 400)
 
       const lines = items.map((m, i) => {
-        const tag = m.role === 'user' ? `You #${i + 1}` : `Hermes #${i + 1}`
+        const tag = m.role === 'user' ? `You #${i + 1}` : `OpenComputer #${i + 1}`
         const body = m.text.trim() || (m.tools?.length ? `(${m.tools.length} tool calls)` : '(empty)')
         const clipped = body.length > preview ? `${body.slice(0, preview).trimEnd()}…` : body
 

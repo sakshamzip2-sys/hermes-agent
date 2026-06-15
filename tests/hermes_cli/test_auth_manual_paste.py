@@ -256,8 +256,8 @@ def test_xai_loopback_login_manual_paste_skips_http_server(monkeypatch):
     captured_state: dict = {}
 
     def _fake_prompt(_redirect_uri):
-        # Hermes generates state internally; we won't know it ahead of
-        # time, so capture the state Hermes baked into the authorize
+        # OpenComputer generates state internally; we won't know it ahead of
+        # time, so capture the state OpenComputer baked into the authorize
         # URL via a sneak peek on ``_xai_oauth_build_authorize_url``.
         return {
             "code": "fake-auth-code",
@@ -559,7 +559,7 @@ def test_xai_loopback_login_timeout_falls_back_to_manual_paste(monkeypatch):
 
 
 def test_xai_wait_for_callback_accepts_ready_stdin_code(monkeypatch):
-    """Users can paste the Grok Build code while Hermes is still waiting."""
+    """Users can paste the Grok Build code while OpenComputer is still waiting."""
     class _StubServer:
         shutdown_called = False
         close_called = False

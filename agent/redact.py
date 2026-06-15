@@ -204,8 +204,8 @@ def mask_secret(
 ) -> str:
     """Mask a secret for display, preserving ``head`` and ``tail`` characters.
 
-    Canonical helper for display-time redaction across Hermes — used by
-    ``hermes config``, ``hermes status``, ``hermes dump``, and anywhere
+    Canonical helper for display-time redaction across OpenComputer — used by
+    ``oc config``, ``oc status``, ``oc dump``, and anywhere
     a secret needs to be shown truncated for debuggability while still
     keeping the bulk hidden.
 

@@ -24,7 +24,7 @@ from utils import normalize_proxy_url
 
 logger = logging.getLogger(__name__)
 
-# Audio file extensions Hermes recognizes for native audio delivery.
+# Audio file extensions OpenComputer recognizes for native audio delivery.
 # Kept in sync with tools/send_message_tool.py and cron/scheduler.py via
 # should_send_media_as_audio() below.
 _AUDIO_EXTS = frozenset({'.ogg', '.opus', '.mp3', '.wav', '.m4a', '.flac'})
@@ -56,7 +56,7 @@ def _thread_metadata_for_source(source, reply_to_message_id: str | None = None) 
     """Build platform-aware thread metadata for adapter sends.
 
     Most platforms route threaded sends with a generic ``thread_id`` metadata
-    value. Telegram private-chat topics created through Hermes' DM-topic helper
+    value. Telegram private-chat topics created through OpenComputer' DM-topic helper
     are exposed in updates as ``message_thread_id`` plus a reply anchor. Live
     user-message replies route with ``message_thread_id`` + ``reply_to_message_id``;
     synthetic/resumed sends that have no reply anchor fall back to Telegram's
@@ -81,7 +81,7 @@ def _reply_anchor_for_event(event) -> str | None:
     """Return reply_to id for platforms that need reply semantics.
 
     Telegram forum/supergroup topics should be routed by topic metadata, not by
-    replying to the triggering message. Hermes-created Telegram private-chat
+    replying to the triggering message. OpenComputer-created Telegram private-chat
     topic lanes prefer replying to the triggering user message so the answer
     stays attached to the active lane; synthetic/resumed sends fall back to
     ``direct_messages_topic_id`` metadata when no message id is available.
@@ -647,7 +647,7 @@ async def cache_image_from_url(url: str, ext: str = ".jpg", retries: int = 2) ->
                 response = await client.get(
                     url,
                     headers={
-                        "User-Agent": "Mozilla/5.0 (compatible; HermesAgent/1.0)",
+                        "User-Agent": "Mozilla/5.0 (compatible; OpenComputer/1.0)",
                         "Accept": "image/*,*/*;q=0.8",
                     },
                 )
@@ -761,7 +761,7 @@ async def cache_audio_from_url(url: str, ext: str = ".ogg", retries: int = 2) ->
                 response = await client.get(
                     url,
                     headers={
-                        "User-Agent": "Mozilla/5.0 (compatible; HermesAgent/1.0)",
+                        "User-Agent": "Mozilla/5.0 (compatible; OpenComputer/1.0)",
                         "Accept": "audio/*,*/*;q=0.8",
                     },
                 )
@@ -956,7 +956,7 @@ def _media_delivery_denied_paths() -> List[Path]:
     home = Path(os.path.expanduser("~"))
     for sub in _MEDIA_DELIVERY_DENIED_HOME_SUBPATHS:
         denied.append(home / sub)
-    # The active Hermes profile and shared Hermes root both contain control
+    # The active OpenComputer profile and shared OpenComputer root both contain control
     # files and credentials. Only cache subdirectories under them are
     # explicitly allowlisted above.
     for hermes_root in (_HERMES_HOME, _HERMES_ROOT):
@@ -975,7 +975,7 @@ def _path_under_denied_prefix(resolved: Path) -> bool:
     denylist so that a non-root gateway can't deliver another user's home, but
     on a root-run gateway ``$HOME=/root`` and the operator's own deliverables
     (``/root/work/proposal.docx``) live directly under it. The credential
-    sub-directories inside home (``~/.ssh``, ``~/.aws``, ...) and Hermes
+    sub-directories inside home (``~/.ssh``, ``~/.aws``, ...) and OpenComputer
     secrets (``~/.hermes/.env``, ``auth.json``) are *separate, more-specific*
     denied paths, so they stay blocked regardless of this exception — it can
     only un-block a plain file sitting in the running user's home tree, never a
@@ -1037,7 +1037,7 @@ def validate_media_delivery_path(path: str) -> Optional[str]:
 
     Strict mode (opt-in via ``gateway.strict`` in ``config.yaml`` or
     ``HERMES_MEDIA_DELIVERY_STRICT=1``): the file MUST live under a
-    Hermes-managed cache, under an operator-allowlisted root
+    OpenComputer-managed cache, under an operator-allowlisted root
     (``HERMES_MEDIA_ALLOW_DIRS``), or be freshly produced inside the
     configured recency window. Suitable for public-facing bots where
     prompt injection from one user shouldn't be able to exfiltrate the
@@ -1812,7 +1812,7 @@ class BasePlatformAdapter(ABC):
     supports_code_blocks: bool = False
 
     # The command prefix users can always TYPE on this platform to reach
-    # Hermes commands.  Default "/" (most platforms deliver "/approve" etc.
+    # OpenComputer commands.  Default "/" (most platforms deliver "/approve" etc.
     # as plain message text).  Platforms where typing a leading "/" is
     # intercepted or restricted by the client (Slack blocks native slash
     # commands inside threads; Matrix clients reserve "/" for client-local

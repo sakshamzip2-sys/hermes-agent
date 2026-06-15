@@ -134,7 +134,7 @@ def test_gateway_run_no_supervise_flag_preserves_legacy_behavior(
 
     Three positive assertions confirm we took the pre-s6 path:
 
-      * The CMD process is a python ``hermes gateway run`` invocation
+      * The CMD process is a python ``oc gateway run`` invocation
         (not ``sleep infinity``).
       * The ``gateway-default`` s6 service slot is NOT created.
       * No supervision-redirect breadcrumb appears in docker logs.
@@ -247,11 +247,11 @@ def test_supervised_gateway_does_not_recurse(
     built_image: str, container_name: str,
 ) -> None:
     """The HERMES_S6_SUPERVISED_CHILD sentinel must prevent the
-    supervised ``hermes gateway run`` from re-entering the redirect.
+    supervised ``oc gateway run`` from re-entering the redirect.
 
     If recursion happened, every supervised gateway start would itself
     re-dispatch to s6 and exec ``sleep infinity`` — so the supervised
-    gateway slot would never actually run a python ``hermes gateway
+    gateway slot would never actually run a python ``oc gateway
     run`` process. The slot would oscillate or settle into a state
     with no python in the supervise tree at all.
 
@@ -267,7 +267,7 @@ def test_supervised_gateway_does_not_recurse(
     )
     time.sleep(6)
 
-    # Count python processes running `hermes gateway run`. If the
+    # Count python processes running `oc gateway run`. If the
     # recursion guard fails, s6 would respawn fresh `gateway run`
     # processes on every cycle, leaving multiple Python-process
     # descendants under the gateway-default supervise tree.
@@ -275,7 +275,7 @@ def test_supervised_gateway_does_not_recurse(
     assert r.returncode == 0
     n = int(r.stdout.strip() or 0)
     assert n <= 1, (
-        f"expected at most one supervised python `hermes gateway run` "
+        f"expected at most one supervised python `oc gateway run` "
         f"process (the legitimately-supervised gateway); found {n}. "
         f"Recursion guard may have failed. "
         f"ps:\n{_sh(container_name, 'ps -eo pid,ppid,cmd').stdout}"
@@ -339,7 +339,7 @@ def test_supervised_gateway_stdout_reaches_docker_logs(
     Without the ``1`` action directive in ``_render_log_run``, s6-log
     swallows the gateway's stdout into the file and ``docker logs``
     only sees stderr (Python ``logging`` defaults to stderr). That's
-    a poor user experience: the iconic "Hermes Gateway Starting…"
+    a poor user experience: the iconic "OpenComputer Gateway Starting…"
     banner with the ⚕ symbol is the most visible "yes, your gateway
     started" signal, and forcing users to ``docker exec`` + ``tail``
     the log file just to see it is friction users don't expect.
@@ -372,7 +372,7 @@ def test_supervised_gateway_stdout_reaches_docker_logs(
     # The banner ⚕ symbol is the load-bearing assertion — it's unique
     # to gateway startup stdout output and won't appear in stderr
     # (Python logging) or s6 boot messages.
-    assert "⚕" in combined or "Hermes Gateway Starting" in combined, (
+    assert "⚕" in combined or "OpenComputer Gateway Starting" in combined, (
         "Supervised gateway's stdout banner did not reach docker logs. "
         "This means the `1` action directive in _render_log_run isn't "
         "forwarding stdout to /init. "
@@ -387,7 +387,7 @@ def test_supervised_gateway_stdout_reaches_docker_logs(
     file_contents = _sh(
         container_name, "cat /opt/data/logs/gateways/default/current",
     ).stdout
-    assert "⚕" in file_contents or "Hermes Gateway Starting" in file_contents, (
+    assert "⚕" in file_contents or "OpenComputer Gateway Starting" in file_contents, (
         "Banner also missing from rotated log file — the file "
         "destination may have been dropped by the new s6-log script. "
         f"File contents:\n{file_contents}"

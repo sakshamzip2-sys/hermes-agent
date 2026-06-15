@@ -65,7 +65,7 @@ def cron_list(show_all: bool = False):
 
     if not jobs:
         print(color("No scheduled jobs.", Colors.DIM))
-        print(color("Create one with 'hermes cron create ...' or the /cron command in chat.", Colors.DIM))
+        print(color("Create one with 'oc cron create ...' or the /cron command in chat.", Colors.DIM))
         return
 
     print()
@@ -202,7 +202,7 @@ def cron_create(args):
             "Blocked: cron job contains a gateway lifecycle command "
             "(restart/stop/kill).\n"
             "This is blocked to prevent restart loops (#30719).\n"
-            "Use `hermes gateway restart` from a shell outside the gateway.",
+            "Use `oc gateway restart` from a shell outside the gateway.",
             Colors.RED,
         ))
         return 1

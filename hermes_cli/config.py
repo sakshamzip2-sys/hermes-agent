@@ -1,5 +1,5 @@
 """
-Configuration management for Hermes Agent.
+Configuration management for OpenComputer.
 
 Config files are stored in ~/.hermes/ for easy access:
 - ~/.hermes/config.yaml  - All settings (model, toolsets, terminal, etc.)
@@ -45,7 +45,7 @@ def _backup_corrupt_config(config_path: Path) -> Optional[Path]:
     When the YAML can't be parsed, ``load_config()`` silently falls back to
     ``DEFAULT_CONFIG`` and the user's broken file stays on disk untouched.
     That file is still the user's only copy of their intended overrides — if
-    they re-run the setup wizard or ``hermes config set`` (which rewrites
+    they re-run the setup wizard or ``oc config set`` (which rewrites
     ``config.yaml``), the broken-but-recoverable content is gone for good.
 
     This snapshots the corrupted file to ``config.yaml.corrupt.<ts>.bak`` so
@@ -103,13 +103,13 @@ def _warn_config_parse_failure(config_path: Path, exc: Exception) -> None:
     scrolled off-screen on the first invocation and was never seen again.
 
     Now: warn once per (path, mtime_ns, size) on stderr **and** in
-    ``agent.log`` / ``errors.log`` at WARNING level so ``hermes logs``
+    ``agent.log`` / ``errors.log`` at WARNING level so ``oc logs``
     surfaces it. Re-warns automatically if the file changes (different
     mtime/size), so users editing the config see the next failure. On the
     first warning for a given broken file we also snapshot it to a
     timestamped ``.bak`` (best-effort) so the user's recoverable content
     survives any later rewrite of ``config.yaml`` by the setup wizard or
-    ``hermes config set``.
+    ``oc config set``.
     """
     try:
         st = config_path.stat()
@@ -146,25 +146,25 @@ _ENV_VAR_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 #
 # * ``LD_PRELOAD`` / ``LD_LIBRARY_PATH`` / ``LD_AUDIT`` — Linux dynamic
 #   loader. ``DYLD_*`` — macOS equivalent. Planting a path here means
-#   the next ``subprocess.run([...])`` Hermes makes loads attacker code
+#   the next ``subprocess.run([...])`` OpenComputer makes loads attacker code
 #   before main().
 # * ``PYTHONPATH`` / ``PYTHONHOME`` / ``PYTHONSTARTUP`` /
-#   ``PYTHONUSERBASE`` — Python interpreter init. Hermes itself starts
+#   ``PYTHONUSERBASE`` — Python interpreter init. OpenComputer itself starts
 #   from one of these on every restart.
 # * ``NODE_OPTIONS`` / ``NODE_PATH`` — Node interpreter; affects npm,
-#   ``hermes update``, the TUI build.
+#   ``oc update``, the TUI build.
 # * ``PATH`` — too broad to allow. The dashboard never needs to rewrite
 #   the operator's PATH; if a tool can't be found, the fix is to add an
 #   absolute path in the integration config, not to mutate PATH globally.
 # * ``GIT_SSH_COMMAND`` / ``GIT_EXEC_PATH`` — git rewrites that fire
-#   on every plugin install / ``hermes update``.
+#   on every plugin install / ``oc update``.
 # * ``BROWSER`` / ``EDITOR`` / ``VISUAL`` / ``PAGER`` — commands the
 #   shell or CLI invokes implicitly. Wrong values here = RCE on next
 #   ``$EDITOR``.
 # * ``SHELL`` — what subprocess uses with ``shell=True`` (we try to
 #   avoid that, but defense in depth).
 # * ``HERMES_HOME`` / ``HERMES_PROFILE`` / ``HERMES_CONFIG`` /
-#   ``HERMES_ENV`` — Hermes runtime location flags. Writing these into
+#   ``HERMES_ENV`` — OpenComputer runtime location flags. Writing these into
 #   ``.env`` would relocate state in ways the user did not request from
 #   the dashboard. ``config.yaml`` is the supported surface for these.
 #
@@ -192,7 +192,7 @@ _ENV_VAR_NAME_DENYLIST: frozenset[str] = frozenset({
     "PATH", "SHELL", "BROWSER", "EDITOR", "VISUAL", "PAGER",
     # Git
     "GIT_SSH_COMMAND", "GIT_EXEC_PATH", "GIT_SHELL",
-    # Hermes runtime location — never via dashboard env writer.
+    # OpenComputer runtime location — never via dashboard env writer.
     # NOT a HERMES_* blanket: integration credentials (HERMES_GEMINI_*,
     # HERMES_LANGFUSE_*, HERMES_SPOTIFY_*, ...) ARE allowed.
     "HERMES_HOME", "HERMES_PROFILE", "HERMES_CONFIG", "HERMES_ENV",
@@ -209,7 +209,7 @@ def _reject_denylisted_env_var(key: str) -> None:
         raise ValueError(
             f"Environment variable {key!r} is on the writer denylist. "
             "Names that influence subprocess execution (LD_PRELOAD, "
-            "PYTHONPATH, PATH, EDITOR, ...) or Hermes runtime location "
+            "PYTHONPATH, PATH, EDITOR, ...) or OpenComputer runtime location "
             "(HERMES_HOME, HERMES_PROFILE, ...) cannot be persisted via "
             "the env writer. If you really need this, edit "
             "~/.hermes/.env directly."
@@ -281,8 +281,8 @@ _EXTRA_ENV_KEYS = frozenset({
     "MATRIX_REQUIRE_MENTION", "MATRIX_FREE_RESPONSE_ROOMS", "MATRIX_AUTO_THREAD", "MATRIX_DM_AUTO_THREAD",
     "MATRIX_RECOVERY_KEY",
     # Langfuse observability plugin — optional tuning keys + standard SDK vars.
-    # Activation is via plugins.enabled (opt-in through `hermes plugins enable
-    # observability/langfuse` or `hermes tools → Langfuse`); credentials gate
+    # Activation is via plugins.enabled (opt-in through `oc plugins enable
+    # observability/langfuse` or `oc tools → Langfuse`); credentials gate
     # the plugin at runtime.
     "HERMES_LANGFUSE_ENV",
     "HERMES_LANGFUSE_RELEASE",
@@ -328,7 +328,7 @@ def get_managed_system() -> Optional[str]:
 
 
 def is_managed() -> bool:
-    """Check if Hermes is running in package-manager-managed mode.
+    """Check if OpenComputer is running in package-manager-managed mode.
 
     Two signals: the HERMES_MANAGED env var (set by the systemd service),
     or a .managed marker file in HERMES_HOME (set by the NixOS activation
@@ -351,7 +351,7 @@ def get_managed_update_command() -> Optional[str]:
 
 
 def detect_install_method(project_root: Optional[Path] = None) -> str:
-    """Detect how Hermes was installed: 'docker', 'nixos', 'homebrew', 'git', or 'pip'.
+    """Detect how OpenComputer was installed: 'docker', 'nixos', 'homebrew', 'git', or 'pip'.
 
     Resolution order:
     1. Stamped ``~/.hermes/.install_method`` file (written by installers)
@@ -369,7 +369,7 @@ def detect_install_method(project_root: Optional[Path] = None) -> str:
         at boot via ``docker/stage2-hook.sh``.
     An unsupported manual install dropped into a container (no stamp) was
     wrongly classified as the published image by bare container detection,
-    so ``hermes update`` bailed with "doesn't apply inside the Docker
+    so ``oc update`` bailed with "doesn't apply inside the Docker
     container". Without that fallback such installs fall through to the
     ``.git``/pip checks and behave like any off-path install. See issue #34397.
     """
@@ -401,7 +401,7 @@ def stamp_install_method(method: str) -> None:
 
 
 def is_uv_tool_install() -> bool:
-    """Return True when the *running* Hermes lives in a ``uv tool`` layout.
+    """Return True when the *running* OpenComputer lives in a ``uv tool`` layout.
 
     ``uv tool install hermes-agent`` places the install at
     ``.../uv/tools/hermes-agent/...`` (default ``~/.local/share/uv/tools``,
@@ -413,8 +413,8 @@ def is_uv_tool_install() -> bool:
     interpreter (``sys.prefix`` / ``sys.executable``). We deliberately do
     NOT consult ``uv tool list``: it would also return True when
     ``hermes-agent`` happens to be uv-tool-installed on the machine while
-    the *active* Hermes is a regular pip/venv install, causing
-    ``hermes update`` to upgrade the wrong copy. It would also block on a
+    the *active* OpenComputer is a regular pip/venv install, causing
+    ``oc update`` to upgrade the wrong copy. It would also block on a
     subprocess call (~seconds) just to compute a recommendation string.
     """
     def _has_uv_tool_marker(path: str) -> bool:
@@ -443,7 +443,7 @@ def recommended_update_command_for_method(method: str) -> str:
         if shutil.which("uv"):
             return "uv pip install --upgrade hermes-agent"
         return "pip install --upgrade hermes-agent"
-    return "hermes update"
+    return "oc update"
 
 
 def recommended_update_command() -> str:
@@ -455,7 +455,7 @@ def recommended_update_command() -> str:
     return recommended_update_command_for_method(method)
 
 
-# Long-form text for ``hermes update`` / ``--check`` when running inside the
+# Long-form text for ``oc update`` / ``--check`` when running inside the
 # Docker image.  Surfaced by ``cmd_update`` and ``_cmd_update_check`` in
 # hermes_cli/main.py; lives here so the wording stays consistent and we
 # don't grow two slightly-different copies.
@@ -465,15 +465,15 @@ def recommended_update_command() -> str:
 #     git-based update path can never succeed inside the container.
 #   - The pre-existing fallback message ("✗ Not a git repository. Please
 #     reinstall: curl ... install.sh") is actively misleading inside Docker
-#     — that script installs a *new* host-side Hermes, it doesn't update
+#     — that script installs a *new* host-side OpenComputer, it doesn't update
 #     the running container.
 #   - The right action is ``docker pull`` + restart the container; this
 #     helper spells that out, with notes on tag pinning and config
 #     persistence so users don't get blindsided.
 _DOCKER_UPDATE_MESSAGE = """\
-✗ ``hermes update`` doesn't apply inside the Docker container.
+✗ ``oc update`` doesn't apply inside the Docker container.
 
-Hermes Agent runs as a published image (nousresearch/hermes-agent), not a
+OpenComputer runs as a published image (nousresearch/hermes-agent), not a
 git checkout — the container has no working tree to pull into.  Update by
 pulling a fresh image and restarting your container instead:
 
@@ -498,7 +498,7 @@ Notes:
 
 
 def format_docker_update_message() -> str:
-    """Return the user-facing message for ``hermes update`` inside Docker.
+    """Return the user-facing message for ``oc update`` inside Docker.
 
     Centralised so ``cmd_update`` (the apply path) and ``_cmd_update_check``
     (the dry-run path) share the same wording.  See ``_DOCKER_UPDATE_MESSAGE``
@@ -507,7 +507,7 @@ def format_docker_update_message() -> str:
     return _DOCKER_UPDATE_MESSAGE
 
 
-def format_managed_message(action: str = "modify this Hermes installation") -> str:
+def format_managed_message(action: str = "modify this OpenComputer installation") -> str:
     """Build a user-facing error for managed installs."""
     managed_system = get_managed_system() or "a package manager"
     raw = os.getenv("HERMES_MANAGED", "").strip().lower()
@@ -515,7 +515,7 @@ def format_managed_message(action: str = "modify this Hermes installation") -> s
     if managed_system == "NixOS":
         env_hint = "true" if raw in _MANAGED_TRUE_VALUES else raw or "true"
         return (
-            f"Cannot {action}: this Hermes installation is managed by NixOS "
+            f"Cannot {action}: this OpenComputer installation is managed by NixOS "
             f"(HERMES_MANAGED={env_hint}).\n"
             "Edit services.hermes-agent.settings in your configuration.nix and run:\n"
             "  sudo nixos-rebuild switch"
@@ -524,15 +524,15 @@ def format_managed_message(action: str = "modify this Hermes installation") -> s
     if managed_system == "Homebrew":
         env_hint = raw or "homebrew"
         return (
-            f"Cannot {action}: this Hermes installation is managed by Homebrew "
+            f"Cannot {action}: this OpenComputer installation is managed by Homebrew "
             f"(HERMES_MANAGED={env_hint}).\n"
             "Use:\n"
             "  brew upgrade hermes-agent"
         )
 
     return (
-        f"Cannot {action}: this Hermes installation is managed by {managed_system}.\n"
-        "Use your package manager to upgrade or reinstall Hermes."
+        f"Cannot {action}: this OpenComputer installation is managed by {managed_system}.\n"
+        "Use your package manager to upgrade or reinstall OpenComputer."
     )
 
 def managed_error(action: str = "modify configuration"):
@@ -612,7 +612,7 @@ def get_project_root() -> Path:
 def _resolve_hermes_uid_gid() -> tuple[Optional[int], Optional[int]]:
     """Read the HERMES_UID / HERMES_GID env vars set by Docker deployments.
 
-    Docker containers running Hermes commonly set these to map the in-container
+    Docker containers running OpenComputer commonly set these to map the in-container
     user to a host user so volume-mounted state files end up with the right
     ownership. The entrypoint chowns the top-level HERMES_HOME once, but
     subdirectories created at runtime by ``ensure_hermes_home()`` (especially
@@ -703,7 +703,7 @@ def _secure_dir(path):
 def _is_container() -> bool:
     """Detect if we're running inside a Docker/Podman/LXC container.
 
-    When Hermes runs in a container with volume-mounted config files, forcing
+    When OpenComputer runs in a container with volume-mounted config files, forcing
     0o600 permissions breaks multi-process setups where the gateway and
     dashboard run as different UIDs or the volume mount requires broader
     permissions.
@@ -835,7 +835,7 @@ DEFAULT_CONFIG = {
         # provider timeouts, 5xx, etc.) before the agent surfaces the
         # failure.  The OpenAI SDK already does its own low-level retries
         # (max_retries=2 default) for transient network errors; this is
-        # the Hermes-level retry loop that wraps the whole call.  Lower
+        # the OpenComputer-level retry loop that wraps the whole call.  Lower
         # this to 1 if you use fallback providers and want fast failover
         # on flaky primaries; raise it if you prefer to tolerate longer
         # provider hiccups on a single provider.
@@ -862,14 +862,14 @@ DEFAULT_CONFIG = {
         # disable entirely.
         "environment_probe": True,
         # Embedder-supplied environment description appended to the system
-        # prompt's environment-hints block. Lets a host that wraps Hermes
+        # prompt's environment-hints block. Lets a host that wraps OpenComputer
         # (sandbox runner, managed platform) explain the runtime environment
         # — proxy, credential handling, mount layout — without editing the
         # identity slot (SOUL.md). Empty by default. The HERMES_ENVIRONMENT_HINT
         # env var overrides this (build-time/container mechanism).
         "environment_hint": "",
         # Coding posture — on interactive coding surfaces (CLI, TUI, desktop
-        # app, ACP) in a code workspace, Hermes adds a coding operating brief
+        # app, ACP) in a code workspace, OpenComputer adds a coding operating brief
         # + a live git/workspace snapshot to the system prompt. See
         # agent/coding_context.py.
         #   "auto" (default) — prompt-only posture when the surface is
@@ -948,13 +948,13 @@ DEFAULT_CONFIG = {
         # (bash doesn't source bashrc in non-interactive login mode) or
         # zsh-specific files like ``~/.zshrc`` / ``~/.zprofile``.
         # Paths support ``~`` / ``${VAR}``. Missing files are silently
-        # skipped. When empty, Hermes auto-sources ``~/.profile``,
+        # skipped. When empty, OpenComputer auto-sources ``~/.profile``,
         # ``~/.bash_profile``, and ``~/.bashrc`` (in that order) if the
         # snapshot shell is bash (this is the ``auto_source_bashrc``
         # behaviour — disable with that key if you want strict login-only
         # semantics).
         "shell_init_files": [],
-        # When true (default), Hermes sources the user's shell rc files
+        # When true (default), OpenComputer sources the user's shell rc files
         # (``~/.profile``, ``~/.bash_profile``, ``~/.bashrc``) in the
         # login shell used to build the environment snapshot. This
         # captures PATH additions, shell functions, and aliases — which a
@@ -971,7 +971,7 @@ DEFAULT_CONFIG = {
         "docker_forward_env": [],
         # Explicit environment variables to set inside Docker containers.
         # Unlike docker_forward_env (which reads values from the host process),
-        # docker_env lets you specify exact key-value pairs — useful when Hermes
+        # docker_env lets you specify exact key-value pairs — useful when OpenComputer
         # runs as a systemd service without access to the user's shell environment.
         # Example: {"SSH_AUTH_SOCK": "/run/user/1000/ssh-agent.sock"}
         "docker_env": {},
@@ -1001,7 +1001,7 @@ DEFAULT_CONFIG = {
         # are owned by your host user instead of root, which avoids needing
         # `sudo chown` after container runs. Default off to preserve behavior
         # for images whose entrypoints expect to start as root (e.g. the
-        # bundled Hermes image, which drops to the `hermes` user via
+        # bundled OpenComputer image, which drops to the `hermes` user via
         # s6-setuidgid inside each supervised service).
         # When on, SETUID/SETGID caps are omitted from the container since
         # no privilege drop is needed.
@@ -1022,7 +1022,7 @@ DEFAULT_CONFIG = {
     "browser": {
         "inactivity_timeout": 120,
         "command_timeout": 30,  # Timeout for browser commands in seconds (screenshot, navigate, etc.)
-        "record_sessions": False,  # Auto-record browser sessions as WebM videos
+        "record_sessions": True,  # Auto-record browser sessions as WebM videos
         "allow_private_urls": False,  # Allow navigating to private/internal IPs (localhost, 192.168.x.x, etc.)
         # Browser engine for local mode.  Passed as ``--engine <value>`` to
         # agent-browser v0.25.3+.
@@ -1040,12 +1040,12 @@ DEFAULT_CONFIG = {
         "dialog_policy": "must_respond",  # must_respond | auto_dismiss | auto_accept
         "dialog_timeout_s": 300,  # Safety auto-dismiss after N seconds under must_respond
         "camofox": {
-            # When true, Hermes sends a stable profile-scoped userId to Camofox
+            # When true, OpenComputer sends a stable profile-scoped userId to Camofox
             # so the server maps it to a persistent Firefox profile automatically.
             # When false (default), each session gets a random userId (ephemeral).
             "managed_persistence": False,
             # Optional externally managed Camofox identity. Useful when another
-            # app owns the visible browser and Hermes should operate in it.
+            # app owns the visible browser and OpenComputer should operate in it.
             "user_id": "",
             "session_key": "",
             # Rehydrate tab_id from Camofox before creating a new tab.
@@ -1067,7 +1067,7 @@ DEFAULT_CONFIG = {
     #   - enabled: True -> False   (opt-in; most users never use /rollback)
     #   - max_snapshots: 50 -> 20  (now actually enforced via ref rewrite)
     #   - auto_prune:   False -> True (orphans/stale pruned automatically)
-    # Opt in via ``hermes chat --checkpoints`` or set enabled=True here.
+    # Opt in via ``oc chat --checkpoints`` or set enabled=True here.
     "checkpoints": {
         "enabled": False,
         # Max checkpoints to keep per working directory.  Pre-v2 this only
@@ -1103,7 +1103,7 @@ DEFAULT_CONFIG = {
     "file_read_max_chars": 100_000,
 
     # Tool-output truncation thresholds. When terminal output or a
-    # single read_file page exceeds these limits, Hermes truncates the
+    # single read_file page exceeds these limits, OpenComputer truncates the
     # payload sent to the model (keeping head + tail for terminal,
     # enforcing pagination for read_file). Tuning these trades context
     # footprint against how much raw output the model can see in one
@@ -1127,7 +1127,7 @@ DEFAULT_CONFIG = {
     # hard stops are opt-in so interactive CLI/TUI sessions keep flowing.
     "tool_loop_guardrails": {
         "warnings_enabled": True,
-        "hard_stop_enabled": False,
+        "hard_stop_enabled": True,
         "warn_after": {
             "exact_failure": 2,
             "same_tool_failure": 3,
@@ -1320,7 +1320,7 @@ DEFAULT_CONFIG = {
         },
         # Triage specifier — flesh out a rough one-liner in the Kanban
         # Triage column into a concrete spec, then promote it to ``todo``.
-        # Invoked by ``hermes kanban specify`` (single id or --all). Set a
+        # Invoked by ``oc kanban specify`` (single id or --all). Set a
         # cheap, capable model here (gemini-flash works well); the main
         # model is overkill for short spec expansion.
         "triage_specifier": {
@@ -1333,7 +1333,7 @@ DEFAULT_CONFIG = {
         },
         # Kanban decomposer — decomposes a triage task into a graph of
         # child tasks routed to specialist profiles by description.
-        # Invoked by ``hermes kanban decompose`` and the kanban
+        # Invoked by ``oc kanban decompose`` and the kanban
         # auto-decompose dispatcher tick. Returns a JSON task graph;
         # uses more tokens than the specifier so allow more headroom.
         "kanban_decomposer": {
@@ -1346,7 +1346,7 @@ DEFAULT_CONFIG = {
         },
         # Profile describer — auto-generates a 1-2 sentence description
         # of what a profile is good at. Invoked by
-        # ``hermes profile describe <name> --auto`` and the dashboard's
+        # ``oc profile describe <name> --auto`` and the dashboard's
         # auto-generate button. Short, cheap call.
         "profile_describer": {
             "provider": "auto",
@@ -1359,7 +1359,7 @@ DEFAULT_CONFIG = {
         # Curator — skill-usage review fork. Timeout is generous because the
         # review pass can take several minutes on reasoning models (umbrella
         # building over hundreds of candidate skills). "auto" = use main chat
-        # model; override via `hermes model` → auxiliary → Curator to route
+        # model; override via `oc model` → auxiliary → Curator to route
         # to a cheaper aux model (e.g. openrouter google/gemini-3-flash-preview).
         "curator": {
             "provider": "auto",
@@ -1403,23 +1403,23 @@ DEFAULT_CONFIG = {
         # behavior of showing tool-call summaries inline.
         "resume_skip_tool_only": True,
         "busy_input_mode": "interrupt",  # interrupt | queue | steer
-        # Which interface bare `hermes` (and `hermes chat`) launches by default:
+        # Which interface bare `hermes` (and `oc chat`) launches by default:
         #   "cli" — the classic prompt_toolkit REPL (default, preserves prior behavior)
         #   "tui" — the modern Ink TUI (same as passing `--tui`)
         # Explicit flags always win over this setting: `--cli` forces the classic
         # REPL and `--tui` (or HERMES_TUI=1) forces the TUI regardless of config.
         "interface": "cli",
-        # When true, `hermes --tui` auto-resumes the most recent human-
+        # When true, `oc --tui` auto-resumes the most recent human-
         # facing session on launch instead of forging a fresh one.
-        # Mirrors `hermes -c` muscle memory.  Default off so existing
+        # Mirrors `oc -c` muscle memory.  Default off so existing
         # users aren't surprised.  HERMES_TUI_RESUME=<id> always wins.
         "tui_auto_resume_recent": False,
-        # When true (default), `hermes --tui` drops a one-time hint
+        # When true (default), `oc --tui` drops a one-time hint
         # ("subagents working · /agents to watch live") the first time a turn
         # starts delegating, nudging the user toward the live spawn-tree
         # dashboard. Set false to suppress the hint.
         "tui_agents_nudge": True,
-        "bell_on_complete": False,
+        "bell_on_complete": True,
         "show_reasoning": False,
         "streaming": False,
         "timestamps": False,      # Show [HH:MM] on user and assistant labels
@@ -1454,7 +1454,7 @@ DEFAULT_CONFIG = {
         # iteration/budget limit.  Replaces the bare "(empty)" sentinel so the
         # failure isn't silent from the UI's perspective.  Set false to suppress.
         "turn_completion_explainer": True,
-        "show_cost": False,       # Show $ cost in the status bar (off by default)
+        "show_cost": True,       # Show $ cost in the status bar (off by default)
         "skin": "default",
         # UI language for static user-facing messages (approval prompts, a
         # handful of gateway slash-command replies).  Does NOT affect agent
@@ -1506,7 +1506,7 @@ DEFAULT_CONFIG = {
         # e.g. `model · 68% · ~/projects/hermes`. Per-platform overrides go under
         # display.platforms.<platform>.runtime_footer.
         "runtime_footer": {
-            "enabled": False,
+            "enabled": True,
             "fields": ["model", "context_pct", "cwd"],  # Order shown; drop any to hide
         },
         "copy_shortcut": "auto",  # "auto" (platform default) | "ctrl_c" | "ctrl_shift_c" | "disabled"
@@ -1529,7 +1529,7 @@ DEFAULT_CONFIG = {
         # because they look precise enough to compare against the provider.
         # Set this to True to re-enable the surfaces with the understanding
         # that the numbers are a local lower-bound estimate, not billing.
-        "show_token_analytics": False,
+        "show_token_analytics": True,
         # OAuth gate configuration (engaged when ``--host`` is set and
         # ``--insecure`` is not). The bundled Nous Portal plugin reads
         # both keys at startup; they are the canonical surface for these
@@ -1600,7 +1600,7 @@ DEFAULT_CONFIG = {
 
     # Privacy settings
     "privacy": {
-        "redact_pii": False,  # When True, hash user IDs and strip phone numbers from LLM context
+        "redact_pii": True,  # When True, hash user IDs and strip phone numbers from LLM context
     },
     
     # Text-to-speech configuration
@@ -1633,7 +1633,7 @@ DEFAULT_CONFIG = {
             # Optional local Markdown/text file with Gemini TTS performance
             # direction. It may include AUDIO PROFILE, SCENE, DIRECTOR'S NOTES,
             # SAMPLE CONTEXT, and either a `{transcript}` placeholder or no
-            # transcript section; Hermes appends the live transcript when absent.
+            # transcript section; OpenComputer appends the live transcript when absent.
             "persona_prompt_file": "",
         },
         "xai": {
@@ -1792,13 +1792,13 @@ DEFAULT_CONFIG = {
     # Goals — persistent cross-turn goals (Ralph-style loop).
     # After every turn, a lightweight judge call asks the auxiliary model
     # whether the active /goal is satisfied by the assistant's last
-    # response. If not, Hermes feeds a continuation prompt back into the
+    # response. If not, OpenComputer feeds a continuation prompt back into the
     # same session and keeps working until the goal is done, the turn
     # budget is exhausted, or the user pauses/clears it. Judge failures
     # fail OPEN (continue) so a flaky judge never wedges progress — the
     # turn budget is the real backstop.
     "goals": {
-        # Max continuation turns before Hermes auto-pauses the goal and
+        # Max continuation turns before OpenComputer auto-pauses the goal and
         # asks the user to /goal resume. Protects against judge false
         # negatives (goal actually done but judge says continue) and
         # unbounded model spend on fuzzy / unachievable goals.
@@ -1834,7 +1834,7 @@ DEFAULT_CONFIG = {
         # agent, which can retry with the flagged content removed.
         # External hub installs (trusted/community sources) are always
         # scanned regardless of this setting.
-        "guard_agent_created": False,
+        "guard_agent_created": True,
         # Approval gate for skill_manage (create/edit/patch/write_file/delete/
         # remove_file), applied to BOTH foreground agent turns and the
         # background self-improvement review fork.
@@ -1858,7 +1858,7 @@ DEFAULT_CONFIG = {
     # and patch drift. Runs inactivity-triggered from session start — no
     # cron daemon.
     #
-    # See `hermes curator status` for the last run summary.
+    # See `oc curator status` for the last run summary.
     "curator": {
         "enabled": True,
         # How long to wait between curator runs (hours).  Default: 7 days.
@@ -1872,7 +1872,7 @@ DEFAULT_CONFIG = {
         "archive_after_days": 90,
         # Also prune (archive) bundled built-in skills after the inactivity
         # period, not just agent-created ones. ON by default. Built-ins are
-        # normally restored on every `hermes update`, so pruning them only
+        # normally restored on every `oc update`, so pruning them only
         # sticks because a suppression list tells the re-seeder to leave them
         # archived. Hub-installed skills are NEVER pruned here — they have an
         # external upstream owner. Built-ins accrue usage telemetry and their
@@ -1884,7 +1884,7 @@ DEFAULT_CONFIG = {
         # Pre-run backup: before every real curator pass (dry-run is
         # skipped), snapshot ~/.hermes/skills/ into
         # ~/.hermes/skills/.curator_backups/<utc-iso>/skills.tar.gz so the
-        # user can roll back with `hermes curator rollback`.
+        # user can roll back with `oc curator rollback`.
         "backup": {
             "enabled": True,
             "keep": 5,  # retain last N regular snapshots
@@ -1952,7 +1952,7 @@ DEFAULT_CONFIG = {
         # stop-and-swap — the Grok-voice-mode feel. discord.py ships no mixer;
         # this is implemented in plugins/platforms/discord/voice_mixer.py.
         "voice_fx": {
-            "enabled": False,         # master switch for the mixer subsystem
+            "enabled": True,         # master switch for the mixer subsystem
             "ambient_enabled": True,  # play the idle "thinking" bed while tools run
             "ambient_path": "",       # custom loop audio file; "" = synthesised pad
             "ambient_gain": 0.18,     # idle bed loudness, 0.0–1.0
@@ -1972,14 +1972,14 @@ DEFAULT_CONFIG = {
     # WhatsApp platform settings (gateway mode)
     "whatsapp": {
         # Reply prefix prepended to every outgoing WhatsApp message.
-        # Default (None) uses the built-in "⚕ *Hermes Agent*" header.
+        # Default (None) uses the built-in "⚕ *OpenComputer*" header.
         # Set to "" (empty string) to disable the header entirely.
         # Supports \n for newlines, e.g. "🤖 *My Bot*\n──────\n"
     },
 
     # Telegram platform settings (gateway mode)
     "telegram": {
-        "reactions": False,            # Add 👀/✅/❌ reactions to messages during processing
+        "reactions": True,            # Add 👀/✅/❌ reactions to messages during processing
         "channel_prompts": {},         # Per-chat/topic ephemeral system prompts (topics inherit from parent group)
         "allowed_chats": "",           # If set, bot ONLY responds in these group/supergroup chat IDs (whitelist)
     },
@@ -2063,18 +2063,18 @@ DEFAULT_CONFIG = {
         "tirith_timeout": 5,
         "tirith_fail_open": True,
         "website_blocklist": {
-            "enabled": False,
+            "enabled": True,
             "domains": [],
             "shared_files": [],
         },
         # Acknowledged supply-chain security advisories. Each entry is the
         # ID of an advisory the user has read and acted on (uninstalled the
         # compromised package, rotated credentials). Acked advisories no
-        # longer trigger the startup banner. Add via `hermes doctor --ack
+        # longer trigger the startup banner. Add via `oc doctor --ack
         # <id>`; remove by editing the list directly. See
         # ``hermes_cli/security_advisories.py`` for the catalog.
         "acked_advisories": [],
-        # Allow Hermes to lazy-install opt-in backend packages from PyPI
+        # Allow OpenComputer to lazy-install opt-in backend packages from PyPI
         # the first time the user enables a backend that needs them
         # (e.g. installing ``elevenlabs`` when the user picks ElevenLabs as
         # their TTS provider). Set to false to require explicit
@@ -2098,7 +2098,7 @@ DEFAULT_CONFIG = {
     # Kanban multi-agent coordination — controls the dispatcher loop that
     # spawns workers for ready tasks. The dispatcher ticks every N seconds
     # (default 60), reclaims stale claims, promotes dependency-satisfied
-    # todos to ready, and fires `hermes -p <assignee> chat -q ...` for
+    # todos to ready, and fires `oc -p <assignee> chat -q ...` for
     # each claimable ready task. One dispatcher per profile is sufficient;
     # running more than one on the same kanban.db will race for claims.
     "kanban": {
@@ -2141,7 +2141,7 @@ DEFAULT_CONFIG = {
         "max_in_progress_per_profile": None,
         # When true, the kanban dispatcher auto-runs the decomposer on
         # tasks that land in Triage (every dispatcher tick). When false,
-        # decomposition is manual via `hermes kanban decompose <id>` or
+        # decomposition is manual via `oc kanban decompose <id>` or
         # the dashboard's Decompose button.
         "auto_decompose": True,
         # Max triage tasks to decompose per dispatcher tick. Prevents a
@@ -2177,7 +2177,7 @@ DEFAULT_CONFIG = {
     # in the model-facing tools array with three bridge tools —
     # tool_search / tool_describe / tool_call — and surfaced on demand.
     #
-    # Core Hermes tools (terminal, read_file, write_file, patch,
+    # Core OpenComputer tools (terminal, read_file, write_file, patch,
     # search_files, todo, memory, browser_*, etc.) are NEVER deferred.
     # See tools/tool_search.py for full design notes and the
     # openclaw-tool-search-report PDF in this PR for the rationale.
@@ -2219,7 +2219,7 @@ DEFAULT_CONFIG = {
         "enabled": True,
         "url": "https://hermes-agent.nousresearch.com/docs/api/model-catalog.json",
         # Disk cache TTL in hours.  Beyond this, the CLI refetches on the
-        # next /model or `hermes model` invocation; network failures
+        # next /model or `oc model` invocation; network failures
         # silently fall back to the stale cache.
         "ttl_hours": 1,
         # Optional per-provider override URLs for third parties that want
@@ -2250,7 +2250,7 @@ DEFAULT_CONFIG = {
         # can hand back any file that isn't a credential.
         #
         # When true, fall back to the older allowlist+recency-window
-        # behavior: files must live under the Hermes cache, under
+        # behavior: files must live under the OpenComputer cache, under
         # ``media_delivery_allow_dirs``, or be freshly produced inside the
         # ``trust_recent_files_seconds`` window. Recommended for
         # public-facing gateways where prompt injection from one user
@@ -2258,7 +2258,7 @@ DEFAULT_CONFIG = {
         # user. Bridged to HERMES_MEDIA_DELIVERY_STRICT.
         "strict": False,
         # Extra directories from which model-emitted bare file paths may be
-        # uploaded as native gateway attachments. Files inside the Hermes
+        # uploaded as native gateway attachments. Files inside the OpenComputer
         # cache (~/.hermes/cache/{documents,images,audio,video,screenshots})
         # are always trusted; this list adds operator-controlled roots
         # (project dirs, scratch dirs, mounted shares). Accepts a list of
@@ -2291,7 +2291,7 @@ DEFAULT_CONFIG = {
     "streaming": {
         # Master switch. When false, each response is delivered as a single
         # final message (no progressive updates).
-        "enabled": False,
+        "enabled": True,
         # Transport selection:
         #   "auto"  — prefer native draft streaming where the platform
         #             supports it (Telegram DMs via sendMessageDraft,
@@ -2333,7 +2333,7 @@ DEFAULT_CONFIG = {
         # silently deleting it could surprise users.  Opt in explicitly.
         "auto_prune": False,
         # How many days of ended-session history to keep.  Matches the
-        # default of ``hermes sessions prune``.
+        # default of ``oc sessions prune``.
         "retention_days": 90,
         # VACUUM after a prune that actually deleted rows.  SQLite does not
         # reclaim disk space on DELETE — freed pages are just reused on
@@ -2354,7 +2354,7 @@ DEFAULT_CONFIG = {
         # no consumer outside their own overwrite guard and accumulated
         # GBs of disk on heavy users.  Opt in only if you have an external
         # tool that consumes the JSON files directly.
-        "write_json_snapshots": False,
+        "write_json_snapshots": True,
     },
 
     # Contextual first-touch onboarding hints (see agent/onboarding.py).
@@ -2370,22 +2370,22 @@ DEFAULT_CONFIG = {
         "profile_build": "ask",
     },
 
-    # ``hermes update`` behaviour.
+    # ``oc update`` behaviour.
     "updates": {
-        # Run a full ``hermes backup``-style zip of HERMES_HOME before every
-        # ``hermes update``.  Backups land in ``<HERMES_HOME>/backups/`` and
-        # can be restored with ``hermes import <path>``.  Off by default —
+        # Run a full ``oc backup``-style zip of HERMES_HOME before every
+        # ``oc update``.  Backups land in ``<HERMES_HOME>/backups/`` and
+        # can be restored with ``oc import <path>``.  Off by default —
         # on large HERMES_HOME directories the zip can add minutes to every
         # update.  Set to true to re-enable, or pass ``--backup`` to opt in
         # for a single update run.
-        "pre_update_backup": False,
+        "pre_update_backup": True,
         # How many pre-update backup zips to retain.  Older ones are pruned
         # automatically after each successful backup.  Values below 1 are
         # floored to 1 — the backup just created is always preserved.  To
         # disable backups entirely, set ``pre_update_backup: false`` above
         # rather than ``backup_keep: 0``.
         "backup_keep": 5,
-        # What `hermes update` does with uncommitted local changes to the
+        # What `oc update` does with uncommitted local changes to the
         # source tree when it runs NON-interactively — i.e. triggered from
         # the desktop/chat app or the gateway, where there's no TTY to answer
         # a restore prompt. Interactive (terminal) updates are unaffected:
@@ -2454,7 +2454,7 @@ DEFAULT_CONFIG = {
     # X (Twitter) Search via xAI's built-in x_search Responses tool.
     # The tool registers when xAI credentials are available (SuperGrok
     # OAuth or XAI_API_KEY) AND the x_search toolset is enabled in
-    # `hermes tools`. These settings tune the backing Responses API call.
+    # `oc tools`. These settings tune the backing Responses API call.
     "x_search": {
         # xAI model used for the Responses call. grok-4.20-reasoning is
         # the recommended default; any Grok model with x_search tool
@@ -2502,7 +2502,7 @@ DEFAULT_CONFIG = {
             # https://vault.bitwarden.eu for EU Cloud, or your own URL
             # for self-hosted Bitwarden.  Plumbed into the bws subprocess
             # as BWS_SERVER_URL.  Prompted for during
-            # `hermes secrets bitwarden setup`.
+            # `oc secrets bitwarden setup`.
             "server_url": "",
         },
     },
@@ -2945,7 +2945,7 @@ OPTIONAL_ENV_VARS = {
         "category": "provider",
     },
     "AZURE_FOUNDRY_BASE_URL": {
-        "description": "Azure Foundry base URL (set via 'hermes model' for endpoint-specific config)",
+        "description": "Azure Foundry base URL (set via 'oc model' for endpoint-specific config)",
         "prompt": "Azure Foundry base URL",
         "url": None,
         "password": False,
@@ -3011,7 +3011,7 @@ OPTIONAL_ENV_VARS = {
         "advanced": True,
     },
     "TOOL_GATEWAY_USER_TOKEN": {
-        "description": "Explicit Nous Subscriber access token for tool-gateway requests (optional; otherwise read from the Hermes auth store)",
+        "description": "Explicit Nous Subscriber access token for tool-gateway requests (optional; otherwise read from the OpenComputer auth store)",
         "prompt": "Tool-gateway user token",
         "url": None,
         "password": True,
@@ -3539,15 +3539,15 @@ OPTIONAL_ENV_VARS = {
         "advanced": True,
     },
     "GATEWAY_PROXY_URL": {
-        "description": "URL of a remote Hermes API server to forward messages to (proxy mode). When set, the gateway handles platform I/O only — all agent work is delegated to the remote server. Use for Docker E2EE containers that relay to a host agent. Also configurable via gateway.proxy_url in config.yaml.",
-        "prompt": "Remote Hermes API server URL (e.g. http://192.168.1.100:8642)",
+        "description": "URL of a remote OpenComputer API server to forward messages to (proxy mode). When set, the gateway handles platform I/O only — all agent work is delegated to the remote server. Use for Docker E2EE containers that relay to a host agent. Also configurable via gateway.proxy_url in config.yaml.",
+        "prompt": "Remote OpenComputer API server URL (e.g. http://192.168.1.100:8642)",
         "url": None,
         "password": False,
         "category": "messaging",
         "advanced": True,
     },
     "GATEWAY_PROXY_KEY": {
-        "description": "Bearer token for authenticating with the remote Hermes API server (proxy mode). Must match the API_SERVER_KEY on the remote host.",
+        "description": "Bearer token for authenticating with the remote OpenComputer API server (proxy mode). Must match the API_SERVER_KEY on the remote host.",
         "prompt": "Remote API server auth key",
         "url": None,
         "password": True,
@@ -3730,7 +3730,7 @@ def get_missing_skill_config_vars() -> List[Dict[str, Any]]:
         all_vars = discover_all_skill_config_vars()
     except Exception as e:
         # A malformed SKILL.md, unreadable external skill dir, or similar
-        # should never break `hermes update`.  Skill-config prompting is a
+        # should never break `oc update`.  Skill-config prompting is a
         # post-migration nicety, not a blocker.
         import logging
         logging.getLogger(__name__).debug(
@@ -3866,7 +3866,7 @@ def _normalize_custom_provider_entry(
     if isinstance(models, dict) and models:
         normalized["models"] = models
     elif isinstance(models, list) and models:
-        # Hand-edited configs (and older Hermes versions) write ``models`` as
+        # Hand-edited configs (and older OpenComputer versions) write ``models`` as
         # a plain list of model ids. Preserve them by converting to the dict
         # shape downstream code expects; otherwise normalize silently drops
         # the list and /model shows the provider with (0) models.
@@ -4148,7 +4148,7 @@ def validate_config_structure(config: Optional[Dict[str, Any]] = None) -> List["
         try:
             config = load_config()
         except Exception:
-            return [ConfigIssue("error", "Could not load config.yaml", "Run 'hermes setup' to create a valid config")]
+            return [ConfigIssue("error", "Could not load config.yaml", "Run 'oc setup' to create a valid config")]
 
     issues: List[ConfigIssue] = []
 
@@ -4258,7 +4258,7 @@ def validate_config_structure(config: Optional[Dict[str, Any]] = None) -> List["
     if cp and not model_cfg:
         issues.append(ConfigIssue(
             "warning",
-            "custom_providers defined but no 'model' section — Hermes won't know which provider to use",
+            "custom_providers defined but no 'model' section — OpenComputer won't know which provider to use",
             "Add a model section:\n"
             "  model:\n"
             "    provider: custom\n"
@@ -4298,7 +4298,7 @@ def print_config_warnings(config: Optional[Dict[str, Any]] = None) -> None:
     for ci in issues:
         marker = "\033[31m✗\033[0m" if ci.severity == "error" else "\033[33m⚠\033[0m"
         lines.append(f"  {marker} {ci.message}")
-    lines.append("  \033[2mRun 'hermes doctor' for fix suggestions.\033[0m")
+    lines.append("  \033[2mRun 'oc doctor' for fix suggestions.\033[0m")
     sys.stderr.write("\n".join(lines) + "\n\n")
 
 
@@ -4688,7 +4688,7 @@ def migrate_config(interactive: bool = True, quiet: bool = False) -> Dict[str, A
                 else:
                     print(
                         "  ✓ Plugins now opt-in: no existing plugins to grandfather. "
-                        "Use `hermes plugins enable <name>` to activate."
+                        "Use `oc plugins enable <name>` to activate."
                     )
 
     # ── Version 22 → 23: seed curator defaults + create logs/curator/ ──
@@ -4697,7 +4697,7 @@ def migrate_config(interactive: bool = True, quiet: bool = False) -> Dict[str, A
     # unification under `auxiliary.curator`) never wrote the curator section
     # to disk. The runtime deep-merge in `load_config()` fills defaults at
     # read time, so the curator *functions*; but users can't see/edit the
-    # settings in their `config.yaml`, and `hermes curator status` has no
+    # settings in their `config.yaml`, and `oc curator status` has no
     # stable logs dir to point at until the first run mkdir's it.
     #
     # This migration:
@@ -5537,9 +5537,9 @@ def load_env() -> Dict[str, str]:
 
     The parsed dict is memoised keyed on the .env file mtime, because
     ``get_env_value()`` is called dozens-to-hundreds of times per
-    interactive menu render (`hermes tools`, `hermes setup`, status
+    interactive menu render (`oc tools`, `oc setup`, status
     panels). Sanitisation is O(lines × known-keys), so re-parsing the
-    same file on every call was burning ~300ms of CPU per `hermes tools`
+    same file on every call was burning ~300ms of CPU per `oc tools`
     menu paint on top of the OAuth-refresh slowness. The mtime check
     invalidates the cache when the user edits .env mid-process.
     """
@@ -5613,7 +5613,7 @@ def _sanitize_env_lines(lines: list) -> list:
     2. Stale ``KEY=***`` placeholder entries left by incomplete setup runs.
 
     Uses a known-keys set (OPTIONAL_ENV_VARS + _EXTRA_ENV_KEYS) so we only
-    split on real Hermes env var names, avoiding false positives from values
+    split on real OpenComputer env var names, avoiding false positives from values
     that happen to contain uppercase text with ``=``.
     """
     # Build the known keys set lazily from OPTIONAL_ENV_VARS + extras.
@@ -5920,7 +5920,7 @@ def reload_env() -> int:
     """Re-read ~/.hermes/.env into os.environ. Returns count of vars updated.
 
     Adds/updates vars that changed and removes vars that were deleted from
-    the .env file (but only vars known to Hermes — OPTIONAL_ENV_VARS and
+    the .env file (but only vars known to OpenComputer — OPTIONAL_ENV_VARS and
     _EXTRA_ENV_KEYS — to avoid clobbering unrelated environment).
     """
     env_vars = load_env()
@@ -5930,7 +5930,7 @@ def reload_env() -> int:
         if os.environ.get(key) != value:
             os.environ[key] = value
             count += 1
-    # Remove known Hermes vars that are no longer in .env
+    # Remove known OpenComputer vars that are no longer in .env
     for key in known_keys:
         if key not in env_vars and key in os.environ:
             del os.environ[key]
@@ -5969,7 +5969,7 @@ def show_config():
     
     print()
     print(color("┌─────────────────────────────────────────────────────────┐", Colors.CYAN))
-    print(color("│              ⚕ Hermes Configuration                    │", Colors.CYAN))
+    print(color("│              ⚕ OpenComputer Configuration                    │", Colors.CYAN))
     print(color("└─────────────────────────────────────────────────────────┘", Colors.CYAN))
     
     # Paths
@@ -6016,7 +6016,7 @@ def show_config():
         if _env_ghost is not None and str(_env_ghost).strip() != str(_cfg_max_turns).strip():
             print(color(
                 f"                ⚠ .env has stale HERMES_MAX_ITERATIONS={_env_ghost} "
-                f"(run 'hermes doctor --fix' to remove)",
+                f"(run 'oc doctor --fix' to remove)",
                 Colors.YELLOW,
             ))
     except Exception:
@@ -6373,7 +6373,7 @@ def config_command(args):
         if missing_config:
             print()
             print(color(f"  {len(missing_config)} new config option(s) available", Colors.YELLOW))
-            print("    Run 'hermes config migrate' to add them")
+            print("    Run 'oc config migrate' to add them")
         
         print()
     
@@ -6436,7 +6436,7 @@ _inject_profile_env_vars()
 # ── Platform-plugin env var injection ────────────────────────────────────────
 # Bundled platform plugins under ``plugins/platforms/*/plugin.yaml`` declare
 # their required env vars via ``requires_env``.  This mirror of
-# ``_inject_profile_env_vars`` surfaces them in ``hermes config`` UI so users
+# ``_inject_profile_env_vars`` surfaces them in ``oc config`` UI so users
 # can configure Teams / IRC / Google Chat without the core repo ever needing
 # to know they exist.
 #

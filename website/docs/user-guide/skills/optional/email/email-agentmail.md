@@ -14,7 +14,7 @@ Give the agent its own dedicated email inbox via AgentMail. Send, receive, and m
 
 | | |
 |---|---|
-| Source | Optional — install with `hermes skills install official/email/agentmail` |
+| Source | Optional — install with `opencomputer skills install official/email/agentmail` |
 | Path | `optional-skills/email/agentmail` |
 | Version | `1.0.0` |
 | Platforms | linux, macos, windows |
@@ -23,7 +23,7 @@ Give the agent its own dedicated email inbox via AgentMail. Send, receive, and m
 ## Reference: full SKILL.md
 
 :::info
-The following is the complete skill definition that Hermes loads when this skill is triggered. This is what the agent sees as instructions when the skill is active.
+The following is the complete skill definition that OpenComputer loads when this skill is triggered. This is what the agent sees as instructions when the skill is active.
 :::
 
 # AgentMail — Agent-Owned Email Inboxes
@@ -62,9 +62,9 @@ mcp_servers:
       AGENTMAIL_API_KEY: "am_your_key_here"
 ```
 
-### 3. Restart Hermes
+### 3. Restart OpenComputer
 ```bash
-hermes
+opencomputer
 ```
 All 11 AgentMail tools are now available automatically.
 
@@ -117,7 +117,7 @@ All 11 AgentMail tools are now available automatically.
 
 **Agent-to-human outreach:**
 ```
-1. create_inbox (username: "hermes-outreach")
+1. create_inbox (username: "opencomputer-outreach")
 2. send_message (to: user@example.com, subject: "Hello", text: "...")
 3. list_threads to check for replies
 ```
@@ -132,7 +132,7 @@ All 11 AgentMail tools are now available automatically.
 ## Verification
 After setup, test with:
 ```
-hermes --toolsets mcp -q "Create an AgentMail inbox called test-agent and tell me its email address"
+opencomputer --toolsets mcp -q "Create an AgentMail inbox called test-agent and tell me its email address"
 ```
 You should see the new inbox address returned.
 

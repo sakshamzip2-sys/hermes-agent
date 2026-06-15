@@ -1,10 +1,10 @@
 """
 Backup and import commands for hermes CLI.
 
-`hermes backup` creates a zip archive of the entire ~/.hermes/ directory
+`oc backup` creates a zip archive of the entire ~/.hermes/ directory
 (excluding the hermes-agent repo and transient files).
 
-`hermes import` restores from a backup zip, overlaying onto the current
+`oc import` restores from a backup zip, overlaying onto the current
 HERMES_HOME root.
 """
 
@@ -32,7 +32,7 @@ logger = logging.getLogger(__name__)
 
 # Directory names to skip entirely (matched against each path component)
 # ``hermes-agent`` is special-cased to root level only in ``_should_exclude``
-# so that skill directories like ``skills/autonomous-ai-agents/hermes-agent/``
+# so that skill directories like ``skills/autonomous-ai-agents/opencomputer-agent/``
 # are not accidentally excluded.
 _EXCLUDED_DIRS = {
     "hermes-agent",     # the codebase repo — re-clone instead
@@ -77,7 +77,7 @@ def _should_exclude(rel_path: Path) -> bool:
             continue
         # ``hermes-agent`` only matches at the root level (first component).
         # Nested directories with the same name — e.g.
-        # ``skills/autonomous-ai-agents/hermes-agent/`` — must be preserved.
+        # ``skills/autonomous-ai-agents/opencomputer-agent/`` — must be preserved.
         if part == "hermes-agent" and part != parts[0]:
             continue
         return True
@@ -150,11 +150,11 @@ def _format_size(nbytes: int) -> str:
 
 
 def run_backup(args) -> None:
-    """Create a zip backup of the Hermes home directory."""
+    """Create a zip backup of the OpenComputer home directory."""
     hermes_root = get_default_hermes_root()
 
     if not hermes_root.is_dir():
-        print(f"Error: Hermes home directory not found at {hermes_root}")
+        print(f"Error: OpenComputer home directory not found at {hermes_root}")
         sys.exit(1)
 
     # Determine output path
@@ -280,7 +280,7 @@ def run_backup(args) -> None:
 # ---------------------------------------------------------------------------
 
 def _validate_backup_zip(zf: zipfile.ZipFile) -> tuple[bool, str]:
-    """Check that a zip looks like a Hermes backup.
+    """Check that a zip looks like a OpenComputer backup.
 
     Returns (ok, reason).
     """
@@ -299,7 +299,7 @@ def _validate_backup_zip(zf: zipfile.ZipFile) -> tuple[bool, str]:
 
     if not found:
         return False, (
-            "zip does not appear to be a Hermes backup "
+            "zip does not appear to be a OpenComputer backup "
             "(no config.yaml, .env, or state databases found)"
         )
 
@@ -331,7 +331,7 @@ def _detect_prefix(zf: zipfile.ZipFile) -> str:
 
 
 def run_import(args) -> None:
-    """Restore a Hermes backup from a zip file."""
+    """Restore a OpenComputer backup from a zip file."""
     zip_path = Path(args.zipfile).expanduser().resolve()
 
     if not zip_path.is_file():
@@ -367,7 +367,7 @@ def run_import(args) -> None:
 
         if (has_config or has_env) and not args.force:
             print()
-            print("Warning: Target directory already has Hermes configuration.")
+            print("Warning: Target directory already has OpenComputer configuration.")
             print("Importing will overwrite existing files with backup contents.")
             print()
             try:
@@ -486,7 +486,7 @@ def run_import(args) -> None:
             for pname in gw_profiles:
                 print(f"  hermes -p {pname} gateway install")
 
-        print("Done. Your Hermes configuration has been restored.")
+        print("Done. Your OpenComputer configuration has been restored.")
 
 
 # ---------------------------------------------------------------------------
@@ -500,7 +500,7 @@ def run_import(args) -> None:
 # Entries may be individual files OR directories.  Directories are captured
 # recursively; missing entries are silently skipped.  Pairing data lives in
 # platform-specific JSON blobs outside state.db, so it's listed here explicitly
-# — `hermes update` snapshots this set before pulling so approved-user lists
+# — `oc update` snapshots this set before pulling so approved-user lists
 # are recoverable if anything goes wrong (issue #15733).
 _QUICK_STATE_FILES = (
     "state.db",
@@ -723,7 +723,7 @@ def restore_cron_jobs_if_emptied(
     snapshot_id: str,
     hermes_home: Optional[Path] = None,
 ) -> Optional[Dict[str, Any]]:
-    """Safety net for silent cron-job loss across ``hermes update``.
+    """Safety net for silent cron-job loss across ``oc update``.
 
     Config-version migrations have been observed to leave ``cron/jobs.json``
     valid-but-empty after an update, silently dropping every scheduled job
@@ -743,7 +743,7 @@ def restore_cron_jobs_if_emptied(
     Args:
         snapshot_id: The pre-update quick-snapshot id (from
             :func:`create_quick_snapshot`).
-        hermes_home: Override for the Hermes home directory (tests).
+        hermes_home: Override for the OpenComputer home directory (tests).
 
     Returns:
         ``None`` when no action was taken (the common, healthy path). On a
@@ -963,7 +963,7 @@ def create_pre_update_backup(
 
     Returns the path to the created zip, or ``None`` if no files were
     found or the backup could not be created.  Never raises — the caller
-    (``hermes update``) should continue even if the backup fails.
+    (``oc update``) should continue even if the backup fails.
     """
     hermes_root = hermes_home or get_default_hermes_root()
     if not hermes_root.is_dir():
@@ -988,7 +988,7 @@ def create_pre_update_backup(
 
 
 # ---------------------------------------------------------------------------
-# Pre-migration auto-backup (used by `hermes claw migrate`)
+# Pre-migration auto-backup (used by `oc claw migrate`)
 # ---------------------------------------------------------------------------
 
 _PRE_MIGRATION_PREFIX = "pre-migration-"
@@ -1028,11 +1028,11 @@ def create_pre_migration_backup(
     keep: int = _PRE_MIGRATION_DEFAULT_KEEP,
 ) -> Optional[Path]:
     """Create a full zip backup of HERMES_HOME under ``backups/`` before a
-    ``hermes claw migrate`` apply.
+    ``oc claw migrate`` apply.
 
     Shares implementation with :func:`create_pre_update_backup` via
     ``_write_full_zip_backup`` — same exclusions, same SQLite safe-copy,
-    restorable with ``hermes import <archive>``.  Writes to
+    restorable with ``oc import <archive>``.  Writes to
     ``<HERMES_HOME>/backups/pre-migration-<timestamp>.zip`` and auto-prunes
     old pre-migration backups.
 
@@ -1044,7 +1044,7 @@ def create_pre_migration_backup(
     if not hermes_root.is_dir():
         return None
 
-    # Reuses the shared backups/ directory so `hermes import` and the
+    # Reuses the shared backups/ directory so `oc import` and the
     # update-backup listing pick up pre-migration archives too.
     backup_dir = _pre_update_backup_dir(hermes_root)
     try:

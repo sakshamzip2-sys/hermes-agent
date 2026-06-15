@@ -1508,7 +1508,7 @@ def test_has_spawnable_ready_false_when_only_terminal_lanes(kanban_home, monkeyp
 
 def test_has_spawnable_ready_true_when_real_profile_present(kanban_home, monkeypatch):
     """``has_spawnable_ready`` returns True as soon as ANY ready task
-    has an assignee that maps to a real Hermes profile — preserves the
+    has an assignee that maps to a real OpenComputer profile — preserves the
     real "stuck" signal when a daily/agent task is queued."""
     from hermes_cli import profiles
     monkeypatch.setattr(
@@ -1942,7 +1942,7 @@ def test_cleanup_workspace_removes_managed_scratch_dir(kanban_home):
         kb.set_workspace_path(conn, t, ws)
         assert ws.is_dir()
         kb.complete_task(conn, t, result="ok")
-    assert not ws.exists(), "Hermes-managed scratch dir should be cleaned up"
+    assert not ws.exists(), "OpenComputer-managed scratch dir should be cleaned up"
 
 
 def test_cleanup_workspace_refuses_path_outside_scratch_root(kanban_home, tmp_path):
@@ -2106,13 +2106,13 @@ def test_is_managed_scratch_path_rejects_real_source_tree(kanban_home, tmp_path)
 
 
 def test_is_managed_scratch_path_rejects_kanban_metadata_subtrees(kanban_home):
-    """Hermes' own DB/metadata/log subtrees under ``<kanban_home>/kanban`` are NOT managed.
+    """OpenComputer' own DB/metadata/log subtrees under ``<kanban_home>/kanban`` are NOT managed.
 
     Regression guard for the Copilot finding on #28819: a scratch task whose
     ``workspace_path`` was mis-set to the kanban home, the logs dir, or a
     board's metadata dir (i.e. the board root itself, not its ``workspaces/``
     child) must be refused. Without this, the containment check would happily
-    ``shutil.rmtree`` Hermes' DB/metadata/logs on task completion.
+    ``shutil.rmtree`` OpenComputer' DB/metadata/logs on task completion.
     """
     kanban_root = kanban_home / "kanban"
     kanban_root.mkdir(parents=True, exist_ok=True)
@@ -2285,7 +2285,7 @@ def test_session_id_compose_with_tenant_filter(kanban_home):
 # Shared-board path resolution (issue #19348)
 #
 # The kanban board is a cross-profile coordination primitive: a worker
-# spawned with `hermes -p <profile>` must read/write the same kanban.db
+# spawned with `oc -p <profile>` must read/write the same kanban.db
 # as the dispatcher that claimed the task. These tests exercise the
 # path-resolution layer directly and would have caught the regression
 # where `kanban_db_path()` resolved to the active profile's HERMES_HOME.
@@ -2360,7 +2360,7 @@ class TestSharedBoardPaths:
         dispatcher_ws = kb.workspaces_root()
         dispatcher_log = kb.worker_log_path("t_handoff")
 
-        # Worker's perspective (profile activated by `hermes -p coder`).
+        # Worker's perspective (profile activated by `oc -p coder`).
         monkeypatch.setenv("HERMES_HOME", str(profile_home))
         worker_db = kb.kanban_db_path()
         worker_ws = kb.workspaces_root()
@@ -2388,7 +2388,7 @@ class TestSharedBoardPaths:
         self, tmp_path, monkeypatch
     ):
         # Docker profile shape: HERMES_HOME=/opt/hermes/profiles/coder;
-        # `get_default_hermes_root()` walks up to /opt/hermes because
+        # `get_default_hermes_root()` walks up to /opt/oc because
         # the immediate parent dir is named "profiles".
         custom_root = tmp_path / "opt" / "hermes"
         profile = custom_root / "profiles" / "coder"
@@ -2710,7 +2710,7 @@ def test_unlink_tasks_triggers_recompute_ready(kanban_home):
     complete_task and unblock_task.
 
     Before the fix, child stayed 'todo' indefinitely after unlink; only the
-    next dispatcher tick or a manual 'hermes kanban recompute' would promote it.
+    next dispatcher tick or a manual 'oc kanban recompute' would promote it.
     """
     with kb.connect() as conn:
         # A is done.
@@ -3009,7 +3009,7 @@ def test_resolve_hermes_argv_module_actually_runs():
         f"`{' '.join(argv)} --version` failed (rc={r.returncode}); "
         f"stderr={r.stderr[:200]!r}"
     )
-    assert "Hermes Agent" in r.stdout, f"unexpected output: {r.stdout[:200]!r}"
+    assert "OpenComputer" in r.stdout, f"unexpected output: {r.stdout[:200]!r}"
 
 
 # ---------------------------------------------------------------------------

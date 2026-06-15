@@ -325,7 +325,7 @@ async def test_first_run_slack_home_channel_onboarding_uses_parent_command(monke
     assert result == "ok"
     runner.adapters[Platform.SLACK].send.assert_awaited_once()
     onboarding = runner.adapters[Platform.SLACK].send.await_args.args[1]
-    assert "/hermes sethome" in onboarding
+    assert "/oc sethome" in onboarding
     assert "Type /sethome" not in onboarding
 
 
@@ -504,7 +504,7 @@ async def test_status_command_bypasses_active_session_guard():
 
     async def fake_handler(event):
         handler_called_with.append(event)
-        return "📊 **Hermes Gateway Status**\n**Agent Running:** Yes ⚡"
+        return "📊 **OpenComputer Gateway Status**\n**Agent Running:** Yes ⚡"
 
     # Concrete subclass to avoid abstract method errors
     class _ConcreteAdapter(BasePlatformAdapter):

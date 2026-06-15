@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Hermes CLI - Main entry point.
+OpenComputer CLI - Main entry point.
 
 Usage:
     hermes                     # Interactive chat (default)
@@ -33,10 +33,10 @@ Usage:
     hermes honcho tokens --dialectic N     # Set dialectic result char cap
     hermes honcho identity                 # Show AI peer identity representation
     hermes honcho identity <file>          # Seed AI peer identity from a file (SOUL.md etc.)
-    hermes honcho migrate                  # Step-by-step migration guide: OpenClaw native → Hermes + Honcho
+    hermes honcho migrate                  # Step-by-step migration guide: OpenClaw native → OpenComputer + Honcho
     hermes version             Show version
     hermes update              Update to latest version
-    hermes uninstall           Uninstall Hermes Agent
+    hermes uninstall           Uninstall OpenComputer
     hermes acp                 Run as an ACP server for editor integration
     hermes sessions browse     Interactive session picker with search
 
@@ -49,12 +49,12 @@ Usage:
 #
 # Guarded against ModuleNotFoundError because ``hermes_bootstrap`` is a
 # top-level module registered via pyproject.toml's ``py-modules`` list.
-# When the user upgrades code via ``git pull`` (or ``hermes update``
+# When the user upgrades code via ``git pull`` (or ``oc update``
 # crashes between ``git reset --hard`` and ``uv pip install -e .``), the
 # new code references ``hermes_bootstrap`` but the editable install's
 # ``.pth`` file still points at the old set of top-level modules.  Without
 # this guard, hermes crashes on import and the user can't run
-# ``hermes update`` to recover.  Missing the bootstrap means UTF-8 stdio
+# ``oc update`` to recover.  Missing the bootstrap means UTF-8 stdio
 # setup is skipped on Windows — degraded, not broken.  POSIX is unaffected.
 try:
     import hermes_bootstrap  # noqa: F401
@@ -72,7 +72,7 @@ def _set_process_title() -> None:
     Purely cosmetic — non-fatal on any platform.
 
     Strategy (try in order):
-      1. ``setproctitle`` (opt-in dep — installed via ``hermes tools`` or
+      1. ``setproctitle`` (opt-in dep — installed via ``oc tools`` or
          ``pip install setproctitle``, or bundled in a future release).
       2. ctypes ``prctl(PR_SET_NAME)`` (Linux only, 15-char limit).
       3. ctypes ``pthread_setname_np`` (macOS only, kernel thread name —
@@ -171,7 +171,7 @@ def _suppress_mouse_residue_early() -> None:
     if not _wants_tui_early():
         return
     try:
-        # Skip when stdout is redirected (`hermes --tui … >log`, CI capture):
+        # Skip when stdout is redirected (`oc --tui … >log`, CI capture):
         # the bytes can't reach the terminal anyway and would just pollute
         # the log with raw CSI.
         if not os.isatty(1):
@@ -228,7 +228,7 @@ def _print_fast_version_info() -> None:
     from hermes_cli import __release_date__, __version__
 
     project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))
-    print(f"Hermes Agent v{__version__} ({__release_date__})")
+    print(f"OpenComputer v{__version__} ({__release_date__})")
     print(f"Project: {project_root}")
     print(f"Python: {sys.version.split()[0]}")
 
@@ -237,7 +237,7 @@ def _print_fast_version_info() -> None:
 
 
 def _try_termux_ultrafast_version() -> bool:
-    """Handle ``hermes --version`` before config/logging imports on Termux."""
+    """Handle ``oc --version`` before config/logging imports on Termux."""
     if os.environ.get("HERMES_TERMUX_DISABLE_FAST_CLI") == "1":
         return False
     if not _is_termux_startup_environment_fast():
@@ -311,7 +311,7 @@ def _require_tty(command_name: str) -> None:
     """
     if not sys.stdin.isatty():
         print(
-            f"Error: 'hermes {command_name}' requires an interactive terminal.\n"
+            f"Error: 'oc {command_name}' requires an interactive terminal.\n"
             f"It cannot be run through a pipe or non-interactive subprocess.\n"
             f"Run it directly in your terminal instead.",
             file=sys.stderr,
@@ -341,11 +341,11 @@ def _apply_profile_override() -> None:
     profile_index = None
 
     def _inside_mcp_add_args(index: int) -> bool:
-        """True once argv reaches `hermes mcp add ... --args <command argv>`.
+        """True once argv reaches `oc mcp add ... --args <command argv>`.
 
         ``mcp add --args`` is command-argv passthrough. Flags after that point
         belong to the child MCP command (for example Docker MCP Toolkit's
-        ``--profile``), not to Hermes' own profile selector.
+        ``--profile``), not to OpenComputer' own profile selector.
         """
         try:
             mcp_index = argv.index("mcp", 0, index)
@@ -355,7 +355,7 @@ def _apply_profile_override() -> None:
         return True
 
     # 1. Check for explicit -p / --profile flag. Historically this worked even
-    # after the subcommand (`hermes chat -p coder`), so keep scanning broadly.
+    # after the subcommand (`oc chat -p coder`), so keep scanning broadly.
     # The exception is command-argv passthrough regions such as `mcp add --args`.
     value_flags = {
         "-z", "--oneshot",
@@ -414,7 +414,7 @@ def _apply_profile_override() -> None:
     # /opt/data/profiles/coder).  If HERMES_HOME points to the hermes root
     # instead (e.g. systemd hardcodes HERMES_HOME=/root/.hermes), we must
     # still read active_profile — the user may have switched profiles via
-    # `hermes profile use` and the gateway should honour that choice.
+    # `oc profile use` and the gateway should honour that choice.
     # See issue #22502.
     hermes_home_env = os.environ.get("HERMES_HOME", "")
     if profile_name is None and hermes_home_env:
@@ -629,7 +629,7 @@ def _read_git_revision_fingerprint(repo_root: Path) -> str | None:
                 return f"git:{ref}:{packed_sha}"
             # Ref name is known but unresolved — still stable across launches,
             # and the version/release fallback in the caller will invalidate
-            # after `hermes update`.
+            # after `oc update`.
             return f"git:{ref}:unresolved"
         return f"git:HEAD:{head}"
     except OSError:
@@ -722,7 +722,7 @@ def _has_any_provider_configured() -> bool:
     from hermes_cli.config import get_env_path, get_hermes_home, load_config
     from hermes_cli.auth import get_auth_status
 
-    # Determine whether Hermes itself has been explicitly configured (model
+    # Determine whether OpenComputer itself has been explicitly configured (model
     # in config that isn't the hardcoded default). Used below to gate external
     # tool credentials (Claude Code, Codex CLI) that shouldn't silently skip
     # the setup wizard on a fresh install.
@@ -811,8 +811,8 @@ def _has_any_provider_configured() -> bool:
             return True
 
     # Check for Claude Code OAuth credentials (~/.claude/.credentials.json)
-    # Only count these if Hermes has been explicitly configured — Claude Code
-    # being installed doesn't mean the user wants Hermes to use their tokens.
+    # Only count these if OpenComputer has been explicitly configured — Claude Code
+    # being installed doesn't mean the user wants OpenComputer to use their tokens.
     if _has_hermes_config:
         try:
             from agent.anthropic_adapter import (
@@ -1974,7 +1974,7 @@ def _launch_tui(
     env["NODE_OPTIONS"] = " ".join(_tokens)
     # HERMES_TUI_RESUME is an internal hand-off from the Python wrapper to the
     # Ink app.  Because we start from os.environ.copy(), an exported/stale value
-    # in the user's shell would otherwise make a plain `hermes --tui` try to
+    # in the user's shell would otherwise make a plain `oc --tui` try to
     # resume a non-existent session and leave the UI at "error: session not
     # found" with no live session.  Only forward a resume id that argparse
     # resolved for this invocation; direct `node ui-tui/dist/entry.js` users can
@@ -2004,7 +2004,7 @@ def _launch_tui(
             except Exception:
                 pass
 
-    # Exit code 42 = TUI requested an update. Relaunch as `hermes update` so
+    # Exit code 42 = TUI requested an update. Relaunch as `oc update` so
     # the user sees update output directly and gets the new version.
     # preserve_inherited=False ensures --tui and other flags are NOT carried
     # into the update subcommand.
@@ -2023,9 +2023,9 @@ def _pin_kanban_board_env() -> None:
     """Pin the active kanban board into ``HERMES_KANBAN_BOARD`` for the chat session.
 
     Without this, in-process tools (``kanban_*``) and shelled-out CLI calls
-    (``hermes kanban …``) resolve the board on different paths: the env-pin if
+    (``oc kanban …``) resolve the board on different paths: the env-pin if
     set, otherwise the global ``<root>/kanban/current`` file. A concurrent
-    ``hermes kanban boards switch`` from another session can flip the file
+    ``oc kanban boards switch`` from another session can flip the file
     mid-turn, so the same chat sees its tool calls hit board A while its shell
     calls hit board B (#20074). Pinning at chat boot mirrors what the
     dispatcher already does for spawned workers.
@@ -2044,12 +2044,12 @@ def _sync_bundled_skills_quietly() -> None:
     """Seed ``~/.hermes/skills/`` with the bundled skill library on first launch.
 
     Called from any CLI entrypoint that the user might use as their first
-    interaction with Hermes — chat, dashboard (the desktop GUI's backend),
+    interaction with OpenComputer — chat, dashboard (the desktop GUI's backend),
     and gateway. The skills_sync module is manifest-based and idempotent:
     skipped skills cost ~milliseconds, so calling this repeatedly is fine.
 
     Failures are swallowed because skills are an enhancement, not a hard
-    dependency. Hermes still functions without them; the user just sees an
+    dependency. OpenComputer still functions without them; the user just sees an
     empty skills library.
     """
     try:
@@ -2099,7 +2099,7 @@ def cmd_chat(args):
                 args.resume = resolved
             else:
                 print(f"No session found matching '{continue_val}'.")
-                print("Use 'hermes sessions list' to see available sessions.")
+                print("Use 'oc sessions list' to see available sessions.")
                 sys.exit(1)
         else:
             # -c with no argument — continue the most recent session
@@ -2142,7 +2142,7 @@ def cmd_chat(args):
             for _ref in _retired_xai_refs:
                 sys.stderr.write(f"  \033[33m⚠\033[0m {format_issue(_ref)}\n")
             sys.stderr.write(f"  \033[2mMigration guide: {MIGRATION_GUIDE_URL}\033[0m\n")
-            sys.stderr.write("  \033[2mRun 'hermes doctor' for details.\033[0m\n\n")
+            sys.stderr.write("  \033[2mRun 'oc doctor' for details.\033[0m\n\n")
     except Exception:
         pass
 
@@ -2150,7 +2150,7 @@ def cmd_chat(args):
     if not _has_any_provider_configured():
         print()
         print(
-            "It looks like Hermes isn't configured yet -- no API keys or providers found."
+            "It looks like OpenComputer isn't configured yet -- no API keys or providers found."
         )
         print()
         print("  Run:  hermes setup")
@@ -2175,7 +2175,7 @@ def cmd_chat(args):
             cmd_setup(args)
             return
         print()
-        print("You can run 'hermes setup' at any time to configure.")
+        print("You can run 'oc setup' at any time to configure.")
         sys.exit(1)
 
     # Start update check in background (runs while other init happens).
@@ -2303,7 +2303,7 @@ def cmd_whatsapp(args):
     current_mode = get_env_value("WHATSAPP_MODE") or ""
     if not current_mode:
         print()
-        print("How will you use WhatsApp with Hermes?")
+        print("How will you use WhatsApp with OpenComputer?")
         print()
         print("  1. Separate bot number (recommended)")
         print("     People message the bot's number directly — cleanest experience.")
@@ -2353,7 +2353,7 @@ def cmd_whatsapp(args):
     # We intentionally don't write WHATSAPP_ENABLED=true here.  If the user
     # aborts the wizard later (Ctrl+C, failed npm install, missed QR scan),
     # we'd otherwise leave .env claiming WhatsApp is ready when the bridge
-    # has no creds.json.  Every subsequent `hermes gateway` then paid a 30s
+    # has no creds.json.  Every subsequent `oc gateway` then paid a 30s
     # bridge-bootstrap timeout and queued WhatsApp for indefinite retries.
     # Now: aborted setup leaves WHATSAPP_ENABLED unset → gateway skips it.
     # Re-runs that already have WHATSAPP_ENABLED=true (from a prior
@@ -2488,7 +2488,7 @@ def cmd_whatsapp(args):
     if (session_dir / "creds.json").exists():
         # Only enable WhatsApp now that pairing actually succeeded.  If the
         # user Ctrl+C'd at any earlier step, WHATSAPP_ENABLED stays unset
-        # and `hermes gateway` skips it cleanly instead of paying a 30s
+        # and `oc gateway` skips it cleanly instead of paying a 30s
         # bridge timeout + queueing the platform for indefinite retries.
         save_env_value("WHATSAPP_ENABLED", "true")
         print("✓ WhatsApp paired successfully!")
@@ -2499,19 +2499,19 @@ def cmd_whatsapp(args):
             print("    2. Send a message to the bot's WhatsApp number")
             print("    3. The agent will reply automatically")
             print()
-            print("  Tip: Agent responses are prefixed with '⚕ Hermes Agent'")
+            print("  Tip: Agent responses are prefixed with '⚕ OpenComputer'")
         else:
             print("  Next steps:")
             print("    1. Start the gateway:  hermes gateway")
             print("    2. Open WhatsApp → Message Yourself")
             print("    3. Type a message — the agent will reply")
             print()
-            print("  Tip: Agent responses are prefixed with '⚕ Hermes Agent'")
+            print("  Tip: Agent responses are prefixed with '⚕ OpenComputer'")
             print("  so you can tell them apart from your own messages.")
         print()
         print("  Or install as a service: hermes gateway install")
     else:
-        print("⚠ Pairing may not have completed. Run 'hermes whatsapp' to try again.")
+        print("⚠ Pairing may not have completed. Run 'oc whatsapp' to try again.")
 
 
 def cmd_whatsapp_cloud(args):
@@ -2523,7 +2523,7 @@ def cmd_whatsapp_cloud(args):
     common setup mistakes (e.g. pasting a phone number into the Phone
     Number ID field).
 
-    Distinct from ``hermes whatsapp`` (the Baileys bridge wizard) — the
+    Distinct from ``oc whatsapp`` (the Baileys bridge wizard) — the
     two adapters are complementary, not alternatives. See
     ``hermes_cli/setup_whatsapp_cloud.py``.
     """
@@ -2547,7 +2547,7 @@ def cmd_postinstall(args):
 
     stamp_install_method("pip")
 
-    print("⚕ Hermes post-install bootstrap")
+    print("⚕ OpenComputer post-install bootstrap")
     print()
 
     for dep in ("node", "browser", "ripgrep", "ffmpeg"):
@@ -2592,7 +2592,7 @@ def _is_profile_api_key_provider(provider_id: str) -> bool:
 def select_provider_and_model(args=None):
     """Core provider selection + model picking logic.
 
-    Shared by ``cmd_model`` (``hermes model``) and the setup wizard
+    Shared by ``cmd_model`` (``oc model``) and the setup wizard
     (``setup_model_provider`` in setup.py).  Handles the full flow:
     provider picker, credential prompting, model selection, and config
     persistence.
@@ -2785,8 +2785,8 @@ def select_provider_and_model(args=None):
             active = active_def.id
         else:
             warning = (
-                f"Unknown provider '{effective_provider}'. Check 'hermes model' for "
-                "available providers, or run 'hermes doctor' to diagnose config "
+                f"Unknown provider '{effective_provider}'. Check 'oc model' for "
+                "available providers, or run 'oc doctor' to diagnose config "
                 "issues."
             )
             print(f"Warning: {warning} Falling back to auto provider detection.")
@@ -3034,14 +3034,14 @@ def _clear_stale_openai_base_url():
 # ─────────────────────────────────────────────────────────────────────────────
 # Auxiliary model configuration
 #
-# Hermes uses lightweight "auxiliary" models for side tasks (vision analysis,
+# OpenComputer uses lightweight "auxiliary" models for side tasks (vision analysis,
 # context compression, web extraction, session search, etc.). Each task has
 # its own provider+model pair in config.yaml under `auxiliary.<task>`.
 #
 # The UI lives behind "Configure auxiliary models..." at the bottom of the
-# `hermes model` provider picker. It does NOT re-run credential setup — it
+# `oc model` provider picker. It does NOT re-run credential setup — it
 # only routes already-authenticated providers to specific aux tasks. Users
-# configure new providers through the normal `hermes model` flow first.
+# configure new providers through the normal `oc model` flow first.
 # ─────────────────────────────────────────────────────────────────────────────
 
 # (task_key, display_name, short_description)
@@ -3182,7 +3182,7 @@ def _aux_config_menu() -> None:
         print()
         print("  Side tasks (vision, compression, web extraction, etc.) default")
         print('  to your main chat model.  "auto" means "use my main model" —')
-        print("  Hermes only falls back to a lightweight backend (OpenRouter,")
+        print("  OpenComputer only falls back to a lightweight backend (OpenRouter,")
         print("  Nous Portal) if the main model is unavailable.  Override a")
         print("  task below if you want it pinned to a specific provider/model.")
         print()
@@ -3231,7 +3231,7 @@ def _aux_select_for_task(task: str) -> None:
     Uses ``list_authenticated_providers()`` to only show providers the user
     has already configured. This avoids re-running OAuth/credential flows
     inside the aux picker — users set up new providers through the normal
-    ``hermes model`` flow, then route aux tasks to them here.
+    ``oc model`` flow, then route aux tasks to them here.
     """
     from hermes_cli.config import load_config
     from hermes_cli.model_switch import list_authenticated_providers
@@ -3487,7 +3487,7 @@ def _prompt_custom_api_mode_selection(base_url: str, current_api_mode: str = "")
         (
             "",
             "Auto-detect",
-            "Use Hermes URL heuristics; best for standard OpenAI-compatible endpoints.",
+            "Use OpenComputer URL heuristics; best for standard OpenAI-compatible endpoints.",
         ),
         (
             "chat_completions",
@@ -3714,7 +3714,7 @@ def _remove_custom_provider(config):
 # downstream call sites read `hermes_cli.main._PROVIDER_MODELS` directly,
 # so the symbol needs to be reachable as a module attribute. But importing
 # the catalog eagerly costs ~55ms on every `hermes` invocation — including
-# fast paths like `hermes --version` and slash-command dispatch that never
+# fast paths like `oc --version` and slash-command dispatch that never
 # touch the catalog. PEP 562 module-level __getattr__ defers the import
 # until first attribute access, so the cost is only paid by callers that
 # actually look up the catalog. Termux already defers via the same
@@ -3833,7 +3833,7 @@ def _prompt_reasoning_effort_selection(efforts, current_effort=""):
 
 
 def _prompt_api_key(pconfig, existing_key: str, provider_id: str = "") -> tuple:
-    """Shared API-key entry point for ``hermes setup`` / ``hermes model``.
+    """Shared API-key entry point for ``oc setup`` / ``oc model``.
 
     Handles both first-time entry and the already-configured case.  When a key
     is already present, offers [K]eep / [R]eplace / [C]lear so the user can
@@ -3906,7 +3906,7 @@ def _prompt_api_key(pconfig, existing_key: str, provider_id: str = "") -> tuple:
     if choice.startswith("c"):
         save_env_value(key_env, "")
         print(
-            f"  API key cleared.  Re-run `hermes setup` to configure {pconfig.name} again."
+            f"  API key cleared.  Re-run `oc setup` to configure {pconfig.name} again."
         )
         return "", True
 
@@ -3971,7 +3971,7 @@ def _run_anthropic_oauth_flow(save_env_value):
             from hermes_constants import display_hermes_home as _dhh_fn
 
             print(
-                f"    Hermes will use Claude's credential store directly instead of copying a setup-token into {_dhh_fn()}/.env."
+                f"    OpenComputer will use Claude's credential store directly instead of copying a setup-token into {_dhh_fn()}/.env."
             )
             return True
         return False
@@ -4042,7 +4042,7 @@ def _run_anthropic_oauth_flow(save_env_value):
 
 
 def cmd_login(args):
-    """Authenticate Hermes CLI with a provider."""
+    """Authenticate OpenComputer CLI with a provider."""
     from hermes_cli.auth import login_command
 
     login_command(args)
@@ -4086,7 +4086,7 @@ def cmd_webhook(args):
 def cmd_slack(args):
     """Slack integration helpers.
 
-    Dispatches ``hermes slack <subcommand>``. Currently supports:
+    Dispatches ``oc slack <subcommand>``. Currently supports:
       manifest — print or write a Slack app manifest with every gateway
                  command registered as a first-class slash.
     """
@@ -4100,7 +4100,7 @@ def cmd_slack(args):
             "  manifest   Generate a Slack app manifest with every gateway\n"
             "             command registered as a native slash\n"
             "\n"
-            "Run `hermes slack manifest -h` for details.",
+            "Run `oc slack manifest -h` for details.",
             file=sys.stderr,
         )
         return 1
@@ -4136,7 +4136,7 @@ def cmd_doctor(args):
 
 
 def cmd_security(args):
-    """Dispatch `hermes security <subcmd>`."""
+    """Dispatch `oc security <subcmd>`."""
     sub = getattr(args, "security_command", None)
     if sub in ("audit", None):
         from hermes_cli.security_audit import cmd_security_audit
@@ -4170,7 +4170,7 @@ def cmd_config(args):
 
 
 def cmd_backup(args):
-    """Back up Hermes home directory to a zip file."""
+    """Back up OpenComputer home directory to a zip file."""
     if getattr(args, "quick", False):
         from hermes_cli.backup import run_quick_backup
 
@@ -4182,7 +4182,7 @@ def cmd_backup(args):
 
 
 def cmd_import(args):
-    """Restore a Hermes backup from a zip file."""
+    """Restore a OpenComputer backup from a zip file."""
     from hermes_cli.backup import run_import
 
     run_import(args)
@@ -4237,7 +4237,7 @@ def cmd_version(args):
 
 
 def cmd_uninstall(args):
-    """Uninstall Hermes Agent (or just the Chat GUI with --gui)."""
+    """Uninstall OpenComputer (or just the Chat GUI with --gui)."""
     # Machine-readable install snapshot for the desktop app's uninstall UI.
     # Must run before any TTY gate — it's called from a non-interactive child.
     if getattr(args, "gui_summary", False):
@@ -4296,7 +4296,7 @@ def _clear_bytecode_cache(root: Path) -> int:
 
 # Critical files that every ``hermes`` invocation imports at startup. If any
 # of these fail to parse after a pull, the CLI is bricked — the user can't
-# even run ``hermes update`` again to roll forward. The post-pull syntax
+# even run ``oc update`` again to roll forward. The post-pull syntax
 # guard validates these and auto-rolls-back on failure.
 _UPDATE_CRITICAL_FILES = (
     "hermes_cli/main.py",
@@ -4373,7 +4373,7 @@ def _gateway_prompt(prompt_text: str, default: str = "", timeout: float = 300.0)
     Writes a prompt marker file so the gateway can forward the question to the
     user, then polls for a response file.  Falls back to *default* on timeout.
 
-    Used by ``hermes update --gateway`` so interactive prompts (stash restore,
+    Used by ``oc update --gateway`` so interactive prompts (stash restore,
     config migration) are forwarded to the messenger instead of being silently
     skipped.
     """
@@ -4625,7 +4625,7 @@ def _run_npm_install_deterministic(
     falls back to ``npm install`` only if ``npm ci`` fails (e.g. lockfile out of
     sync on a WIP checkout).  Without this, ``npm install`` on npm ≥ 10 silently
     rewrites committed lockfiles (stripping ``"peer": true`` etc.), which leaves
-    the working tree dirty and causes the next ``hermes update`` to stash the
+    the working tree dirty and causes the next ``oc update`` to stash the
     lockfile — repeatedly.
     """
     # unicode-animations' postinstall animates to /dev/tty (bypasses
@@ -4669,7 +4669,7 @@ def _build_web_ui(web_dir: Path, *, fatal: bool = False) -> bool:
     Args:
         web_dir: Path to the dashboard frontend source directory.
         fatal: If True, print error guidance and return False on failure
-               instead of a soft warning (used by ``hermes web``).
+               instead of a soft warning (used by ``oc web``).
 
     Returns True if the build succeeded or was skipped (no package.json).
     """
@@ -4797,9 +4797,9 @@ def _desktop_dist_exists(desktop_dir: Path) -> bool:
 # SHA-256 content hash of the source tree so that:
 #   - ``git checkout`` / ``git pull`` that touch mtimes but not content
 #     don't trigger a rebuild
-#   - ``hermes update`` can unconditionally call ``hermes desktop --build-only``
+#   - ``oc update`` can unconditionally call ``oc desktop --build-only``
 #     and it will skip if nothing actually changed
-#   - ``hermes desktop`` (interactive launch) skips the build when the
+#   - ``oc desktop`` (interactive launch) skips the build when the
 #     stamp matches, making repeated launches fast
 #
 # Stamp file: $HERMES_HOME/desktop-build-stamp.json
@@ -4881,7 +4881,7 @@ def _desktop_build_needed(desktop_dir: Path, project_root: Path, *, source_mode:
 
     Compares the current content hash against the saved stamp. Also returns
     True if the expected build artifact doesn't exist (e.g. first run after
-    ``hermes update`` that pulled new source but hasn't built yet).
+    ``oc update`` that pulled new source but hasn't built yet).
     """
     # If there's no build output at all, we definitely need to build
     if source_mode:
@@ -4934,19 +4934,19 @@ def _desktop_packaged_executable(desktop_dir: Path) -> Optional[Path]:
     """Return the current platform's unpacked Electron app executable."""
     release_dir = desktop_dir / "release"
     if sys.platform == "darwin":
-        candidates = list(release_dir.glob("mac*/Hermes.app/Contents/MacOS/Hermes"))
+        candidates = list(release_dir.glob("mac*/OpenComputer.app/Contents/MacOS/OpenComputer"))
     elif sys.platform == "win32":
         candidates = [
-            release_dir / "win-unpacked" / "Hermes.exe",
-            release_dir / "win-ia32-unpacked" / "Hermes.exe",
-            release_dir / "win-arm64-unpacked" / "Hermes.exe",
+            release_dir / "win-unpacked" / "OpenComputer.exe",
+            release_dir / "win-ia32-unpacked" / "OpenComputer.exe",
+            release_dir / "win-arm64-unpacked" / "OpenComputer.exe",
         ]
     else:
         candidates = [
             release_dir / "linux-unpacked" / "hermes",
-            release_dir / "linux-unpacked" / "Hermes",
+            release_dir / "linux-unpacked" / "OpenComputer",
             release_dir / "linux-arm64-unpacked" / "hermes",
-            release_dir / "linux-arm64-unpacked" / "Hermes",
+            release_dir / "linux-arm64-unpacked" / "OpenComputer",
         ]
 
     existing = [p for p in candidates if p.exists()]
@@ -4997,7 +4997,7 @@ def _purge_electron_build_cache(desktop_dir: Path) -> list[Path]:
     next ``pack`` re-downloads and re-stages from scratch.
 
     Root cause of the ``ENOENT … rename '…/linux-unpacked/electron' ->
-    '…/linux-unpacked/Hermes'`` desktop build failure: a corrupt zip in the
+    '…/linux-unpacked/OpenComputer'`` desktop build failure: a corrupt zip in the
     per-user Electron download cache (a partial download resumed into the same
     file leaves prepended/concatenated junk, or an interrupted write truncates
     it). electron-builder's ``app-builder unpack-electron`` extracts the
@@ -5055,9 +5055,9 @@ def _stop_desktop_processes_locking_build(desktop_dir: Path) -> list[int]:
     """Terminate any running desktop app executing from this build's ``release``
     dir so a rebuild can replace its (otherwise locked) executable.
 
-    On Windows a running ``Hermes.exe`` keeps an exclusive lock on
-    ``release/win-unpacked/Hermes.exe``. electron-builder's pack then can't
-    delete the stale binary and dies with ``remove …\\Hermes.exe: Access is
+    On Windows a running ``OpenComputer.exe`` keeps an exclusive lock on
+    ``release/win-unpacked/OpenComputer.exe``. electron-builder's pack then can't
+    delete the stale binary and dies with ``remove …\\OpenComputer.exe: Access is
     denied`` / ``ERR_ELECTRON_BUILDER_CANNOT_EXECUTE`` (before-pack hits the same
     EPERM cleaning the dir). The retry path repeats the failure because the lock
     is still held. POSIX lets you unlink a running binary, so this is a no-op
@@ -5065,7 +5065,7 @@ def _stop_desktop_processes_locking_build(desktop_dir: Path) -> list[int]:
 
     Scope is deliberately narrow: only processes whose executable lives *inside*
     this desktop's ``release`` tree are stopped — a packaged install elsewhere or
-    an unrelated "Hermes" process is never touched. Best-effort: never raises.
+    an unrelated "OpenComputer" process is never touched. Best-effort: never raises.
     Returns the PIDs we asked to stop.
     """
     if sys.platform != "win32":
@@ -5130,7 +5130,7 @@ def _desktop_macos_relaunchable_fixup(desktop_dir: Path) -> None:
     An ad-hoc-signed .app has no stable Designated Requirement (no Team ID), so
     when the self-updater rebuilds the bundle in place with a fresh build (a new,
     different cdhash) Gatekeeper/LaunchServices treats the changed code as
-    tampering and macOS reports "Hermes is damaged and can't be opened." The
+    tampering and macOS reports "OpenComputer is damaged and can't be opened." The
     bundle also inherits the com.apple.quarantine flag from the downloaded
     installer process chain. Both make the relaunch fail.
 
@@ -5147,7 +5147,7 @@ def _desktop_macos_relaunchable_fixup(desktop_dir: Path) -> None:
     exe = _desktop_packaged_executable(desktop_dir)
     if exe is None:
         return
-    # exe = .../Hermes.app/Contents/MacOS/Hermes  ->  app bundle = .../Hermes.app
+    # exe = .../OpenComputer.app/Contents/MacOS/OpenComputer  ->  app bundle = .../OpenComputer.app
     app = exe.parents[2]
     if not str(app).endswith(".app") or not app.is_dir():
         return
@@ -5168,7 +5168,7 @@ def _desktop_linux_sandbox_fixup(packaged_executable: Path) -> bool:
 
     sandbox = packaged_executable.parent / "chrome-sandbox"
     if not sandbox.exists():
-        print(f"✗ Hermes Desktop is missing Electron's Linux sandbox helper: {sandbox}")
+        print(f"✗ OpenComputer Desktop is missing Electron's Linux sandbox helper: {sandbox}")
         return False
 
     # Reject symlinks — chown/chmod must not follow an attacker-controlled
@@ -5188,7 +5188,7 @@ def _desktop_linux_sandbox_fixup(packaged_executable: Path) -> bool:
 
     sudo = shutil.which("sudo")
     if not sudo:
-        print("✗ Hermes Desktop requires sudo to configure Electron's Linux sandbox helper.")
+        print("✗ OpenComputer Desktop requires sudo to configure Electron's Linux sandbox helper.")
         return False
 
     print("→ Configuring Electron Linux sandbox helper (sudo required)...")
@@ -5282,7 +5282,7 @@ def cmd_gui(args: argparse.Namespace):
             build_script = "build" if source_mode else "pack"
             if not source_mode:
                 # A running desktop instance launched from release/win-unpacked
-                # holds Hermes.exe locked on Windows, so the pack can't replace
+                # holds OpenComputer.exe locked on Windows, so the pack can't replace
                 # it ("Access is denied" / ERR_ELECTRON_BUILDER_CANNOT_EXECUTE).
                 # Stop it first so the rebuild — including the installer's
                 # headless --update rebuild — succeeds instead of failing cryptically.
@@ -5292,7 +5292,7 @@ def cmd_gui(args: argparse.Namespace):
             build_result = subprocess.run([npm, "run", build_script], cwd=desktop_dir, env=env, check=False)
             if build_result.returncode != 0 and not source_mode:
                 # A corrupt cached Electron zip makes `pack` fail with an ENOENT
-                # on the final `electron` -> `Hermes` rename: unpack-electron
+                # on the final `electron` -> `OpenComputer` rename: unpack-electron
                 # extracted a partial tree (missing the 193 MB binary) from the
                 # bad zip. We do NOT try to prove the zip is corrupt ourselves —
                 # stdlib zipfile silently tolerates the prepended/concatenated
@@ -5309,7 +5309,7 @@ def cmd_gui(args: argparse.Namespace):
                     print("  ⚠ Desktop build failed; cleared cached Electron download and retrying once...")
                     for p in purged:
                         print(f"    - {p}")
-                    # The purge can't remove a win-unpacked tree whose Hermes.exe
+                    # The purge can't remove a win-unpacked tree whose OpenComputer.exe
                     # is still locked by a running instance; stop it before retry.
                     _stop_desktop_processes_locking_build(desktop_dir)
                     build_result = subprocess.run([npm, "run", build_script], cwd=desktop_dir, env=env, check=False)
@@ -5334,15 +5334,15 @@ def cmd_gui(args: argparse.Namespace):
                 print("✗ Desktop GUI build failed")
                 print(f"  Run manually:  cd apps/desktop && npm run {build_script}")
                 if sys.platform == "win32":
-                    print("  If this says \"Access is denied\" on Hermes.exe, close any")
-                    print("  running Hermes desktop window and retry.")
+                    print("  If this says \"Access is denied\" on OpenComputer.exe, close any")
+                    print("  running OpenComputer desktop window and retry.")
                 print("  If the log shows Electron download retries, rebuild via a mirror:")
                 print("    ELECTRON_MIRROR=<mirror-base-url> hermes desktop --force-build")
                 sys.exit(build_result.returncode or 1)
             packaged_executable = _desktop_packaged_executable(desktop_dir)
             if not source_mode:
                 # Locally-built apps are ad-hoc signed; make them relaunchable after
-                # an in-place self-update (otherwise macOS reports "Hermes is
+                # an in-place self-update (otherwise macOS reports "OpenComputer is
                 # damaged"). No-op on non-macOS and on real-identity builds.
                 _desktop_macos_relaunchable_fixup(desktop_dir)
 
@@ -5370,7 +5370,7 @@ def cmd_gui(args: argparse.Namespace):
         return
 
     if source_mode:
-        print("→ Launching Hermes Desktop from source build...")
+        print("→ Launching OpenComputer Desktop from source build...")
         launch_result = subprocess.run([npm, "exec", "--", "electron", "."], cwd=desktop_dir, env=env, check=False)
         sys.exit(launch_result.returncode)
 
@@ -5382,7 +5382,7 @@ def cmd_gui(args: argparse.Namespace):
     if not _desktop_linux_sandbox_fixup(packaged_executable):
         sys.exit(1)
 
-    print(f"→ Launching packaged Hermes Desktop: {packaged_executable}")
+    print(f"→ Launching packaged OpenComputer Desktop: {packaged_executable}")
     launch_result = subprocess.run([str(packaged_executable)], cwd=desktop_dir, env=env, check=False)
     sys.exit(launch_result.returncode)
 
@@ -5391,10 +5391,10 @@ def _find_stale_dashboard_pids(
     *,
     exclude_pids: set[int] | None = None,
 ) -> list[int]:
-    """Return PIDs of ``hermes dashboard`` processes other than ourselves.
+    """Return PIDs of ``oc dashboard`` processes other than ourselves.
 
-    ``hermes dashboard`` is a long-lived server process commonly started and
-    forgotten.  When ``hermes update`` replaces files on disk, the running
+    ``oc dashboard`` is a long-lived server process commonly started and
+    forgotten.  When ``oc update`` replaces files on disk, the running
     process keeps the old Python backend in memory while the JS bundle on
     disk is updated, causing a silent frontend/backend mismatch (e.g. new
     auth headers the old backend doesn't recognise → every API call 401s).
@@ -5406,8 +5406,8 @@ def _find_stale_dashboard_pids(
     ``_kill_stale_dashboard_processes`` for the kill.
 
     *exclude_pids* is an optional set of PIDs that must never be returned.
-    This is used by the Hermes Desktop Electron app to protect its own
-    backend child process: when the desktop spawns ``hermes dashboard`` as
+    This is used by the OpenComputer Desktop Electron app to protect its own
+    backend child process: when the desktop spawns ``oc dashboard`` as
     a backend and triggers an auto-update, the update must not kill the
     dashboard that the desktop itself manages.  The desktop sets the
     environment variable ``HERMES_DESKTOP_CHILD_PID`` on the spawned
@@ -5417,7 +5417,7 @@ def _find_stale_dashboard_pids(
     Returns an empty list on any scan error (missing ps/wmic, timeout, etc.).
     """
     patterns = [
-        "hermes dashboard",
+        "oc dashboard",
         "hermes_cli.main dashboard",
         "hermes_cli/main.py dashboard",
     ]
@@ -5495,7 +5495,7 @@ def _find_stale_dashboard_pids(
 
 
 def _print_curator_first_run_notice() -> None:
-    """Print a short heads-up about the skill curator after `hermes update`.
+    """Print a short heads-up about the skill curator after `oc update`.
 
     Only fires when the curator is enabled AND has no recorded run yet, which
     is exactly the window where the gateway ticker used to fire Curator
@@ -5540,11 +5540,11 @@ def _print_curator_recent_run_notice() -> None:
 
     The curator runs in the background (gateway tick + CLI session start),
     so users learn about skill consolidations only by stumbling into a
-    rename. ``hermes update`` is a high-attention surface — surface the
+    rename. ``oc update`` is a high-attention surface — surface the
     most recent run's rename map here, once.
 
     Show-once: state stamps ``last_run_summary_shown_at`` after printing.
-    Subsequent ``hermes update`` invocations skip the block until a newer
+    Subsequent ``oc update`` invocations skip the block until a newer
     curator run lands. Silent when the curator has never run, when the
     most recent summary has already been shown, or when the summary has
     no rename information to display (no archives).
@@ -5624,10 +5624,10 @@ def _format_time_ago(iso_ts: str) -> str:
 def _kill_stale_dashboard_processes(
     reason: str = "the running backend no longer matches the updated frontend",
 ) -> None:
-    """Kill running ``hermes dashboard`` processes.
+    """Kill running ``oc dashboard`` processes.
 
-    Called at the end of ``hermes update`` (default ``reason``) and also
-    from ``hermes dashboard --stop`` (which overrides ``reason``).  The
+    Called at the end of ``oc update`` (default ``reason``) and also
+    from ``oc dashboard --stop`` (which overrides ``reason``).  The
     dashboard has no service manager, so after a code update the running
     process is guaranteed to be serving stale Python against a
     freshly-updated JS bundle.  Leaving it alive produces silent
@@ -5642,7 +5642,7 @@ def _kill_stale_dashboard_processes(
     launch args (--host, --port, --insecure, --tui, --no-open).  The user
     restarts it manually; a hint is printed.
     """
-    # When the Hermes Desktop Electron app spawns this dashboard as a
+    # When the OpenComputer Desktop Electron app spawns this dashboard as a
     # backend child, it sets HERMES_DESKTOP_CHILD_PID so that the update
     # path can skip killing the desktop-managed process.  (#37532)
     exclude: set[int] | None = None
@@ -5746,7 +5746,7 @@ _warn_stale_dashboard_processes = _kill_stale_dashboard_processes
 
 
 def _update_via_zip(args):
-    """Update Hermes Agent by downloading a ZIP archive.
+    """Update OpenComputer by downloading a ZIP archive.
 
     Used on Windows when git file I/O is broken (antivirus, NTFS filter
     drivers causing 'Invalid argument' errors on file creation).
@@ -5770,8 +5770,8 @@ def _update_via_zip(args):
         print(
             "  This path runs when git file I/O is broken on the system. "
             "Either resolve the git-side breakage (typically an antivirus "
-            "or NTFS filter holding files open) and rerun `hermes update "
-            f"--branch {branch}`, or update against main with `hermes update`."
+            "or NTFS filter holding files open) and rerun `oc update "
+            f"--branch {branch}`, or update against main with `oc update`."
         )
         sys.exit(1)
     zip_url = (
@@ -6031,7 +6031,7 @@ def _restore_stashed_changes(
         print(
             "  Restoring them may reapply local customizations onto the updated codebase."
         )
-        print("  Review the result afterward if Hermes behaves unexpectedly.")
+        print("  Review the result afterward if OpenComputer behaves unexpectedly.")
         print("Restore local changes now? [Y/n]")
         if input_fn is not None:
             response = input_fn("Restore local changes now? [Y/n]", "y")
@@ -6095,7 +6095,7 @@ def _restore_stashed_changes(
     stash_selector = _resolve_stash_selector(git_cmd, cwd, stash_ref)
     if stash_selector is None:
         print(
-            "⚠ Local changes were restored, but Hermes couldn't find the stash entry to drop."
+            "⚠ Local changes were restored, but OpenComputer couldn't find the stash entry to drop."
         )
         print(
             "  The stash was left in place. You can remove it manually after checking the result."
@@ -6110,7 +6110,7 @@ def _restore_stashed_changes(
         )
         if drop.returncode != 0:
             print(
-                "⚠ Local changes were restored, but Hermes couldn't drop the saved stash entry."
+                "⚠ Local changes were restored, but OpenComputer couldn't drop the saved stash entry."
             )
             if drop.stdout.strip():
                 print(drop.stdout.strip())
@@ -6122,7 +6122,7 @@ def _restore_stashed_changes(
             _print_stash_cleanup_guidance(stash_ref, stash_selector)
 
     print("⚠ Local changes were restored on top of the updated codebase.")
-    print("  Review `git diff` / `git status` if Hermes behaves unexpectedly.")
+    print("  Review `git diff` / `git status` if OpenComputer behaves unexpectedly.")
     return True
 
 
@@ -6149,7 +6149,7 @@ def _discard_stashed_changes(
     if stash_selector is None:
         print(
             "⚠ Configured to discard local changes on non-interactive update, "
-            "but Hermes couldn't find the stash entry to drop."
+            "but OpenComputer couldn't find the stash entry to drop."
         )
         _print_stash_cleanup_guidance(stash_ref)
         return False
@@ -6162,7 +6162,7 @@ def _discard_stashed_changes(
     )
     if drop.returncode != 0:
         print(
-            "⚠ Configured to discard local changes, but Hermes couldn't drop "
+            "⚠ Configured to discard local changes, but OpenComputer couldn't drop "
             "the saved stash entry."
         )
         if drop.stderr.strip():
@@ -6175,7 +6175,7 @@ def _discard_stashed_changes(
 
 
 # =========================================================================
-# Fork detection and upstream management for `hermes update`
+# Fork detection and upstream management for `oc update`
 # =========================================================================
 
 OFFICIAL_REPO_URLS = {
@@ -6317,7 +6317,7 @@ def _sync_with_upstream_if_needed(git_cmd: list[str], cwd: Path) -> None:
 
         # Ask user if they want to add upstream
         print()
-        print("ℹ Your fork is not tracking the official Hermes repository.")
+        print("ℹ Your fork is not tracking the official OpenComputer repository.")
         print("  This means you may miss updates from NousResearch/hermes-agent.")
         print()
         try:
@@ -6420,7 +6420,7 @@ def _invalidate_update_cache():
     reports a stale "commits behind" count after a successful update.
 
     The git repo is shared across profiles — when one profile runs
-    ``hermes update``, every profile is now current.
+    ``oc update``, every profile is now current.
     """
     homes = []
     # Default profile home (Docker-aware — uses /opt/data in Docker)
@@ -6472,7 +6472,7 @@ def _load_installable_optional_extras(group: str = "all") -> list[str]:
     return referenced
 
 
-# Install-scoped breadcrumb dropped right before ``hermes update`` mutates the
+# Install-scoped breadcrumb dropped right before ``oc update`` mutates the
 # venv and cleared only after the dependency install verifies clean.  If a user
 # kills the update mid-install (Ctrl-C, terminal close, WSL OOM), the marker
 # survives and the next ``hermes`` launch finishes the install instead of
@@ -6504,7 +6504,7 @@ def _clear_update_incomplete_marker() -> None:
 
 
 def _recover_from_interrupted_install() -> None:
-    """Finish a dependency install that a prior ``hermes update`` left half-done.
+    """Finish a dependency install that a prior ``oc update`` left half-done.
 
     Triggered on launch when ``.update-incomplete`` is present — meaning the
     code was pulled but the dep install was killed before it verified clean.
@@ -6524,7 +6524,7 @@ def _recover_from_interrupted_install() -> None:
 
     Output: everything — our status lines AND the streamed pip/uv install
     (which inherits fd 1) — is routed to stderr.  Launches whose stdout is a
-    protocol stream (``hermes acp`` speaks JSON-RPC on stdout) must never get
+    protocol stream (``oc acp`` speaks JSON-RPC on stdout) must never get
     install noise on stdout.
     """
     if not _update_marker_path().exists():
@@ -6572,7 +6572,7 @@ def _recover_from_interrupted_install() -> None:
         sys.stdout = sys.stderr
 
         print(
-            "⚠ A previous `hermes update` was interrupted mid-install — "
+            "⚠ A previous `oc update` was interrupted mid-install — "
             "finishing dependency installation now..."
         )
 
@@ -6643,7 +6643,7 @@ def _run_install_with_heartbeat(
 
     Some resolvers/build backends (especially when compiling Rust/C extensions)
     can stay quiet for minutes. Emit a simple elapsed-time heartbeat so users
-    know ``hermes update`` is still progressing even if pip/uv itself is silent.
+    know ``oc update`` is still progressing even if pip/uv itself is silent.
     """
     done = threading.Event()
     start = _time.time()
@@ -6707,15 +6707,15 @@ def _detect_concurrent_hermes_instances(
 
     Windows blocks DELETE/REPLACE on a running .exe — and even RENAME on the
     same .exe when another process opened it without ``FILE_SHARE_DELETE``.
-    The Hermes Desktop Electron app spawns ``hermes.EXE`` as a backend child,
-    so during ``hermes update`` the user-invoked process and the desktop's
+    The OpenComputer Desktop Electron app spawns ``hermes.EXE`` as a backend child,
+    so during ``oc update`` the user-invoked process and the desktop's
     child both hold the same file. The quarantine rename then fails with
     ``[WinError 32]`` and uv inherits the lock.
 
     This helper enumerates processes whose ``exe`` matches one of the venv's
     shims (``hermes.exe`` / ``hermes-gateway.exe``) and returns ``(pid,
     process_name)`` pairs. The caller's own PID and its entire ancestor
-    chain are excluded so the running ``hermes update`` invocation never
+    chain are excluded so the running ``oc update`` invocation never
     reports itself — this matters on Windows where the setuptools .exe
     launcher (``hermes.exe``) is a separate process from the Python
     interpreter it loads (``python.exe``).
@@ -6746,7 +6746,7 @@ def _detect_concurrent_hermes_instances(
     # setuptools-generated hermes.exe launcher is a separate native process
     # that spawns python.exe (the interpreter that runs our code).
     # os.getpid() returns the Python PID, but the launcher (which holds the
-    # file lock) is the parent. Without excluding it, every ``hermes update``
+    # file lock) is the parent. Without excluding it, every ``oc update``
     # reports its own launcher as a concurrent instance — a false positive
     # (issues #29341, #34795).
     #
@@ -6757,7 +6757,7 @@ def _detect_concurrent_hermes_instances(
     #      across session/elevation boundaries), leaving the launcher shim in
     #      the candidate set and re-triggering the false positive.
     #   2. Only exclude ancestors whose exe is itself a shim. A genuine second
-    #      hermes.exe sitting *under* a non-Hermes parent (e.g. a Hermes
+    #      hermes.exe sitting *under* a non-OpenComputer parent (e.g. a OpenComputer
     #      Desktop backend child) must still be flagged, so we don't blanket-
     #      exclude unrelated ancestors like the shell or terminal.
     # Broad ``except Exception`` guards against partially-stubbed psutil in
@@ -6829,8 +6829,8 @@ def _format_concurrent_instances_message(
     lines.append(f"  Updating now would fail to overwrite {shim} because")
     lines.append("  Windows blocks REPLACE on a running executable.")
     lines.append("")
-    lines.append("  Close Hermes Desktop, exit any open `hermes` REPLs, and")
-    lines.append("  stop the gateway (`hermes gateway stop`) before retrying.")
+    lines.append("  Close OpenComputer Desktop, exit any open `hermes` REPLs, and")
+    lines.append("  stop the gateway (`oc gateway stop`) before retrying.")
     lines.append("")
     if matches:
         pid_args = " ".join(f"/PID {pid}" for pid, _ in matches)
@@ -6838,7 +6838,7 @@ def _format_concurrent_instances_message(
         lines.append("  stale, terminate them directly, then retry the update:")
         lines.append(f"      taskkill {pid_args} /F")
         lines.append("")
-    lines.append("  Override with `hermes update --force` if you've already")
+    lines.append("  Override with `oc update --force` if you've already")
     lines.append("  confirmed those processes will not write to the venv.")
     return "\n".join(lines)
 
@@ -6851,7 +6851,7 @@ def _quarantine_running_hermes_exe(
     Windows allows RENAMING a mapped/running executable (the kernel tracks the
     file by handle, not path), but blocks DELETE/REPLACE while it's loaded. uv
     needs to overwrite the entry-point shims during ``pip install -e .``;
-    when ``hermes update`` runs, ``hermes.exe`` IS the live process, and uv
+    when ``oc update`` runs, ``hermes.exe`` IS the live process, and uv
     fails with ``Access is denied. (os error 5)``.
 
     We rename live shims to ``hermes.exe.old.<unix-ms>`` first. uv then writes
@@ -6860,7 +6860,7 @@ def _quarantine_running_hermes_exe(
 
     Rename can still fail when *another* process has opened the .exe without
     ``FILE_SHARE_DELETE`` — typically AV real-time scanners with transient
-    handles (recovers in <1s), or the Hermes Desktop backend child process
+    handles (recovers in <1s), or the OpenComputer Desktop backend child process
     (won't recover until the user closes it). We mitigate:
 
     1. Retry up to ``max_attempts`` times with exponential backoff
@@ -6872,7 +6872,7 @@ def _quarantine_running_hermes_exe(
        update can complete; the user just needs to reboot to fully unload
        the stale image.
     3. Print a clear warning naming the most likely culprit (running
-       Hermes Desktop / gateway / REPL) and pointing to ``--force``.
+       OpenComputer Desktop / gateway / REPL) and pointing to ``--force``.
 
     Returns the list of (original, quarantined) pairs so the caller can roll
     back if the install itself fails before uv writes a replacement. Pairs
@@ -6939,8 +6939,8 @@ def _quarantine_running_hermes_exe(
             f"another process is holding it open)."
         )
         print(
-            "    Close Hermes Desktop, exit other `hermes` REPLs, stop the "
-            "gateway, or pause AV scanning, then re-run `hermes update`."
+            "    Close OpenComputer Desktop, exit other `hermes` REPLs, stop the "
+            "gateway, or pause AV scanning, then re-run `oc update`."
         )
 
     return moved
@@ -7053,7 +7053,7 @@ def _refresh_active_lazy_features() -> None:
 
     When pyproject.toml's ``[all]`` extra was slimmed down (May 2026), most
     optional backends moved to ``tools/lazy_deps.py`` and only install on
-    first use. ``hermes update`` runs ``uv pip install -e .[all]`` which
+    first use. ``oc update`` runs ``uv pip install -e .[all]`` which
     leaves those packages untouched — so if we bump a pin in
     :data:`LAZY_DEPS` (CVE response, transitive bug fix), users who already
     activated the backend keep the stale version forever.
@@ -7113,7 +7113,7 @@ def _refresh_active_lazy_features() -> None:
                 reason = reason[:200] + "..."
             print(f"  ⚠ {feature} failed to refresh: {reason}")
         print("  Backends keep their previously-installed version; rerun")
-        print("  `hermes update` once the upstream issue is resolved.")
+        print("  `oc update` once the upstream issue is resolved.")
 
 
 def _install_python_dependencies_with_optional_fallback(
@@ -7173,7 +7173,7 @@ def _install_python_dependencies_with_optional_fallback(
     # partial installs where a newly added base dep (e.g. ``pathspec``)
     # silently fails to land on top of a half-stale venv, and the only
     # symptom is a downstream subprocess crashing with ModuleNotFoundError
-    # hours later inside ``hermes update``'s desktop-rebuild or skill-sync
+    # hours later inside ``oc update``'s desktop-rebuild or skill-sync
     # stage. Reinstall with --reinstall to force resolution if anything is
     # missing, then re-verify so the failure surfaces here instead of
     # downstream.
@@ -7258,7 +7258,7 @@ def _verify_core_dependencies_installed(
         return
 
     # Run the check inside the venv Python — sys.executable here may be the
-    # outer Python that drove ``hermes update``, not the venv we just wrote
+    # outer Python that drove ``oc update``, not the venv we just wrote
     # to. The uv install_cmd_prefix encodes which environment we targeted
     # (either ``[uv, pip]`` with VIRTUAL_ENV in env, or
     # ``[sys.executable, -m, pip]`` for the in-process Python); resolve the
@@ -7316,7 +7316,7 @@ def _verify_core_dependencies_installed(
         )
     except subprocess.CalledProcessError as e:
         logger.warning("dep verification: repair install failed: %s", e)
-        print("  ⚠ Repair install failed; check `hermes update` output above.")
+        print("  ⚠ Repair install failed; check `oc update` output above.")
         return
 
     still_missing = _missing_deps()
@@ -7349,7 +7349,7 @@ def _verify_core_dependencies_installed(
         logger.warning("dep verification: per-package repair failed: %s", e)
         print(
             f"  ⚠ Could not install: {', '.join(still_missing)}. "
-            "Run `hermes update --force` after closing other hermes processes."
+            "Run `oc update --force` after closing other hermes processes."
         )
         return
 
@@ -7357,7 +7357,7 @@ def _verify_core_dependencies_installed(
     if final_missing:
         print(
             f"  ⚠ Still missing after repair: {', '.join(final_missing)}. "
-            "Run `hermes update --force` after closing other hermes processes."
+            "Run `oc update --force` after closing other hermes processes."
         )
     else:
         print("  ✓ All declared core dependencies now installed")
@@ -7470,7 +7470,7 @@ def _update_node_dependencies() -> None:
     # With a single workspace lockfile the root install would cover ALL
     # workspaces — but apps/desktop pulls in Electron as a devDependency,
     # and its postinstall downloads a ~200MB binary.  Most users don't
-    # need desktop during `hermes update`, so we install root-only first
+    # need desktop during `oc update`, so we install root-only first
     # then add just the workspaces the CLI/TUI/web build actually requires.
     # Desktop deps are installed on demand by the desktop launcher
     # (see _desktop_build_needed).
@@ -7515,7 +7515,7 @@ def _update_node_dependencies() -> None:
 
 
 class _UpdateOutputStream:
-    """Stream wrapper used during ``hermes update`` to survive terminal loss.
+    """Stream wrapper used during ``oc update`` to survive terminal loss.
 
     Wraps the process's original stdout/stderr so that:
 
@@ -7528,7 +7528,7 @@ class _UpdateOutputStream:
       stops.
 
     Combined with ``SIGHUP -> SIG_IGN`` installed by
-    ``_install_hangup_protection``, this makes ``hermes update`` safe to
+    ``_install_hangup_protection``, this makes ``oc update`` safe to
     run in a plain SSH session that might disconnect mid-install.
     """
 
@@ -7590,7 +7590,7 @@ class _UpdateOutputStream:
 def _install_hangup_protection(gateway_mode: bool = False):
     """Protect ``cmd_update`` from SIGHUP and broken terminal pipes.
 
-    Users commonly run ``hermes update`` in an SSH session or a terminal
+    Users commonly run ``oc update`` in an SSH session or a terminal
     that may close mid-install.  Without protection, ``SIGHUP`` from the
     terminal kills the Python process during ``pip install`` and leaves
     the venv half-installed; the documented workaround ("use screen /
@@ -7609,7 +7609,7 @@ def _install_hangup_protection(gateway_mode: bool = False):
     **intentionally left alone** — those are legitimate cancellation
     signals the user or OS sent on purpose.
 
-    In gateway mode (``hermes update --gateway``) the update is already
+    In gateway mode (``oc update --gateway``) the update is already
     spawned detached from a terminal, so this function is a no-op.
 
     Returns a dict that ``cmd_update`` can pass to
@@ -7702,7 +7702,7 @@ def _resolve_update_branch(args) -> str:
 
 
 def _cmd_update_check(branch: str = "main", *, branch_explicit: bool = False):
-    """Implement ``hermes update --check``: fetch and report without installing.
+    """Implement ``oc update --check``: fetch and report without installing.
 
     ``branch`` selects which branch the check compares against. Default is
     "main"; callers can pass another branch to ask "are there new commits
@@ -7717,7 +7717,7 @@ def _cmd_update_check(branch: str = "main", *, branch_explicit: bool = False):
     method = detect_install_method(PROJECT_ROOT)
     if method == "docker":
         # Docker can't ``git fetch`` from within the container.  Surface the
-        # same long-form ``docker pull`` guidance ``hermes update`` (apply
+        # same long-form ``docker pull`` guidance ``oc update`` (apply
         # path) uses — telling the user to "reinstall via curl" or that
         # ".git is missing" would point them at the wrong remediation.
         from hermes_cli.config import format_docker_update_message
@@ -7838,7 +7838,7 @@ def _ensure_fhs_path_guard() -> None:
 
     Mirrors the post-symlink probe added to ``scripts/install.sh`` so that
     existing FHS-layout root installs on RHEL/CentOS/Rocky/Alma 8+ get
-    repaired on ``hermes update`` without requiring a reinstall.  The
+    repaired on ``oc update`` without requiring a reinstall.  The
     installer's assumption that ``/usr/local/bin`` is on PATH for every
     standard shell breaks on those distros in non-login interactive shells
     (su, sudo -s, tmux panes, some web terminals): /etc/bashrc doesn't
@@ -7889,7 +7889,7 @@ def _ensure_fhs_path_guard() -> None:
 
     path_line = 'export PATH="/usr/local/bin:$PATH"'
     path_comment = (
-        "# Hermes Agent — ensure /usr/local/bin is on PATH " "(RHEL non-login shells)"
+        "# OpenComputer — ensure /usr/local/bin is on PATH " "(RHEL non-login shells)"
     )
     wrote_any = False
     for candidate in (".bashrc", ".bash_profile"):
@@ -7927,7 +7927,7 @@ def _run_pre_update_backup(args) -> None:
 
     Gated on ``updates.pre_update_backup`` in config (default false).  Off
     by default because the zip can add minutes to every update on large
-    HERMES_HOME directories.  The ``--backup`` flag on ``hermes update``
+    HERMES_HOME directories.  The ``--backup`` flag on ``oc update``
     opts in for a single run; ``--no-backup`` forces it off when config
     has it enabled.  Never raises — a backup failure should not block the
     update itself.
@@ -8023,7 +8023,7 @@ def _discard_lockfile_churn(git_cmd, repo_root):
 
     npm rewrites lockfiles non-deterministically at install/build time. On a
     managed install those diffs are never intentional, so we discard them so
-    ``hermes update`` sees a clean tree instead of autostashing every run.
+    ``oc update`` sees a clean tree instead of autostashing every run.
     Best-effort; only ever touches files named ``package-lock.json``.
     """
     try:
@@ -8056,7 +8056,7 @@ def _discard_lockfile_churn(git_cmd, repo_root):
 
 
 def cmd_update(args):
-    """Update Hermes Agent to the latest version.
+    """Update OpenComputer to the latest version.
 
     Thin wrapper around ``_cmd_update_impl``: installs hangup protection,
     runs the update, then restores stdio on the way out (even on
@@ -8070,7 +8070,7 @@ def cmd_update(args):
     )
 
     if is_managed():
-        managed_error("update Hermes Agent")
+        managed_error("update OpenComputer")
         return
 
     # Docker users can't ``git pull`` — the image excludes ``.git`` from
@@ -8085,7 +8085,7 @@ def cmd_update(args):
 
     if getattr(args, "check", False):
         # --check honors --branch so the "any new commits?" answer matches
-        # what a subsequent `hermes update --branch=<x>` would actually pull.
+        # what a subsequent `oc update --branch=<x>` would actually pull.
         branch = _resolve_update_branch(args)
         _cmd_update_check(
             branch=branch,
@@ -8106,7 +8106,7 @@ def cmd_update(args):
 
 
 def _cmd_update_pip(args):
-    """Update Hermes via pip (for PyPI installs)."""
+    """Update OpenComputer via pip (for PyPI installs)."""
     from hermes_cli import __version__
     from hermes_cli.config import is_uv_tool_install
 
@@ -8201,7 +8201,7 @@ def _cmd_update_impl(args, gateway_mode: bool):
             logger.debug("Could not read updates.non_interactive_local_changes: %s", exc)
             discard_local_changes = False
 
-    print("⚕ Updating Hermes Agent...")
+    print("⚕ Updating OpenComputer...")
     print()
 
     # On Windows, abort early if another hermes.exe is holding the venv shim
@@ -8445,7 +8445,7 @@ def _cmd_update_impl(args, gateway_mode: bool):
         # Capture the pre-pull SHA so we can auto-roll-back if the new code
         # has a syntax error in a critical-path file (PR #28452 incident:
         # orphan merge-conflict markers in hermes_cli/config.py bricked
-        # every user who ran ``hermes update`` for the 7 minutes between
+        # every user who ran ``oc update`` for the 7 minutes between
         # the bad commit and the fix landing).
         pre_pull_sha = _capture_head_sha(git_cmd, PROJECT_ROOT)
         try:
@@ -8506,7 +8506,7 @@ def _cmd_update_impl(args, gateway_mode: bool):
                     )
                     if rollback_result.returncode == 0:
                         print("  ✓ Rollback complete — your install is unchanged.")
-                        print("  Try ``hermes update`` again later once a fix lands.")
+                        print("  Try ``oc update`` again later once a fix lands.")
                     else:
                         print("  ✗ Rollback failed. Recover manually with:")
                         print(f"    cd {PROJECT_ROOT} && git reset --hard {pre_pull_sha}")
@@ -8636,12 +8636,12 @@ def _cmd_update_impl(args, gateway_mode: bool):
         _build_web_ui(PROJECT_ROOT / "web")
 
         # Rebuild the desktop app if the source tree changed since the last
-        # build.  ``hermes desktop --build-only`` uses the content-hash stamp
+        # build.  ``oc desktop --build-only`` uses the content-hash stamp
         # internally, so this is effectively a no-op when nothing changed.
         # Only bother if the user has a desktop app installed (indicated by
         # an existing packaged executable or desktop dist); people who have
-        # never run ``hermes desktop`` shouldn't be forced into a full
-        # Electron build by ``hermes update``.
+        # never run ``oc desktop`` shouldn't be forced into a full
+        # Electron build by ``oc update``.
         desktop_dir = PROJECT_ROOT / "apps" / "desktop"
         has_desktop_app = _desktop_packaged_executable(desktop_dir) is not None or _desktop_dist_exists(desktop_dir)
         if (desktop_dir / "package.json").exists() and shutil.which("npm") and has_desktop_app:
@@ -8655,7 +8655,7 @@ def _cmd_update_impl(args, gateway_mode: bool):
             if build_result.returncode != 0:
                 build_result = subprocess.run(_desktop_build_cmd, cwd=PROJECT_ROOT, check=False)
             if build_result.returncode != 0:
-                print("  ⚠ Desktop build failed (non-fatal; run `hermes desktop` to retry)")
+                print("  ⚠ Desktop build failed (non-fatal; run `oc desktop` to retry)")
 
         print()
         print("✓ Code updated!")
@@ -8812,7 +8812,7 @@ def _cmd_update_impl(args, gateway_mode: bool):
                 print("  ✓ Config format updated (no new settings to configure)")
             except Exception as _mig_err:
                 print(f"  ⚠️  Config format update failed: {_mig_err}")
-                print("     Run 'hermes config migrate' to retry.")
+                print("     Run 'oc config migrate' to retry.")
         elif needs_migration:
             print()
             # Show WHAT changed, not just a count, so the user can make an
@@ -8893,7 +8893,7 @@ def _cmd_update_impl(args, gateway_mode: bool):
                     print("  ℹ API keys require manual entry: hermes config migrate")
             else:
                 print()
-                print("Skipped. Run 'hermes config migrate' later to configure.")
+                print("Skipped. Run 'oc config migrate' later to configure.")
         else:
             print("  ✓ Configuration is up to date")
 
@@ -8931,7 +8931,7 @@ def _cmd_update_impl(args, gateway_mode: bool):
         # Most-recent curator run notice — show-once per run. Surfaces the
         # rename map (`old-name → umbrella`) on the high-attention update
         # surface so users learn about consolidations without having to
-        # check `hermes curator status`. Self-stamps after printing so it
+        # check `oc curator status`. Self-stamps after printing so it
         # never repeats for the same run.
         try:
             _print_curator_recent_run_notice()
@@ -8948,7 +8948,7 @@ def _cmd_update_impl(args, gateway_mode: bool):
         # Refresh the cua-driver binary used by the Computer Use toolset.
         # The upstream installer is gated on macOS and on the binary already
         # being on PATH, so this is a no-op for users who don't have it.
-        # Tying the refresh to ``hermes update`` gives users a predictable
+        # Tying the refresh to ``oc update`` gives users a predictable
         # cadence (matches when they pull new agent code) without adding
         # startup latency or a per-launch GitHub API call.
         try:
@@ -8962,7 +8962,7 @@ def _cmd_update_impl(args, gateway_mode: bool):
             logger.debug("cua-driver refresh failed: %s", e)
 
         # Write exit code *before* the gateway restart attempt.
-        # When running as ``hermes update --gateway`` (spawned by the gateway's
+        # When running as ``oc update --gateway`` (spawned by the gateway's
         # /update command), this process lives inside the gateway's systemd
         # cgroup.  A graceful SIGUSR1 restart keeps the drain loop alive long
         # enough for the exit-code marker to be written below, but the
@@ -9368,7 +9368,7 @@ def _cmd_update_impl(args, gateway_mode: bool):
                                     f"  ⚠ {svc_name} is a system service and restarting it needs root.\n"
                                     f"    Restart it manually to load the new version:\n"
                                     f"      sudo systemctl restart {svc_name}\n"
-                                    f"    To let `hermes update` restart it automatically, allow\n"
+                                    f"    To let `oc update` restart it automatically, allow\n"
                                     f"    passwordless sudo for systemctl, or run updates with sudo."
                                 )
                                 continue
@@ -9387,7 +9387,7 @@ def _cmd_update_impl(args, gateway_mode: bool):
                             # the RestartSec backoff and leave the unit
                             # dead.  Clearing the failed state first makes
                             # the restart idempotent.  Mirrors the recovery
-                            # path in `hermes gateway restart`
+                            # path in `oc gateway restart`
                             # (`systemd_restart()`) as of PR #20949.
                             subprocess.run(
                                 _manage_cmd + ["reset-failed", svc_name],
@@ -9615,11 +9615,11 @@ def _cmd_update_impl(args, gateway_mode: bool):
         except Exception as e:
             logger.debug("Gateway restart during update failed: %s", e)
 
-        # Warn if legacy Hermes gateway unit files are still installed.
+        # Warn if legacy OpenComputer gateway unit files are still installed.
         # When both hermes.service (from a pre-rename install) and the
         # current hermes-gateway.service are enabled, they SIGTERM-fight
         # for the same bot token (see PR #11909). Flagging here means
-        # every `hermes update` surfaces the issue until the user migrates.
+        # every `oc update` surfaces the issue until the user migrates.
         try:
             from hermes_cli.gateway import (
                 has_legacy_hermes_units,
@@ -9629,7 +9629,7 @@ def _cmd_update_impl(args, gateway_mode: bool):
 
             if supports_systemd_services() and has_legacy_hermes_units():
                 print()
-                print("⚠ Legacy Hermes gateway unit(s) detected:")
+                print("⚠ Legacy OpenComputer gateway unit(s) detected:")
                 for name, path, is_sys in _find_legacy_hermes_units():
                     scope = "system" if is_sys else "user"
                     print(f"    {path}  ({scope} scope)")
@@ -9669,7 +9669,7 @@ def _cmd_update_impl(args, gateway_mode: bool):
 def _coalesce_session_name_args(argv: list) -> list:
     """Join unquoted multi-word session names after -c/--continue and -r/--resume.
 
-    When a user types ``hermes -c Pokemon Agent Dev`` without quoting the
+    When a user types ``oc -c Pokemon Agent Dev`` without quoting the
     session name, argparse sees three separate tokens.  This function merges
     them into a single argument so argparse receives
     ``['-c', 'Pokemon Agent Dev']`` instead.
@@ -9764,7 +9764,7 @@ def cmd_profile(args):
     action = getattr(args, "profile_action", None)
 
     if action is None:
-        # Bare `hermes profile` — show current profile status
+        # Bare `oc profile` — show current profile status
         profile_name = get_active_profile_name()
         dhh = display_hermes_home()
         print(f"\nActive profile: {profile_name}")
@@ -10099,7 +10099,7 @@ def cmd_profile(args):
             print(f"Distribution: {dist_name}@{dist_version or '?'}")
             if dist_source:
                 print(f"Installed from: {dist_source}")
-            print(f"  (run `hermes profile info {name}` for full manifest)")
+            print(f"  (run `oc profile info {name}` for full manifest)")
         if alias_name:
             is_windows = sys.platform == "win32"
             wrapper = _get_wrapper_dir() / (f"{alias_name}.bat" if is_windows else alias_name)
@@ -10248,7 +10248,7 @@ def cmd_profile(args):
             if current is None:
                 print(
                     f"Error: Profile '{canon}' is not a distribution (no distribution.yaml). "
-                    "Only profiles installed via `hermes profile install` can be updated."
+                    "Only profiles installed via `oc profile install` can be updated."
                 )
                 sys.exit(1)
 
@@ -10274,7 +10274,7 @@ def cmd_profile(args):
             if plan.has_cron:
                 print(
                     "  Cron files were refreshed.  Review with:  "
-                    f"hermes -p {plan.manifest.name} cron list"
+                    f"oc -p {plan.manifest.name} cron list"
                 )
         except (DistributionError, ValueError) as e:
             print(f"Error: {e}")
@@ -10303,7 +10303,7 @@ def cmd_profile(args):
         if data.get("license"):
             print(f"License:      {data['license']}")
         if data.get("hermes_requires"):
-            print(f"Requires:     Hermes {data['hermes_requires']}")
+            print(f"Requires:     OpenComputer {data['hermes_requires']}")
         if data.get("source"):
             print(f"Source:       {data['source']}")
         if data.get("installed_at"):
@@ -10332,7 +10332,7 @@ def _render_distribution_plan(plan) -> None:
     if mf.author:
         print(f"  Author:   {mf.author}")
     if mf.hermes_requires:
-        print(f"  Requires: Hermes {mf.hermes_requires}")
+        print(f"  Requires: OpenComputer {mf.hermes_requires}")
     print(f"  Source:   {plan.provenance}")
     print(f"  Target:   {plan.target_dir}")
     if plan.existing:
@@ -10385,10 +10385,10 @@ def _render_distribution_plan(plan) -> None:
 
 
 def _report_dashboard_status() -> int:
-    """Print ``hermes dashboard`` PIDs and return the count.
+    """Print ``oc dashboard`` PIDs and return the count.
 
     Uses the same detection logic as ``_find_stale_dashboard_pids`` (the
-    current process is excluded, but since ``hermes dashboard --status``
+    current process is excluded, but since ``oc dashboard --status``
     runs in a short-lived CLI process that never matches the pattern,
     the exclusion is irrelevant here).
     """
@@ -10449,7 +10449,7 @@ def cmd_dashboard(args):
         if not pids:
             print("No hermes dashboard processes running.")
             sys.exit(0)
-        # Reuse the same SIGTERM-grace-SIGKILL path used after `hermes update`.
+        # Reuse the same SIGTERM-grace-SIGKILL path used after `oc update`.
         _kill_stale_dashboard_processes(reason="requested via --stop")
         # _kill_stale_dashboard_processes prints outcomes itself.  Exit 0 if
         # we killed at least one, 1 if they were all unkillable.
@@ -10527,7 +10527,7 @@ def cmd_dashboard(args):
             os.execvpe(sys.executable, reexec_argv, env)
 
     # Attach gui.log early so dashboard startup/build failures are captured in
-    # the same logs directory as every other Hermes surface.
+    # the same logs directory as every other OpenComputer surface.
     try:
         from hermes_logging import setup_logging as _setup_logging_gui
         _setup_logging_gui(mode="gui")
@@ -10651,7 +10651,7 @@ def cmd_prompt_size(args):
 
 
 def cmd_logs(args):
-    """View and filter Hermes log files."""
+    """View and filter OpenComputer log files."""
     from hermes_cli.logs import tail_log, list_logs
 
     log_name = getattr(args, "log_name", "agent") or "agent"
@@ -10699,7 +10699,7 @@ _BUILTIN_SUBCOMMANDS = frozenset(
 
 
 # Top-level flags that take a value. Needed by ``_first_positional_argv``
-# so that in ``hermes -m gpt5 chat``, ``gpt5`` is correctly skipped as a
+# so that in ``oc -m gpt5 chat``, ``gpt5`` is correctly skipped as a
 # flag value rather than misclassified as a subcommand. Kept in sync with
 # the top-level flags declared in ``hermes_cli/_parser.py``.
 #
@@ -10728,7 +10728,7 @@ def _first_positional_argv() -> str | None:
 
     Used by ``main()`` to decide whether plugin discovery has to run at
     argparse-setup time. Handles common invocations like
-    ``hermes -m gpt5 --provider openai chat "msg"`` by skipping the
+    ``oc -m gpt5 --provider openai chat "msg"`` by skipping the
     values attached to known top-level flags.
 
     Does NOT fully simulate argparse — unknown ``--foo=bar`` / ``--foo
@@ -10965,7 +10965,7 @@ def _try_termux_fast_cli_launch() -> bool:
 def _try_termux_fast_tui_launch() -> bool:
     """Launch obvious Termux TUI invocations before building every subparser.
 
-    `hermes --tui` is the hot path on phones. The full parser setup imports
+    `oc --tui` is the hot path on phones. The full parser setup imports
     command modules for model, fallback, migrate, kanban, bundles, plugins,
     etc. even though the TUI immediately execs Node. On Termux only, parse the
     lightweight top-level/chat parser and hand off to ``cmd_chat`` when the
@@ -11067,7 +11067,7 @@ def cmd_memory(args):
 
 
 def cmd_acp(args):
-    """Launch Hermes Agent as an ACP server."""
+    """Launch OpenComputer as an ACP server."""
     try:
         from acp_adapter.entry import main as acp_main
 
@@ -11171,22 +11171,22 @@ def main():
         pass
 
     # Sweep stale ``hermes.exe.old.*`` quarantine files left by previous
-    # ``hermes update`` runs on Windows. Silent no-op on non-Windows or when
+    # ``oc update`` runs on Windows. Silent no-op on non-Windows or when
     # there's nothing to clean. See ``_quarantine_running_hermes_exe``.
     try:
         _cleanup_quarantined_exes()
     except Exception:
         pass
 
-    # Self-heal a venv left half-built by an interrupted ``hermes update``
+    # Self-heal a venv left half-built by an interrupted ``oc update``
     # (Ctrl-C, terminal close, WSL OOM mid-install). Skip when the user is
     # *running* update — that flow writes and clears its own marker, and we
     # don't want a recovery install racing the real one. Never raises.
     #
     # The substring match is deliberately loose: argv isn't parsed yet at this
     # point, and the failure modes are asymmetric. Over-matching (e.g.
-    # ``hermes skills install update``) merely defers recovery one launch;
-    # under-matching (missing ``hermes -p work update``) would race a recovery
+    # ``oc skills install update``) merely defers recovery one launch;
+    # under-matching (missing ``oc -p work update``) would race a recovery
     # install against the real one. Loose wins.
     try:
         if "update" not in sys.argv[1:]:
@@ -11232,7 +11232,7 @@ def main():
     )
     fallback_subparsers.add_parser(
         "add",
-        help="Pick a provider + model (same picker as `hermes model`) and append to the chain",
+        help="Pick a provider + model (same picker as `oc model`) and append to the chain",
     )
     fallback_subparsers.add_parser(
         "remove",
@@ -11359,7 +11359,7 @@ def main():
         description=(
             "Configure the official Meta WhatsApp Business Cloud API "
             "adapter (Business account required, public webhook URL "
-            "required). Distinct from `hermes whatsapp` which sets up "
+            "required). Distinct from `oc whatsapp` which sets up "
             "the Baileys bridge for personal accounts."
         ),
     )
@@ -11515,7 +11515,7 @@ def main():
     # own argparse tree.  No hardcoded plugin commands in main.py.
     #
     # Skipped when the invocation is already targeting a known built-in
-    # subcommand — ``hermes --help``, ``hermes version``, ``hermes logs``,
+    # subcommand — ``oc --help``, ``oc version``, ``oc logs``,
     # etc.  This avoids eagerly importing every bundled plugin module
     # (google.cloud.pubsub_v1, aiohttp, grpc, PIL …) which costs
     # 500-650ms on typical installs.
@@ -11594,9 +11594,9 @@ def main():
         description=(
             "Install or check the cua-driver binary used by the\n"
             "`computer_use` toolset. macOS-only.\n\n"
-            "Use `hermes computer-use install` to fetch and run the\n"
+            "Use `oc computer-use install` to fetch and run the\n"
             "upstream cua-driver installer. This is equivalent to the\n"
-            "post-setup hook that `hermes tools` runs when you first\n"
+            "post-setup hook that `oc tools` runs when you first\n"
             "enable the Computer Use toolset, and is a stable target\n"
             "for re-running the install if it didn't fire (e.g. when\n"
             "toggling the toolset on a returning-user setup)."
@@ -12063,8 +12063,8 @@ def main():
     # desktop (a.k.a. gui) command
     #
     # The canonical name is "desktop"; "gui" is kept as a deprecated alias
-    # for one release. The Hermes-Setup.exe success screen tells users to
-    # run `hermes desktop` from a terminal, so the canonical name needs
+    # for one release. The OpenComputer-Setup.exe success screen tells users to
+    # run `oc desktop` from a terminal, so the canonical name needs
     # to be the one that appears in --help (argparse promotes the primary
     # name; aliases stay hidden).
     # =========================================================================
@@ -12087,7 +12087,7 @@ def main():
     # =========================================================================
     # Pre-process argv so unquoted multi-word session names after -c / -r
     # are merged into a single token before argparse sees them.
-    # e.g. ``hermes -c Pokemon Agent Dev`` → ``hermes -c 'Pokemon Agent Dev'``
+    # e.g. ``oc -c Pokemon Agent Dev`` → ``oc -c 'Pokemon Agent Dev'``
     # ── Container-aware routing ────────────────────────────────────────
     # When NixOS container mode is active, route ALL subcommands into
     # the managed container.  This MUST run before parse_args() so that
@@ -12112,7 +12112,7 @@ def main():
     #
     # Fix: when argv contains a token matching a known subcommand, set
     # subparsers.required=True to force deterministic routing.  If that
-    # fails (e.g. 'hermes -c model' where 'model' is consumed as the
+    # fails (e.g. 'oc -c model' where 'model' is consumed as the
     # session name for --continue), fall back to the default behaviour.
     import io as _io
 

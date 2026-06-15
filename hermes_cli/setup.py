@@ -1,5 +1,5 @@
 """
-Interactive setup wizard for Hermes Agent.
+Interactive setup wizard for OpenComputer.
 
 Modular wizard with independently-runnable sections:
   1. Model & Provider — choose your AI provider and model
@@ -176,19 +176,19 @@ def is_interactive_stdin() -> bool:
 def print_noninteractive_setup_guidance(reason: str | None = None) -> None:
     """Print guidance for headless/non-interactive setup flows."""
     print()
-    print(color("⚕ Hermes Setup — Non-interactive mode", Colors.CYAN, Colors.BOLD))
+    print(color("⚕ OpenComputer Setup — Non-interactive mode", Colors.CYAN, Colors.BOLD))
     print()
     if reason:
         print_info(reason)
     print_info("The interactive wizard cannot be used here.")
     print()
-    print_info("Configure Hermes using environment variables or config commands:")
+    print_info("Configure OpenComputer using environment variables or config commands:")
     print_info("  hermes config set model.provider custom")
     print_info("  hermes config set model.base_url http://localhost:8080/v1")
     print_info("  hermes config set model.default your-model-name")
     print()
     print_info("Or set OPENROUTER_API_KEY / OPENAI_API_KEY in your environment.")
-    print_info("Run 'hermes setup' in an interactive terminal to use the full wizard.")
+    print_info("Run 'oc setup' in an interactive terminal to use the full wizard.")
     print()
 
 
@@ -350,7 +350,7 @@ def _prompt_api_key(var: dict):
         save_env_value(var["name"], value)
         print_success("  ✓ Saved")
     else:
-        print_warning("  Skipped (configure later with 'hermes setup')")
+        print_warning("  Skipped (configure later with 'oc setup')")
 
 
 def _print_setup_summary(config: dict, hermes_home):
@@ -373,7 +373,7 @@ def _print_setup_summary(config: dict, hermes_home):
     if _vision_backends:
         tool_status.append(("Vision (image analysis)", True, None))
     else:
-        tool_status.append(("Vision (image analysis)", False, "run 'hermes setup' to configure"))
+        tool_status.append(("Vision (image analysis)", False, "run 'oc setup' to configure"))
 
     # Mixture of Agents — requires OpenRouter specifically (calls multiple models)
     if get_env_value("OPENROUTER_API_KEY"):
@@ -453,7 +453,7 @@ def _print_setup_summary(config: dict, hermes_home):
         else:
             tool_status.append(("Image Generation", False, "FAL_KEY or OPENAI_API_KEY"))
 
-    # Video generation — opt-in via `hermes tools` → Video Generation.
+    # Video generation — opt-in via `oc tools` → Video Generation.
     # Only show the row when a plugin reports available so we don't badger
     # users who don't care about video gen with a "missing" status line.
     if subscription_features.video_gen.managed_by_nous:
@@ -500,7 +500,7 @@ def _print_setup_summary(config: dict, hermes_home):
         if neutts_ok:
             tool_status.append(("Text-to-Speech (NeuTTS local)", True, None))
         else:
-            tool_status.append(("Text-to-Speech (NeuTTS — not installed)", False, "run 'hermes setup tts'"))
+            tool_status.append(("Text-to-Speech (NeuTTS — not installed)", False, "run 'oc setup tts'"))
     elif tts_provider == "kittentts":
         try:
             kittentts_ok = importlib.util.find_spec("kittentts") is not None
@@ -509,7 +509,7 @@ def _print_setup_summary(config: dict, hermes_home):
         if kittentts_ok:
             tool_status.append(("Text-to-Speech (KittenTTS local)", True, None))
         else:
-            tool_status.append(("Text-to-Speech (KittenTTS — not installed)", False, "run 'hermes setup tts'"))
+            tool_status.append(("Text-to-Speech (KittenTTS — not installed)", False, "run 'oc setup tts'"))
     else:
         tool_status.append(("Text-to-Speech (Edge TTS)", True, None))
 
@@ -519,7 +519,7 @@ def _print_setup_summary(config: dict, hermes_home):
         if subscription_features.modal.direct_override:
             tool_status.append(("Modal Execution (direct Modal)", True, None))
         else:
-            tool_status.append(("Modal Execution", False, "run 'hermes setup terminal'"))
+            tool_status.append(("Modal Execution", False, "run 'oc setup terminal'"))
     elif managed_nous_tools_enabled() and subscription_features.nous_auth_present:
         tool_status.append(("Modal Execution (optional via Nous subscription)", True, None))
 
@@ -571,7 +571,7 @@ def _print_setup_summary(config: dict, hermes_home):
     disabled_tools = [(name, var) for name, avail, var in tool_status if not avail]
     if disabled_tools:
         print_warning(
-            "Some tools are disabled. Run 'hermes setup tools' to configure them,"
+            "Some tools are disabled. Run 'oc setup tools' to configure them,"
         )
         from hermes_constants import display_hermes_home as _dhh
         print_warning(f"or edit {_dhh()}/.env directly to add the missing API keys.")
@@ -611,17 +611,17 @@ def _print_setup_summary(config: dict, hermes_home):
     print()
     print(color("📝 To edit your configuration:", Colors.CYAN, Colors.BOLD))
     print()
-    print(f"   {color('hermes setup', Colors.GREEN)}          Re-run the full wizard")
-    print(f"   {color('hermes setup model', Colors.GREEN)}    Change model/provider")
-    print(f"   {color('hermes setup terminal', Colors.GREEN)} Change terminal backend")
-    print(f"   {color('hermes setup gateway', Colors.GREEN)}  Configure messaging")
-    print(f"   {color('hermes setup tools', Colors.GREEN)}    Configure tool providers")
+    print(f"   {color('oc setup', Colors.GREEN)}          Re-run the full wizard")
+    print(f"   {color('oc setup model', Colors.GREEN)}    Change model/provider")
+    print(f"   {color('oc setup terminal', Colors.GREEN)} Change terminal backend")
+    print(f"   {color('oc setup gateway', Colors.GREEN)}  Configure messaging")
+    print(f"   {color('oc setup tools', Colors.GREEN)}    Configure tool providers")
     print()
-    print(f"   {color('hermes config', Colors.GREEN)}         View current settings")
+    print(f"   {color('oc config', Colors.GREEN)}         View current settings")
     print(
-        f"   {color('hermes config edit', Colors.GREEN)}    Open config in your editor"
+        f"   {color('oc config edit', Colors.GREEN)}    Open config in your editor"
     )
-    print(f"   {color('hermes config set <key> <value>', Colors.GREEN)}")
+    print(f"   {color('oc config set <key> <value>', Colors.GREEN)}")
     print("                          Set a specific value")
     print()
     print("   Or edit the files directly:")
@@ -634,8 +634,8 @@ def _print_setup_summary(config: dict, hermes_home):
     print(color("🚀 Ready to go!", Colors.CYAN, Colors.BOLD))
     print()
     print(f"   {color('hermes', Colors.GREEN)}              Start chatting")
-    print(f"   {color('hermes gateway', Colors.GREEN)}      Start messaging gateway")
-    print(f"   {color('hermes doctor', Colors.GREEN)}       Check for issues")
+    print(f"   {color('oc gateway', Colors.GREEN)}      Start messaging gateway")
+    print(f"   {color('oc doctor', Colors.GREEN)}       Check for issues")
     print()
 
 
@@ -682,7 +682,7 @@ def _prompt_container_resources(config: dict):
 
 
 # Tool categories and provider config are now in tools_config.py (shared
-# between `hermes tools` and `hermes setup tools`).
+# between `oc tools` and `oc setup tools`).
 
 
 # =============================================================================
@@ -694,10 +694,10 @@ def _prompt_container_resources(config: dict):
 def setup_model_provider(config: dict, *, quick: bool = False):
     """Configure the inference provider and default model.
 
-    Delegates to ``cmd_model()`` (the same flow used by ``hermes model``)
+    Delegates to ``cmd_model()`` (the same flow used by ``oc model``)
     for provider selection, credential prompting, and model picking.
     This ensures a single code path for all provider setup — any new
-    provider added to ``hermes model`` is automatically available here.
+    provider added to ``oc model`` is automatically available here.
 
     When *quick* is True, skips credential rotation, vision, and TTS
     configuration — used by the streamlined first-time quick setup.
@@ -741,8 +741,8 @@ def setup_model_provider(config: dict, *, quick: bool = False):
     # Credential rotation, vision-backend selection, and TTS provider are no
     # longer prompted here. They have safe defaults (rotation off, vision
     # auto-detected from the main provider, TTS = Edge) and are configurable
-    # on demand via `hermes auth add`, `hermes setup` vision, and
-    # `hermes setup tts`. This keeps both quick and full setup thin.
+    # on demand via `oc auth add`, `oc setup` vision, and
+    # `oc setup tts`. This keeps both quick and full setup thin.
 
     # Tool Gateway prompt is already shown by _model_flow_nous() above.
     save_config(config)
@@ -837,7 +837,7 @@ def _xai_oauth_logged_in_for_setup() -> bool:
     """True iff xAI Grok OAuth credentials are already stored locally.
 
     Lets TTS / STT setup skip the API-key prompt for users who logged in
-    through ``hermes model`` -> xAI Grok OAuth (SuperGrok / Premium+).
+    through ``oc model`` -> xAI Grok OAuth (SuperGrok / Premium+).
     """
     try:
         from hermes_cli.auth import get_xai_oauth_auth_status
@@ -994,7 +994,7 @@ def _setup_tts_provider(config: dict):
 
     elif selected == "xai":
         # Resolution order: existing OAuth tokens (free for SuperGrok subscribers
-        # via the Hermes auth store) > existing XAI_API_KEY > prompt the user.
+        # via the OpenComputer auth store) > existing XAI_API_KEY > prompt the user.
         # When neither is configured, offer both options instead of forcing the
         # API-key path — xAI TTS works fine with OAuth bearer tokens too.
         oauth_logged_in = _xai_oauth_logged_in_for_setup()
@@ -1122,7 +1122,7 @@ def _setup_tts_provider(config: dict):
 
 
 def setup_tts(config: dict):
-    """Standalone TTS setup (for 'hermes setup tts')."""
+    """Standalone TTS setup (for 'oc setup tts')."""
     _setup_tts_provider(config)
 
 
@@ -1135,7 +1135,7 @@ def setup_terminal_backend(config: dict):
     """Configure the terminal execution backend."""
     import platform as _platform
     print_header("Terminal Backend")
-    print_info("Choose where Hermes runs shell commands and code.")
+    print_info("Choose where OpenComputer runs shell commands and code.")
     print_info("This affects tool execution, file access, and isolation.")
     print_info(f"   Guide: {_DOCS_BASE}/developer-guide/environments")
     print()
@@ -1182,7 +1182,7 @@ def setup_terminal_backend(config: dict):
         print_success("Terminal backend: Local")
         print_info("Commands run directly on this machine.")
         # Gateway working directory defaults to home; sudo stays off. Both are
-        # configurable later via `hermes setup terminal` / config.yaml.
+        # configurable later via `oc setup terminal` / config.yaml.
         config["terminal"].setdefault("cwd", str(Path.home()))
 
     elif selected_backend == "docker":
@@ -1196,7 +1196,7 @@ def setup_terminal_backend(config: dict):
         else:
             print_info(f"Docker found: {docker_bin}")
 
-        # Image and resource limits use defaults; tune via `hermes setup terminal`.
+        # Image and resource limits use defaults; tune via `oc setup terminal`.
         config["terminal"].setdefault(
             "docker_image", "nikolaik/python-nodejs:python3.11-nodejs20"
         )
@@ -1214,7 +1214,7 @@ def setup_terminal_backend(config: dict):
         else:
             print_info(f"Found: {sing_bin}")
 
-        # Image and resource limits use defaults; tune via `hermes setup terminal`.
+        # Image and resource limits use defaults; tune via `oc setup terminal`.
         config["terminal"].setdefault(
             "singularity_image",
             "docker://nikolaik/python-nodejs:python3.11-nodejs20",
@@ -1366,7 +1366,7 @@ def setup_terminal_backend(config: dict):
                 save_env_value("DAYTONA_API_KEY", api_key)
                 print_success("    Configured")
 
-        # Image and resource limits use defaults; tune via `hermes setup terminal`.
+        # Image and resource limits use defaults; tune via `oc setup terminal`.
         config["terminal"].setdefault(
             "daytona_image", "nikolaik/python-nodejs:python3.11-nodejs20"
         )
@@ -1459,7 +1459,7 @@ def _apply_default_agent_settings(config: dict):
     print_info("  Tool progress: all")
     print_info("  Compression threshold: 0.50")
     print_info("  Session reset: never (use /reset or compression)")
-    print_info("  Run `hermes setup agent` later to customize.")
+    print_info("  Run `oc setup agent` later to customize.")
 
 
 def setup_agent_settings(config: dict):
@@ -1775,7 +1775,7 @@ def _setup_telegram():
         print_info("⚠️  No allowlist set - anyone who finds your bot can use it!")
 
     print()
-    print_info("📬 Home Channel: where Hermes delivers cron job results,")
+    print_info("📬 Home Channel: where OpenComputer delivers cron job results,")
     print_info("   cross-platform messages, and notifications.")
     print_info("   For Telegram DMs, this is your user ID (same as above).")
 
@@ -1806,7 +1806,7 @@ def _setup_slack():
             # new commands (e.g. /btw, /stop, ...) get registered in Slack.
             if prompt_yes_no(
                 "Regenerate the Slack app manifest with the latest command "
-                "list? (recommended after `hermes update`)",
+                "list? (recommended after `oc update`)",
                 True,
             ):
                 _write_slack_manifest_and_instruct()
@@ -1853,7 +1853,7 @@ def _setup_slack():
         print_info("   Set SLACK_ALLOW_ALL_USERS=true or GATEWAY_ALLOW_ALL_USERS=true only if you intentionally want open workspace access.")
 
     print()
-    print_info("📬 Home Channel: where Hermes delivers cron job results,")
+    print_info("📬 Home Channel: where OpenComputer delivers cron job results,")
     print_info("   cross-platform messages, and notifications.")
     print_info("   To get a channel ID: open the channel in Slack, then right-click")
     print_info("   the channel name → Copy link — the ID starts with C (e.g. C01ABC2DE3F).")
@@ -1878,8 +1878,8 @@ def _write_slack_manifest_and_instruct():
         from hermes_constants import get_hermes_home
 
         manifest = _build_full_manifest(
-            bot_name="Hermes",
-            bot_description="Your Hermes agent on Slack",
+            bot_name="OpenComputer",
+            bot_description="Your OpenComputer on Slack",
         )
         target = Path(get_hermes_home()) / "slack-manifest.json"
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -1895,14 +1895,14 @@ def _write_slack_manifest_and_instruct():
             "reinstall if scopes or slash commands changed."
         )
         print_info(
-            "   Re-run `hermes slack manifest --write` anytime to refresh after "
-            "Hermes adds new commands."
+            "   Re-run `oc slack manifest --write` anytime to refresh after "
+            "OpenComputer adds new commands."
         )
     except Exception as exc:  # pragma: no cover - best-effort UX helper
         print_warning(f"Couldn't write Slack manifest: {exc}")
         print_info(
             "   You can generate it manually later with: "
-            "hermes slack manifest --write"
+            "oc slack manifest --write"
         )
 
 
@@ -2014,7 +2014,7 @@ def _setup_matrix():
             print_info("⚠️  No allowlist set - anyone who can message the bot can use it!")
 
         print()
-        print_info("📬 Home Room: where Hermes delivers cron job results and notifications.")
+        print_info("📬 Home Room: where OpenComputer delivers cron job results and notifications.")
         print_info("   Room IDs look like !abc123:server (shown in Element room settings)")
         print_info("   You can also set this later by typing /set-home in a Matrix room.")
         home_room = prompt("Home room ID (leave empty to set later with /set-home)")
@@ -2031,7 +2031,7 @@ def _setup_bluebubbles():
         if not prompt_yes_no("Reconfigure BlueBubbles?", False):
             return
 
-    print_info("Connects Hermes to iMessage via BlueBubbles — a free, open-source")
+    print_info("Connects OpenComputer to iMessage via BlueBubbles — a free, open-source")
     print_info("macOS server that bridges iMessage to any device.")
     print_info("   Requires a Mac running BlueBubbles Server v1.0.0+")
     print_info("   Download: https://bluebubbles.app/")
@@ -2145,7 +2145,7 @@ def setup_gateway(config: dict):
     from hermes_cli.gateway import _all_platforms, _platform_status, _configure_platform
 
     print_header("Messaging Platforms")
-    print_info("Connect to messaging platforms to chat with Hermes from anywhere.")
+    print_info("Connect to messaging platforms to chat with OpenComputer from anywhere.")
     print_info("Toggle with Space, confirm with Enter.")
     print()
 
@@ -2163,7 +2163,7 @@ def setup_gateway(config: dict):
     selected = prompt_checklist("Select platforms to configure:", items, pre_selected)
 
     if not selected:
-        print_info("No platforms selected. Run 'hermes setup gateway' later to configure.")
+        print_info("No platforms selected. Run 'oc setup gateway' later to configure.")
         return
 
     for idx in selected:
@@ -2383,7 +2383,7 @@ def setup_gateway(config: dict):
 def setup_tools(config: dict, first_install: bool = False):
     """Configure tools — delegates to the unified tools_command() in tools_config.py.
 
-    Both `hermes setup tools` and `hermes tools` use the same flow:
+    Both `oc setup tools` and `oc tools` use the same flow:
     platform selection → toolset toggles → provider/API key configuration.
 
     Args:
@@ -2581,15 +2581,15 @@ def _load_openclaw_migration_module():
 
 # Item kinds that represent high-impact changes warranting explicit warnings.
 # Gateway tokens/channels can hijack messaging platforms from the old agent.
-# Config values may have different semantics between OpenClaw and Hermes.
+# Config values may have different semantics between OpenClaw and OpenComputer.
 # Instruction/context files (.md) can contain incompatible setup procedures.
 _HIGH_IMPACT_KIND_KEYWORDS = {
-    "gateway": "⚠ Gateway/messaging — this will configure Hermes to use your OpenClaw messaging channels",
-    "telegram": "⚠ Telegram — this will point Hermes at your OpenClaw Telegram bot",
-    "slack": "⚠ Slack — this will point Hermes at your OpenClaw Slack workspace",
-    "discord": "⚠ Discord — this will point Hermes at your OpenClaw Discord bot",
-    "whatsapp": "⚠ WhatsApp — this will point Hermes at your OpenClaw WhatsApp connection",
-    "config": "⚠ Config values — OpenClaw settings may not map 1:1 to Hermes equivalents",
+    "gateway": "⚠ Gateway/messaging — this will configure OpenComputer to use your OpenClaw messaging channels",
+    "telegram": "⚠ Telegram — this will point OpenComputer at your OpenClaw Telegram bot",
+    "slack": "⚠ Slack — this will point OpenComputer at your OpenClaw Slack workspace",
+    "discord": "⚠ Discord — this will point OpenComputer at your OpenClaw Discord bot",
+    "whatsapp": "⚠ WhatsApp — this will point OpenComputer at your OpenClaw WhatsApp connection",
+    "config": "⚠ Config values — OpenClaw settings may not map 1:1 to OpenComputer equivalents",
     "soul": "⚠ Instruction file — may contain OpenClaw-specific setup/restart procedures",
     "memory": "⚠ Memory/context file — may reference OpenClaw-specific infrastructure",
     "context": "⚠ Context file — may contain OpenClaw-specific instructions",
@@ -2633,7 +2633,7 @@ def _print_migration_preview(report: dict):
         print()
 
     if conflict_items:
-        print(color("  Would overwrite (conflicts with existing Hermes config):", Colors.YELLOW))
+        print(color("  Would overwrite (conflicts with existing OpenComputer config):", Colors.YELLOW))
         for item in conflict_items:
             kind = item.get("kind", "unknown")
             reason = item.get("reason", "already exists")
@@ -2654,8 +2654,8 @@ def _print_migration_preview(report: dict):
         for warning in sorted(warnings_shown):
             print(color(f"    {warning}", Colors.YELLOW))
         print()
-        print(color("  Note: OpenClaw config values may have different semantics in Hermes.", Colors.YELLOW))
-        print(color("  For example, OpenClaw's tool_call_execution: \"auto\" ≠ Hermes's yolo mode.", Colors.YELLOW))
+        print(color("  Note: OpenClaw config values may have different semantics in OpenComputer.", Colors.YELLOW))
+        print(color("  For example, OpenClaw's tool_call_execution: \"auto\" ≠ OpenComputer's yolo mode.", Colors.YELLOW))
         print(color("  Instruction files (.md) from OpenClaw may contain incompatible procedures.", Colors.YELLOW))
         print()
 
@@ -2678,7 +2678,7 @@ def _offer_openclaw_migration(hermes_home: Path) -> bool:
     print()
     print_header("OpenClaw Installation Detected")
     print_info(f"Found OpenClaw data at {openclaw_dir}")
-    print_info("Hermes can preview what would be imported before making any changes.")
+    print_info("OpenComputer can preview what would be imported before making any changes.")
     print()
 
     if not prompt_yes_no("Would you like to see what can be imported?", default=True):
@@ -2748,7 +2748,7 @@ def _offer_openclaw_migration(hermes_home: Path) -> bool:
         )
         return False
 
-    # Execute the migration — overwrite=False so existing Hermes configs are
+    # Execute the migration — overwrite=False so existing OpenComputer configs are
     # preserved. The user saw the preview; conflicts are skipped by default.
     try:
         migrator = mod.Migrator(
@@ -2756,7 +2756,7 @@ def _offer_openclaw_migration(hermes_home: Path) -> bool:
             target_root=hermes_home.resolve(),
             execute=True,
             workspace_target=None,
-            overwrite=False,  # preserve existing Hermes config
+            overwrite=False,  # preserve existing OpenComputer config
             migrate_secrets=True,
             output_dir=None,
             selected_options=selected,
@@ -2779,7 +2779,7 @@ def _offer_openclaw_migration(hermes_home: Path) -> bool:
     if migrated:
         print_success(f"Imported {migrated} item(s) from OpenClaw.")
     if conflicts:
-        print_info(f"Skipped {conflicts} item(s) that already exist in Hermes (use hermes claw migrate --overwrite to force).")
+        print_info(f"Skipped {conflicts} item(s) that already exist in OpenComputer (use hermes claw migrate --overwrite to force).")
     if skipped:
         print_info(f"Skipped {skipped} item(s) (not found or unchanged).")
     if errors:
@@ -2810,18 +2810,18 @@ SETUP_SECTIONS = [
 def _run_portal_one_shot(config: dict) -> None:
     """One-shot Nous Portal setup — OAuth + model pick + provider + Tool Gateway.
 
-    Wired into ``hermes setup --portal`` and ``hermes portal``. This is the
+    Wired into ``oc setup --portal`` and ``oc portal``. This is the
     Nous-Portal slice of the first-time quick setup, collapsed into a single
     shareable command so a brand-new user goes from zero to a fully working
-    Hermes session — model selected, provider set, and web/image/tts/browser
+    OpenComputer session — model selected, provider set, and web/image/tts/browser
     tools routed via their Portal sub — without being told to run
-    ``hermes setup`` and hunt for the quick-setup option.
+    ``oc setup`` and hunt for the quick-setup option.
 
     The login + model selection + provider switch + Tool Gateway opt-in are all
     delegated to ``_model_flow_nous`` — the exact same flow quick setup uses
-    (``_run_first_time_quick_setup``) and the same one ``hermes model`` runs
+    (``_run_first_time_quick_setup``) and the same one ``oc model`` runs
     when you pick Nous. Routing through it (instead of hand-rolling the auth +
-    provider write here) means ``hermes portal`` always offers a model picker,
+    provider write here) means ``oc portal`` always offers a model picker,
     and there is a single source of truth for the Nous onboarding steps.
     """
     from hermes_cli.config import load_config
@@ -2833,7 +2833,7 @@ def _run_portal_one_shot(config: dict) -> None:
             Colors.MAGENTA,
         )
     )
-    print(color("│     ⚕ Hermes Setup — Nous Portal (one-shot)             │", Colors.MAGENTA))
+    print(color("│     ⚕ OpenComputer Setup — Nous Portal (one-shot)             │", Colors.MAGENTA))
     print(
         color(
             "└─────────────────────────────────────────────────────────┘",
@@ -2852,7 +2852,7 @@ def _run_portal_one_shot(config: dict) -> None:
     # which selects a model internally) and the already-logged-in path (curated
     # Nous model picker), then offers the Tool Gateway opt-in and sets
     # provider=nous via the login/model save. This is the same routine quick
-    # setup calls, so `hermes portal` == quick setup's Nous step.
+    # setup calls, so `oc portal` == quick setup's Nous step.
     try:
         from hermes_cli.main import _model_flow_nous
 
@@ -2865,13 +2865,13 @@ def _run_portal_one_shot(config: dict) -> None:
         # Treat all of these as a graceful cancel/abort for the portal flow.
         print()
         print_info("  Setup cancelled.")
-        print_info("  You can retry later with `hermes portal`.")
+        print_info("  You can retry later with `oc portal`.")
         return
     except Exception as exc:
-        logger.debug("_model_flow_nous error during `hermes portal`: %s", exc)
+        logger.debug("_model_flow_nous error during `oc portal`: %s", exc)
         print()
         print_error(f"  Nous Portal setup encountered an error: {exc}")
-        print_info("  You can retry later with `hermes portal`.")
+        print_info("  You can retry later with `oc portal`.")
         return
 
     # Re-sync the in-memory config from disk — _model_flow_nous (and the
@@ -2887,7 +2887,7 @@ def _run_portal_one_shot(config: dict) -> None:
 
     print()
     print_success("Portal setup complete.")
-    print_info("  Run `hermes portal info` to inspect routing.")
+    print_info("  Run `oc portal info` to inspect routing.")
     print_info("  Run `hermes` to start chatting.")
 
 
@@ -2963,7 +2963,7 @@ def run_setup_wizard(args):
                         Colors.MAGENTA,
                     )
                 )
-                print(color(f"│     ⚕ Hermes Setup — {label:<34s} │", Colors.MAGENTA))
+                print(color(f"│     ⚕ OpenComputer Setup — {label:<34s} │", Colors.MAGENTA))
                 print(
                     color(
                         "└─────────────────────────────────────────────────────────┘",
@@ -2999,7 +2999,7 @@ def run_setup_wizard(args):
     )
     print(
         color(
-            "│             ⚕ Hermes Agent Setup Wizard                │", Colors.MAGENTA
+            "│             ⚕ OpenComputer Setup Wizard                │", Colors.MAGENTA
         )
     )
     print(
@@ -3010,7 +3010,7 @@ def run_setup_wizard(args):
     )
     print(
         color(
-            "│  Let's configure your Hermes Agent installation.       │", Colors.MAGENTA
+            "│  Let's configure your OpenComputer installation.       │", Colors.MAGENTA
         )
     )
     print(
@@ -3039,11 +3039,11 @@ def run_setup_wizard(args):
 
         print()
         print_header("Reconfigure")
-        print_success("You already have Hermes configured.")
+        print_success("You already have OpenComputer configured.")
         print_info("Running the full wizard — each prompt shows your current value.")
         print_info("Press Enter to keep it, or type a new value to change it.")
         print_info("")
-        print_info("Tip: jump straight to a section with 'hermes setup model|terminal|")
+        print_info("Tip: jump straight to a section with 'oc setup model|terminal|")
         print_info("     gateway|tools|agent', or fill only missing items with --quick.")
         # Fall through to the "Full Setup — run all sections" block below.
         # --reconfigure is now the default on existing installs; the flag
@@ -3064,7 +3064,7 @@ def run_setup_wizard(args):
             config = load_config()
 
         setup_mode = prompt_choice(
-            "How would you like to set up Hermes?",
+            "How would you like to set up OpenComputer?",
             [
                 "Quick Setup (Nous Portal) — free OAuth login, no API keys, model + tools (recommended)",
                 "Full setup — configure every provider, tool & option yourself (bring your own keys)",
@@ -3083,7 +3083,7 @@ def run_setup_wizard(args):
     print_info(f"Data folder:  {hermes_home}")
     print_info(f"Install dir:  {PROJECT_ROOT}")
     print()
-    print_info("You can edit these files directly or use 'hermes config edit'")
+    print_info("You can edit these files directly or use 'oc config edit'")
 
     if migration_ran:
         print()
@@ -3101,7 +3101,7 @@ def run_setup_wizard(args):
 
     # Section 3: Agent Settings — no longer prompted. First installs get the
     # recommended defaults silently; existing installs keep whatever they have.
-    # Tune later with `hermes setup agent`.
+    # Tune later with `oc setup agent`.
     if not is_existing:
         _apply_default_agent_settings(config)
 
@@ -3128,8 +3128,8 @@ def _run_first_time_quick_setup(config: dict, hermes_home, is_existing: bool):
     Routes straight to the Nous Portal provider — runs the device-code OAuth
     login, picks a Nous model, then configures the terminal backend and (optionally)
     a messaging platform. Applies sensible defaults for everything else (agent
-    settings, tools); the user can customize later via ``hermes setup <section>``
-    or switch providers with ``hermes model``.
+    settings, tools); the user can customize later via ``oc setup <section>``
+    or switch providers with ``oc model``.
     """
     from hermes_cli.config import load_config
 
@@ -3175,7 +3175,7 @@ def _run_first_time_quick_setup(config: dict, hermes_home, is_existing: bool):
         "Connect a messaging platform? (Telegram, Discord, etc.)",
         [
             "Set up messaging now (recommended)",
-            "Skip — set up later with 'hermes setup gateway'",
+            "Skip — set up later with 'oc setup gateway'",
         ],
         0,
     )
@@ -3226,7 +3226,7 @@ def _run_quick_setup(config: dict, hermes_home):
     if not has_anything_missing:
         print_success("Everything is configured! Nothing to do.")
         print()
-        print_info("Run 'hermes setup' and choose 'Full Setup' to reconfigure,")
+        print_info("Run 'oc setup' and choose 'Full Setup' to reconfigure,")
         print_info("or pick a specific section from the menu.")
         return
 
@@ -3288,8 +3288,8 @@ def _run_quick_setup(config: dict, hermes_home):
     if missing_messaging:
         print()
         print_header("Messaging Platforms")
-        print_info("Connect Hermes to messaging apps to chat from anywhere.")
-        print_info("You can configure these later with 'hermes setup gateway'.")
+        print_info("Connect OpenComputer to messaging apps to chat from anywhere.")
+        print_info("You can configure these later with 'oc setup gateway'.")
 
         # Group by platform (preserving order)
         platform_order = []

@@ -825,7 +825,7 @@ def load_gateway_config() -> GatewayConfig:
             streaming_cfg = yaml_cfg.get("streaming")
             if not isinstance(streaming_cfg, dict):
                 # Fall back to nested gateway.streaming written by
-                # ``hermes config set gateway.streaming.*``
+                # ``oc config set gateway.streaming.*``
                 streaming_cfg = yaml_cfg.get("gateway", {}).get("streaming")
             if isinstance(streaming_cfg, dict):
                 gw_data["streaming"] = streaming_cfg

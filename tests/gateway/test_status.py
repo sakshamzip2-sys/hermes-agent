@@ -935,7 +935,7 @@ class TestPlannedStopMarker:
         ``_get_process_start_time`` returns None on macOS / native Windows
         (no ``/proc/<pid>/stat``). The planned-stop watcher only runs there,
         so if the authoritative consume required a non-None start_time match
-        it would always return False — and ``hermes gateway stop`` would be
+        it would always return False — and ``oc gateway stop`` would be
         misclassified as an unexpected ``UNKNOWN`` exit, exit 1, and revived
         by the service manager (the very crash loop #34597 set out to fix).
         With start_time unavailable on BOTH sides we fall back to PID

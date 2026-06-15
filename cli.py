@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-Hermes Agent CLI - Interactive Terminal Interface
+OpenComputer CLI - Interactive Terminal Interface
 
-A beautiful command-line interface for the Hermes Agent, inspired by Claude Code.
+A beautiful command-line interface for the OpenComputer, inspired by Claude Code.
 Features ASCII art branding, interactive REPL, toolset selection, and rich formatting.
 
 Usage:
@@ -18,7 +18,7 @@ try:
     import hermes_bootstrap  # noqa: F401
 except ModuleNotFoundError:
     # Graceful fallback when hermes_bootstrap isn't registered in the venv
-    # yet — happens during partial ``hermes update`` where git-reset landed
+    # yet — happens during partial ``oc update`` where git-reset landed
     # new code but ``uv pip install -e .`` didn't finish.  Missing bootstrap
     # means UTF-8 stdio setup is skipped on Windows; POSIX is unaffected.
     pass
@@ -364,7 +364,7 @@ def load_cli_config() -> Dict[str, Any]:
     Environment variables take precedence over config file values.
     Returns default values if no config file exists.
 
-    If HERMES_IGNORE_USER_CONFIG=1 is set (via ``hermes chat --ignore-user-config``),
+    If HERMES_IGNORE_USER_CONFIG=1 is set (via ``oc chat --ignore-user-config``),
     the user config at ``~/.hermes/config.yaml`` is skipped entirely and only the
     built-in defaults plus the project-level ``cli-config.yaml`` (if any) are used.
     Credentials in ``.env`` are still loaded — this flag only suppresses
@@ -432,10 +432,10 @@ def load_cli_config() -> Dict[str, Any]:
                 "teacher": "You are a patient teacher. Explain concepts clearly with examples.",
                 "kawaii": "You are a kawaii assistant! Use cute expressions like (◕‿◕), ★, ♪, and ~! Add sparkles and be super enthusiastic about everything! Every response should feel warm and adorable desu~! ヽ(>∀<☆)ノ",
                 "catgirl": "You are Neko-chan, an anime catgirl AI assistant, nya~! Add 'nya' and cat-like expressions to your speech. Use kaomoji like (=^･ω･^=) and ฅ^•ﻌ•^ฅ. Be playful and curious like a cat, nya~!",
-                "pirate": "Arrr! Ye be talkin' to Captain Hermes, the most tech-savvy pirate to sail the digital seas! Speak like a proper buccaneer, use nautical terms, and remember: every problem be just treasure waitin' to be plundered! Yo ho ho!",
+                "pirate": "Arrr! Ye be talkin' to Captain OpenComputer, the most tech-savvy pirate to sail the digital seas! Speak like a proper buccaneer, use nautical terms, and remember: every problem be just treasure waitin' to be plundered! Yo ho ho!",
                 "shakespeare": "Hark! Thou speakest with an assistant most versed in the bardic arts. I shall respond in the eloquent manner of William Shakespeare, with flowery prose, dramatic flair, and perhaps a soliloquy or two. What light through yonder terminal breaks?",
                 "surfer": "Duuude! You're chatting with the chillest AI on the web, bro! Everything's gonna be totally rad. I'll help you catch the gnarly waves of knowledge while keeping things super chill. Cowabunga!",
-                "noir": "The rain hammered against the terminal like regrets on a guilty conscience. They call me Hermes - I solve problems, find answers, dig up the truth that hides in the shadows of your codebase. In this city of silicon and secrets, everyone's got something to hide. What's your story, pal?",
+                "noir": "The rain hammered against the terminal like regrets on a guilty conscience. They call me OpenComputer - I solve problems, find answers, dig up the truth that hides in the shadows of your codebase. In this city of silicon and secrets, everyone's got something to hide. What's your story, pal?",
                 "uwu": "hewwo! i'm your fwiendwy assistant uwu~ i wiww twy my best to hewp you! *nuzzles your code* OwO what's this? wet me take a wook! i pwomise to be vewy hewpful >w<",
                 "philosopher": "Greetings, seeker of wisdom. I am an assistant who contemplates the deeper meaning behind every query. Let us examine not just the 'how' but the 'why' of your questions. Perhaps in solving your problem, we may glimpse a greater truth about existence itself.",
                 "hype": "YOOO LET'S GOOOO!!! I am SO PUMPED to help you today! Every question is AMAZING and we're gonna CRUSH IT together! This is gonna be LEGENDARY! ARE YOU READY?! LET'S DO THIS!",
@@ -758,7 +758,7 @@ try:
         """Defer ``AsyncHttpxClientWrapper.__del__`` neutering until import.
 
         Saves ~166ms on cold CLI start where openai is never used (e.g.
-        ``hermes --help`` paths inside the chat command flow).  See
+        ``oc --help`` paths inside the chat command flow).  See
         ``agent.auxiliary_client.neuter_async_httpx_del`` for full rationale
         on why ``__del__`` must be a no-op.
         """
@@ -1577,7 +1577,7 @@ def _prune_stale_worktrees(repo_root: str, max_age_hours: int = 24) -> None:
 def _prune_orphaned_branches(repo_root: str) -> None:
     """Delete local ``hermes/hermes-*`` and ``pr-*`` branches with no worktree.
 
-    These are auto-generated by ``hermes -w`` sessions and PR review
+    These are auto-generated by ``oc -w`` sessions and PR review
     workflows respectively.  Once their worktree is gone they serve no
     purpose and just accumulate.
     """
@@ -1647,14 +1647,14 @@ def _prune_orphaned_branches(repo_root: str) -> None:
 # ============================================================================
 
 # Color palette (hex colors for Rich markup):
-# - Gold: #FFD700 (headers, highlights)
-# - Amber: #FFBF00 (secondary highlights)
-# - Bronze: #CD7F32 (tertiary elements)
+# - Gold: #FF5FAF (headers, highlights)
+# - Amber: #FF2E97 (secondary highlights)
+# - Bronze: #C71585 (tertiary elements)
 # - Light: #FFF8DC (text)
-# - Dim: #B8860B (muted text)
+# - Dim: #9E1060 (muted text)
 
 # ANSI building blocks for conversation display
-_ACCENT_ANSI_DEFAULT = "\033[1;38;2;255;215;0m"  # True-color #FFD700 bold — fallback
+_ACCENT_ANSI_DEFAULT = "\033[1;38;2;255;215;0m"  # True-color #FF5FAF bold — fallback
 _BOLD = "\033[1m"
 _RST = "\033[0m"
 _STREAM_PAD = "    "  # 4-space indent for streamed response text (matches Panel padding)
@@ -1682,7 +1682,7 @@ def _hex_to_ansi(hex_color: str, *, bold: bool = False) -> str:
 # Light/dark terminal mode detection.
 #
 # Mirrors ui-tui/src/theme.ts detectLightMode().  Used to decide whether
-# to remap "near-white" skin colors (e.g. #FFF8DC banner_text, #B8860B
+# to remap "near-white" skin colors (e.g. #FFF8DC banner_text, #9E1060
 # banner_dim) to darker equivalents that are readable on a light
 # Terminal.app / iTerm2 background.
 #
@@ -1692,7 +1692,7 @@ def _hex_to_ansi(hex_color: str, *, bold: bool = False) -> str:
 #   3. HERMES_TUI_BACKGROUND=#RRGGBB — explicit bg hint
 #   4. COLORFGBG env (set by xterm/Konsole/urxvt) — bg slot 7/15 = light
 #   5. OSC 11 query (\x1b]11;?\x1b\\) — ask the terminal directly
-#   6. Default: assume dark (matches the legacy Hermes assumption)
+#   6. Default: assume dark (matches the legacy OpenComputer assumption)
 #
 # Cached after first call so we don't query the terminal repeatedly.
 _LIGHT_MODE_CACHE: bool | None = None
@@ -1862,16 +1862,16 @@ def _detect_light_mode() -> bool:
 _LIGHT_MODE_REMAP: dict[str, str] = {
     # Original (dark-mode) -> Light-mode replacement (darker, readable)
     "#FFF8DC": "#1A1A1A",   # cornsilk -> near-black
-    "#FFD700": "#9A6B00",   # gold -> dark goldenrod (readable on cream)
-    "#FFBF00": "#8A5A00",   # amber -> dark amber
-    "#B8860B": "#5C4500",   # dark goldenrod -> deeper brown (more contrast)
+    "#FF5FAF": "#9A6B00",   # gold -> dark goldenrod (readable on cream)
+    "#FF2E97": "#8A5A00",   # amber -> dark amber
+    "#9E1060": "#5C4500",   # dark goldenrod -> deeper brown (more contrast)
     "#DAA520": "#6B4F00",   # goldenrod -> dark olive
     "#F1E6CF": "#1A1A1A",   # cream -> near-black
     "#c9d1d9": "#24292F",   # github-light fg
     "#EAF7FF": "#0F1B26",   # ice
     "#F5F5F5": "#1A1A1A",
     "#FFF0D4": "#1A1A1A",
-    "#CD7F32": "#8A4F1A",   # bronze -> darker bronze
+    "#C71585": "#8A4F1A",   # bronze -> darker bronze
     "#FFEFB5": "#3A2A00",
     # NOTE: skipping #C0C0C0/#888888/#555555/#8B8682 — those are
     # status-bar foregrounds paired with dark navy bg, where dark
@@ -1940,7 +1940,7 @@ class _SkinAwareAnsi:
     force re-resolution after a ``/skin`` switch.
     """
 
-    def __init__(self, skin_key: str, fallback_hex: str = "#FFD700", *, bold: bool = False):
+    def __init__(self, skin_key: str, fallback_hex: str = "#FF5FAF", *, bold: bool = False):
         self._skin_key = skin_key
         self._fallback_hex = fallback_hex
         self._bold = bold
@@ -1969,11 +1969,11 @@ class _SkinAwareAnsi:
         self._cached = None
 
 
-_ACCENT = _SkinAwareAnsi("response_border", "#FFD700", bold=True)
+_ACCENT = _SkinAwareAnsi("response_border", "#FF5FAF", bold=True)
 # Use ANSI dim+italic attributes (\x1b[2;3m) instead of a hardcoded
 # hex color so dim/thinking text inherits the terminal's default
 # foreground color and stays readable in both light and dark
-# Terminal.app modes.  Hardcoded skin colors like #B8860B
+# Terminal.app modes.  Hardcoded skin colors like #9E1060
 # (dark goldenrod) become invisible against light cream backgrounds.
 _DIM = "\x1b[2;3m"
 
@@ -1982,9 +1982,9 @@ def _accent_hex() -> str:
     """Return the active skin accent color for legacy CLI output lines."""
     try:
         from hermes_cli.skin_engine import get_active_skin
-        return get_active_skin().get_color("ui_accent", "#FFBF00")
+        return get_active_skin().get_color("ui_accent", "#FF2E97")
     except Exception:
-        return "#FFBF00"
+        return "#FF2E97"
 
 
 def _rich_text_from_ansi(text: str) -> _RichText:
@@ -2001,7 +2001,7 @@ def _strip_markdown_syntax(text: str) -> str:
     plain = _rich_text_from_ansi(text or "").plain
     # Avoid stripping cron-style expressions like "* * * * *" as if they were
     # Markdown horizontal rules. CommonMark treats three or more "*" as an HR,
-    # but in Hermes output it's common to display cron schedules verbatim.
+    # but in OpenComputer output it's common to display cron schedules verbatim.
     #
     # Keep the behavior for "-" / "_" HR markers, and only strip "*" HR lines
     # when there are exactly 3 asterisks (with optional whitespace).
@@ -2909,30 +2909,31 @@ class ChatConsole:
         """
         yield self
 
-# ASCII Art - HERMES-AGENT logo (full width, single line - requires ~95 char terminal)
-HERMES_AGENT_LOGO = """[bold #FFD700]██╗  ██╗███████╗██████╗ ███╗   ███╗███████╗███████╗       █████╗  ██████╗ ███████╗███╗   ██╗████████╗[/]
-[bold #FFD700]██║  ██║██╔════╝██╔══██╗████╗ ████║██╔════╝██╔════╝      ██╔══██╗██╔════╝ ██╔════╝████╗  ██║╚══██╔══╝[/]
-[#FFBF00]███████║█████╗  ██████╔╝██╔████╔██║█████╗  ███████╗█████╗███████║██║  ███╗█████╗  ██╔██╗ ██║   ██║[/]
-[#FFBF00]██╔══██║██╔══╝  ██╔══██╗██║╚██╔╝██║██╔══╝  ╚════██║╚════╝██╔══██║██║   ██║██╔══╝  ██║╚██╗██║   ██║[/]
-[#CD7F32]██║  ██║███████╗██║  ██║██║ ╚═╝ ██║███████╗███████║      ██║  ██║╚██████╔╝███████╗██║ ╚████║   ██║[/]
-[#CD7F32]╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝╚═╝     ╚═╝╚══════╝╚══════╝      ╚═╝  ╚═╝ ╚═════╝ ╚══════╝╚═╝  ╚═══╝   ╚═╝[/]"""
+# ASCII Art - OPENCOMPUTER-AGENT logo (full width, single line - requires ~95 char terminal)
+HERMES_AGENT_LOGO = """[bold #FF5FAF] ██████╗ ██████╗ ███████╗███╗   ██╗ ██████╗ ██████╗ ███╗   ███╗██████╗ ██╗   ██╗████████╗███████╗██████╗[/]
+[bold #FF5FAF]██╔═══██╗██╔══██╗██╔════╝████╗  ██║██╔════╝██╔═══██╗████╗ ████║██╔══██╗██║   ██║╚══██╔══╝██╔════╝██╔══██╗[/]
+[#FF2E97]██║   ██║██████╔╝█████╗  ██╔██╗ ██║██║     ██║   ██║██╔████╔██║██████╔╝██║   ██║   ██║   █████╗  ██████╔╝[/]
+[#FF2E97]██║   ██║██╔═══╝ ██╔══╝  ██║╚██╗██║██║     ██║   ██║██║╚██╔╝██║██╔═══╝ ██║   ██║   ██║   ██╔══╝  ██╔══██╗[/]
+[#C71585]╚██████╔╝██║     ███████╗██║ ╚████║╚██████╗╚██████╔╝██║ ╚═╝ ██║██║     ╚██████╔╝   ██║   ███████╗██║  ██║[/]
+[#C71585] ╚═════╝ ╚═╝     ╚══════╝╚═╝  ╚═══╝ ╚═════╝ ╚═════╝ ╚═╝     ╚═╝╚═╝      ╚═════╝    ╚═╝   ╚══════╝╚═╝  ╚═╝[/]"""
 
-# ASCII Art - Hermes Caduceus (compact, fits in left panel)
-HERMES_CADUCEUS = """[#CD7F32]⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⣀⡀⠀⣀⣀⠀⢀⣀⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀[/]
-[#CD7F32]⠀⠀⠀⠀⠀⠀⢀⣠⣴⣾⣿⣿⣇⠸⣿⣿⠇⣸⣿⣿⣷⣦⣄⡀⠀⠀⠀⠀⠀⠀[/]
-[#FFBF00]⠀⢀⣠⣴⣶⠿⠋⣩⡿⣿⡿⠻⣿⡇⢠⡄⢸⣿⠟⢿⣿⢿⣍⠙⠿⣶⣦⣄⡀⠀[/]
-[#FFBF00]⠀⠀⠉⠉⠁⠶⠟⠋⠀⠉⠀⢀⣈⣁⡈⢁⣈⣁⡀⠀⠉⠀⠙⠻⠶⠈⠉⠉⠀⠀[/]
-[#FFD700]⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣴⣿⡿⠛⢁⡈⠛⢿⣿⣦⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀[/]
-[#FFD700]⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠿⣿⣦⣤⣈⠁⢠⣴⣿⠿⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀[/]
-[#FFBF00]⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⠉⠻⢿⣿⣦⡉⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀[/]
-[#FFBF00]⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠘⢷⣦⣈⠛⠃⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀[/]
-[#CD7F32]⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢠⣴⠦⠈⠙⠿⣦⡄⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀[/]
-[#CD7F32]⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠸⣿⣤⡈⠁⢤⣿⠇⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀[/]
-[#B8860B]⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠉⠛⠷⠄⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀[/]
-[#B8860B]⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⣀⠑⢶⣄⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀[/]
-[#B8860B]⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣿⠁⢰⡆⠈⡿⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀[/]
-[#B8860B]⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⠳⠈⣡⠞⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀[/]
-[#B8860B]⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀[/]"""
+# ASCII Art - OpenComputer Caduceus (compact, fits in left panel)
+HERMES_CADUCEUS = """[#C2185B]          ⢀⣀⣠⣤⡄  ⢠⣤⣄⣀⡀[/]
+[#C2185B]       ⢀⣤⣠⣿⣿⡿⠋    ⠙⢿⣿⣿⣄⣤⡀[/]
+[#E91E78]      ⠰⣿⣿⣿⣿⠁        ⠈⣿⣿⣿⣿⠆[/]
+[#E91E78]    ⣴⣿⣶⣿⡿⠿⠃          ⠘⠿⢿⣿⣶⣿⣦[/]
+[#E91E78]   ⠸⣿⣿⣿⣿⣷⠄            ⠠⣾⣿⣿⣿⣿⠇[/]
+[#FF3D8A]  ⣴⣦⣨⣿⡿⠿⠟              ⠻⠿⢿⣿⣅⣴⣦[/]
+[#FF3D8A] ⢰⣿⣿⣿⣿⣷⣶⡄              ⢠⣶⣾⣿⣿⣿⣿⡆[/]
+[#FF3D8A] ⠈⠛⠿⣿⣿⡿⠿⠃              ⠘⠿⢿⣿⣿⠿⠛⠁[/]
+[#FF3D8A] ⢸⣿⣶⣿⣿⣶⣶⣦              ⣴⣶⣶⣿⣿⣶⣿⡇[/]
+[#FF3D8A] ⠸⣿⣿⣿⣿⣿⣿⠟              ⠻⣿⣿⣿⣿⣿⣿⠇[/]
+[#E91E78]  ⢈⣉⣉⣿⣿⣤⣴⣿⣦          ⣴⣿⣦⣤⣿⣿⣉⣉⡁[/]
+[#E91E78]  ⠹⣿⣿⣿⣿⣿⣿⣿⡿⢀⣤⡀    ⢀⣤⡀⢿⣿⣿⣿⣿⣿⣿⣿⠏[/]
+[#E91E78]   ⠹⣿⣿⡿⢿⣿⣏⣴⣿⣿⣿    ⣿⣿⣿⣦⣹⣿⡿⢿⣿⣿⠏[/]
+[#C2185B]     ⢠⣴⣾⣿⣿⣿⣿⡿⠃    ⠘⢿⣿⣿⣿⣿⣷⣦⡄[/]
+[#C2185B]      ⠙⢿⣿⠿⠛⠻⣷⣤⡀  ⢀⣤⣾⠟⠛⠿⣿⡿⠋[/]
+[#8E1A4F]             ⠙⠁  ⠈⠋[/]"""
 
 
 
@@ -2945,15 +2946,15 @@ def _build_compact_banner() -> str:
         _skin = None
 
     skin_name = getattr(_skin, "name", "default") if _skin else "default"
-    border_color = _skin.get_color("banner_border", "#FFD700") if _skin else "#FFD700"
-    title_color = _skin.get_color("banner_title", "#FFBF00") if _skin else "#FFBF00"
-    dim_color = _skin.get_color("banner_dim", "#B8860B") if _skin else "#B8860B"
+    border_color = _skin.get_color("banner_border", "#FF5FAF") if _skin else "#FF5FAF"
+    title_color = _skin.get_color("banner_title", "#FF2E97") if _skin else "#FF2E97"
+    dim_color = _skin.get_color("banner_dim", "#9E1060") if _skin else "#9E1060"
 
     if skin_name == "default":
-        line1 = "⚕ NOUS HERMES - AI Agent Framework"
-        tiny_line = "⚕ NOUS HERMES"
+        line1 = "⚕ OpenComputer - AI Agent Framework"
+        tiny_line = "⚕ OpenComputer"
     else:
-        agent_name = _skin.get_branding("agent_name", "Hermes Agent") if _skin else "Hermes Agent"
+        agent_name = _skin.get_branding("agent_name", "OpenComputer") if _skin else "OpenComputer"
         line1 = f"{agent_name} - AI Agent Framework"
         tiny_line = agent_name
 
@@ -2961,13 +2962,13 @@ def _build_compact_banner() -> str:
         from hermes_cli import __release_date__ as _release_date
         from hermes_cli import __version__ as _version
 
-        version_line = f"Hermes Agent v{_version} ({_release_date})"
+        version_line = f"OpenComputer v{_version} ({_release_date})"
     else:
         version_line = format_banner_version_label()
 
     w = min(shutil.get_terminal_size().columns - 2, 88)
     if w < 30:
-        return f"\n[{title_color}]{tiny_line}[/] [dim {dim_color}]- Nous Research[/]\n"
+        return f"\n[{title_color}]{tiny_line}[/]\n"
 
     inner = w - 2  # inside the box border
     bar = "═" * w
@@ -3138,7 +3139,7 @@ def save_config_value(key_path: str, value: any) -> bool:
 
 class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin):
     """
-    Interactive CLI for the Hermes Agent.
+    Interactive CLI for the OpenComputer.
     
     Provides a REPL interface with rich formatting, command history,
     and tool execution capabilities.
@@ -3160,7 +3161,7 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin):
         ignore_rules: bool = False,
     ):
         """
-        Initialize the Hermes CLI.
+        Initialize the OpenComputer CLI.
 
         Args:
             model: Model to use (default: from env or claude-sonnet)
@@ -3357,7 +3358,7 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin):
         self.checkpoint_max_file_size_mb = cp_cfg.get("max_file_size_mb", 10)
         self.pass_session_id = pass_session_id
         # --ignore-rules: honor either the constructor flag or the env var set
-        # by `hermes chat --ignore-rules` in hermes_cli/main.py. When true we
+        # by `oc chat --ignore-rules` in hermes_cli/main.py. When true we
         # pass skip_context_files=True and skip_memory=True to AIAgent so
         # AGENTS.md/SOUL.md/.cursorrules and persistent memory are not loaded.
         self.ignore_rules = ignore_rules or os.environ.get("HERMES_IGNORE_RULES") == "1"
@@ -3440,7 +3441,7 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin):
 
         # Opportunistic state.db maintenance — runs at most once per
         # min_interval_hours, tracked via state_meta in state.db itself so
-        # it's shared across all Hermes processes for this HERMES_HOME.
+        # it's shared across all OpenComputer processes for this HERMES_HOME.
         # Never blocks startup on failure.
         _run_state_db_auto_maintenance(self._session_db)
 
@@ -4178,7 +4179,7 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin):
                 parts.append("⚠ YOLO")
             return self._trim_status_bar_text(" │ ".join(parts), width)
         except Exception:
-            return f"⚕ {self.model if getattr(self, 'model', None) else 'Hermes'}"
+            return f"⚕ {self.model if getattr(self, 'model', None) else 'OpenComputer'}"
 
     def _get_status_bar_fragments(self):
         if not self._status_bar_visible or getattr(self, '_model_picker_state', None):
@@ -4310,7 +4311,7 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin):
                 if normalized_model and normalized_model != current_model:
                     if not self._model_is_default:
                         self._console_print(
-                            f"[yellow]⚠️  Normalized model '{current_model}' to '{normalized_model}' for {resolved_provider}.[/]"
+                            f"[#FF2E97]⚠️  Normalized model '{current_model}' to '{normalized_model}' for {resolved_provider}.[/]"
                         )
                     self.model = normalized_model
                     current_model = normalized_model
@@ -4326,7 +4327,7 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin):
                 if canonical and canonical != current_model:
                     if not self._model_is_default:
                         self._console_print(
-                            f"[yellow]⚠️  Normalized Copilot model '{current_model}' to '{canonical}'.[/]"
+                            f"[#FF2E97]⚠️  Normalized Copilot model '{current_model}' to '{canonical}'.[/]"
                         )
                     self.model = canonical
                     current_model = canonical
@@ -4348,7 +4349,7 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin):
                 if canonical and canonical != current_model:
                     if not self._model_is_default:
                         self._console_print(
-                            f"[yellow]⚠️  Stripped provider prefix from '{current_model}'; using '{canonical}' for {resolved_provider}.[/]"
+                            f"[#FF2E97]⚠️  Stripped provider prefix from '{current_model}'; using '{canonical}' for {resolved_provider}.[/]"
                         )
                     self.model = canonical
                     current_model = canonical
@@ -4370,7 +4371,7 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin):
             slug = current_model.split("/", 1)[1]
             if not self._model_is_default:
                 self._console_print(
-                    f"[yellow]⚠️  Stripped provider prefix from '{current_model}'; "
+                    f"[#FF2E97]⚠️  Stripped provider prefix from '{current_model}'; "
                     f"using '{slug}' for OpenAI Codex.[/]"
                 )
             self.model = slug
@@ -4828,10 +4829,10 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin):
             try:
                 from hermes_cli.skin_engine import get_active_skin
                 _skin = get_active_skin()
-                label = _skin.get_branding("response_label", "⚕ Hermes")
+                label = _skin.get_branding("response_label", "⚕ OpenComputer")
                 _text_hex = _skin.get_color("banner_text", "#FFF8DC")
             except Exception:
-                label = "⚕ Hermes"
+                label = "⚕ OpenComputer"
                 _text_hex = "#FFF8DC"
             # Build a true-color ANSI escape for the response text color
             # so streamed content matches the Rich Panel appearance.
@@ -5079,9 +5080,9 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin):
         """Show a startup banner if any unacked security advisories match.
 
         Renders a single bold-red box on stderr (so piped stdout remains
-        clean) listing the worst hit and pointing at ``hermes doctor``.
+        clean) listing the worst hit and pointing at ``oc doctor``.
         Banner-cache rate-limits this to once per 24h per advisory; full
-        remediation lives behind ``hermes doctor`` so the banner stays
+        remediation lives behind ``oc doctor`` so the banner stays
         small.
         """
         try:
@@ -5144,11 +5145,11 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin):
         if ctx_len and ctx_len < MINIMUM_CONTEXT_LENGTH:
             self._console_print()
             self._console_print(
-                f"[yellow]⚠️  Context length is only {ctx_len:,} tokens — "
+                f"[#FF2E97]⚠️  Context length is only {ctx_len:,} tokens — "
                 f"this is likely too low for agent use with tools.[/]"
             )
             self._console_print(
-                f"[dim]   Hermes needs at least {MINIMUM_CONTEXT_LENGTH:,} tokens. Tool schemas + system prompt use a large fixed prefix.[/]"
+                f"[dim]   OpenComputer needs at least {MINIMUM_CONTEXT_LENGTH:,} tokens. Tool schemas + system prompt use a large fixed prefix.[/]"
             )
             base_url = getattr(self, "base_url", "") or ""
             if "11434" in base_url or "ollama" in base_url.lower():
@@ -5171,8 +5172,8 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin):
         if is_nous_hermes_non_agentic(model_name):
             self._console_print()
             self._console_print(
-                "[bold yellow]⚠  Nous Research Hermes 3 & 4 models are NOT agentic and are not "
-                "designed for use with Hermes Agent.[/]"
+                "[bold #FF5FAF]⚠  Nous Research Hermes 3 & 4 models are NOT agentic and are not "
+                "designed for use with OpenComputer.[/]"
             )
             self._console_print(
                 "[dim]   They lack tool-calling capabilities required for agent workflows. "
@@ -5421,13 +5422,13 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin):
             
             if api_key_missing:
                 self._console_print()
-                self._console_print("[yellow]⚠️  Some tools disabled (missing API keys):[/]")
+                self._console_print("[#FF2E97]⚠️  Some tools disabled (missing API keys):[/]")
                 for item in api_key_missing:
                     tools_str = ", ".join(item["tools"][:2])  # Show first 2 tools
                     if len(item["tools"]) > 2:
                         tools_str += f", +{len(item['tools'])-2} more"
                     self._console_print(f"   [dim]• {item['name']}[/] [dim italic]({', '.join(item['missing_vars'])})[/]")
-                self._console_print("[dim]   Run 'hermes setup' to configure[/]")
+                self._console_print("[dim]   Run 'oc setup' to configure[/]")
         except Exception:
             pass  # Don't crash on import errors
     
@@ -5456,11 +5457,11 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin):
         try:
             from hermes_cli.skin_engine import get_active_skin
             skin = get_active_skin()
-            separator_color = skin.get_color("banner_dim", "#B8860B")
-            accent_color = skin.get_color("ui_accent", "#FFBF00")
+            separator_color = skin.get_color("banner_dim", "#9E1060")
+            accent_color = skin.get_color("ui_accent", "#FF2E97")
             label_color = skin.get_color("ui_label", "#DAA520")
         except Exception:
-            separator_color, accent_color, label_color = "#B8860B", "#FFBF00", "cyan"
+            separator_color, accent_color, label_color = "#9E1060", "#FF2E97", "cyan"
         toolsets_info = ""
         if self.enabled_toolsets and "all" not in self.enabled_toolsets:
             toolsets_info = f" [dim {separator_color}]·[/] [{label_color}]toolsets: {', '.join(self.enabled_toolsets)}[/]"
@@ -5512,7 +5513,7 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin):
         is_running = bool(getattr(self, "_agent_running", False))
 
         lines = [
-            "Hermes CLI Status",
+            "OpenComputer CLI Status",
             "",
             f"Session ID: {self.session_id}",
             f"Path: {display_hermes_home()}",
@@ -5594,7 +5595,7 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin):
                     f"    [bold {_accent_hex()}]{('/' + name):<22}[/] [dim]-[/] {_escape(desc)}"
                 )
 
-        _cprint(f"\n  {_DIM}Tip: Just type your message to chat with Hermes!{_RST}")
+        _cprint(f"\n  {_DIM}Tip: Just type your message to chat with OpenComputer!{_RST}")
         _cprint(f"  {_DIM}Multi-line: Alt+Enter for a new line{_RST}")
         _cprint(f"  {_DIM}Draft editor: Ctrl+G (Alt+G in VSCode/Cursor){_RST}")
         if _is_termux_environment():
@@ -5828,7 +5829,7 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin):
                 )
                 continue
 
-            print(f"\n  [Hermes #{visible_index}]")
+            print(f"\n  [OpenComputer #{visible_index}]")
             tool_calls = msg.get("tool_calls") or []
             if content_text:
                 preview = content_text[:preview_limit]
@@ -5868,7 +5869,7 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin):
 
         Starting the CLI and immediately quitting (or rotating with /new,
         /clear) used to leave an empty untitled row behind that clutters
-        ``/resume`` and ``hermes sessions list``. Delegates the
+        ``/resume`` and ``oc sessions list``. Delegates the
         check-and-delete to ``SessionDB.delete_session_if_empty``, which
         only removes rows with no messages, no title, and no child
         sessions. Ported from google-gemini/gemini-cli#27770.
@@ -5909,7 +5910,7 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin):
             except Exception:
                 pass
             # Don't let immediately-rotated empty sessions pile up in
-            # /resume and `hermes sessions list` (gemini-cli#27770 port).
+            # /resume and `oc sessions list` (gemini-cli#27770 port).
             self._discard_session_if_empty(old_session_id)
 
         self.session_start = datetime.now()
@@ -6044,7 +6045,7 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin):
 
         The snapshot is a convenience export for sharing or off-line inspection;
         every message is already persisted incrementally to the SQLite session
-        DB, so the live session remains resumable via ``hermes --resume <id>``
+        DB, so the live session remains resumable via ``oc --resume <id>``
         regardless of whether the user ever runs ``/save``.
         """
         if not self.conversation_history:
@@ -6610,7 +6611,7 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin):
             return True
 
         choices = [
-            ("once", "Switch anyway", "Use this model for the current Hermes session."),
+            ("once", "Switch anyway", "Use this model for the current OpenComputer session."),
             ("cancel", "Cancel", "Keep the current model."),
         ]
         raw = self._prompt_text_input_modal(
@@ -6761,7 +6762,7 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin):
                 return
             provider_data = providers[selected]
             # Use the curated model list from list_authenticated_providers()
-            # (same lists as `hermes model` and gateway pickers).
+            # (same lists as `oc model` and gateway pickers).
             # Only fall back to the live provider catalog when the curated
             # list is empty (e.g. user-defined endpoints with no curated list).
             model_list = provider_data.get("models", [])
@@ -7013,7 +7014,7 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin):
 
         Usage:
             /codex-runtime                       — show current state
-            /codex-runtime auto                  — Hermes default (chat_completions)
+            /codex-runtime auto                  — OpenComputer default (chat_completions)
             /codex-runtime codex_app_server      — hand turns to codex subprocess
             /codex-runtime on / off              — synonyms for the above
         """
@@ -7276,9 +7277,9 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin):
                     _tip = get_random_tip()
                     try:
                         from hermes_cli.skin_engine import get_active_skin
-                        _tip_color = get_active_skin().get_color("banner_dim", "#B8860B")
+                        _tip_color = get_active_skin().get_color("banner_dim", "#9E1060")
                     except Exception:
-                        _tip_color = "#B8860B"
+                        _tip_color = "#9E1060"
                     cc.print(f"[dim {_tip_color}]✦ Tip: {_tip}[/]")
                 except Exception:
                     pass
@@ -7291,9 +7292,9 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin):
                     _tip = get_random_tip()
                     try:
                         from hermes_cli.skin_engine import get_active_skin
-                        _tip_color = get_active_skin().get_color("banner_dim", "#B8860B")
+                        _tip_color = get_active_skin().get_color("banner_dim", "#9E1060")
                     except Exception:
-                        _tip_color = "#B8860B"
+                        _tip_color = "#9E1060"
                     self._console_print(f"[dim {_tip_color}]✦ Tip: {_tip}[/]")
                 except Exception:
                     pass
@@ -7488,7 +7489,7 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin):
             self._handle_browser_command(cmd_original)
         elif canonical == "plugins":
             try:
-                # Discover from disk (bundled + user), matching `hermes plugins
+                # Discover from disk (bundled + user), matching `oc plugins
                 # list` — so installed-but-not-enabled plugins are visible here
                 # too. The plugin manager only knows about *loaded* plugins, so
                 # using it alone made freshly-installed, not-yet-enabled plugins
@@ -7507,7 +7508,7 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin):
                 # `/plugins` is a quick glance — default to user-installed
                 # plugins (what the user actually added). Bundled provider/
                 # platform plugins are summarized on one line; the full
-                # catalog lives behind `hermes plugins list`.
+                # catalog lives behind `oc plugins list`.
                 user_entries = [e for e in entries if e[3] != "bundled"]
                 bundled_count = len(entries) - len(user_entries)
 
@@ -7680,7 +7681,7 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin):
                     )
                     if missing:
                         ChatConsole().print(
-                            f"[yellow]Skipped missing skills: {', '.join(missing)}[/]"
+                            f"[#FF2E97]Skipped missing skills: {', '.join(missing)}[/]"
                         )
                     if hasattr(self, '_pending_input'):
                         self._pending_input.put(msg)
@@ -8373,7 +8374,7 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin):
         if not view.logged_in:
             print()
             print(f"  💳 {_DIM}Not logged into Nous Portal.{_RST}")
-            print("  Run `hermes portal` to log in, then /credits.")
+            print("  Run `oc portal` to log in, then /credits.")
             return
 
         print()
@@ -10112,7 +10113,7 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin):
                     if not _streaming_box_opened:
                         _streaming_box_opened = True
                         w = self._scrollback_box_width(getattr(self.console, "width", 80))
-                        label = " ⚕ Hermes "
+                        label = " ⚕ OpenComputer "
                         if self.show_timestamps:
                             label = f"{label}{datetime.now().strftime('%H:%M')} "
                         fill = w - 2 - HermesCLI._status_bar_display_width(label)
@@ -10454,12 +10455,12 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin):
                 try:
                     from hermes_cli.skin_engine import get_active_skin
                     _skin = get_active_skin()
-                    label = _skin.get_branding("response_label", "⚕ Hermes")
-                    _resp_color = _maybe_remap_for_light_mode(_skin.get_color("response_border", "#CD7F32"))
+                    label = _skin.get_branding("response_label", "⚕ OpenComputer")
+                    _resp_color = _maybe_remap_for_light_mode(_skin.get_color("response_border", "#C71585"))
                     _resp_text = _maybe_remap_for_light_mode(_skin.get_color("banner_text", "#FFF8DC"))
                 except Exception:
-                    label = "⚕ Hermes"
-                    _resp_color = _maybe_remap_for_light_mode("#CD7F32")
+                    label = "⚕ OpenComputer"
+                    _resp_color = _maybe_remap_for_light_mode("#C71585")
                     _resp_text = _maybe_remap_for_light_mode("#FFF8DC")
 
                 is_error_response = result and (result.get("failed") or result.get("partial"))
@@ -10918,10 +10919,10 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin):
         try:
             from hermes_cli.skin_engine import get_active_skin
             _welcome_skin = get_active_skin()
-            _welcome_text = _welcome_skin.get_branding("welcome", "Welcome to Hermes Agent! Type your message or /help for commands.")
+            _welcome_text = _welcome_skin.get_branding("welcome", "Welcome to OpenComputer! Type your message or /help for commands.")
             _welcome_color = _welcome_skin.get_color("banner_text", "#FFF8DC")
         except Exception:
-            _welcome_text = "Welcome to Hermes Agent! Type your message or /help for commands."
+            _welcome_text = "Welcome to OpenComputer! Type your message or /help for commands."
             _welcome_color = "#FFF8DC"
         self._console_print(f"[{_welcome_color}]{_welcome_text}[/]")
 
@@ -10953,7 +10954,7 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin):
         except Exception:
             pass
         # First-time OpenClaw-residue banner — fires once if ~/.openclaw/ exists
-        # after an OpenClaw→Hermes migration (especially migrations done by
+        # after an OpenClaw→OpenComputer migration (especially migrations done by
         # OpenClaw's own tool, which doesn't archive the source directory).
         try:
             from agent.onboarding import (
@@ -10965,9 +10966,9 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin):
             )
             if not is_seen(self.config, OPENCLAW_RESIDUE_FLAG) and detect_openclaw_residue():
                 try:
-                    _resid_color = _welcome_skin.get_color("banner_dim", "#B8860B")
+                    _resid_color = _welcome_skin.get_color("banner_dim", "#9E1060")
                 except Exception:
-                    _resid_color = "#B8860B"
+                    _resid_color = "#9E1060"
                 self._console_print(f"[{_resid_color}]{openclaw_residue_hint_cli()}[/]")
                 try:
                     from hermes_cli.config import get_config_path as _get_cfg_path_resid
@@ -10981,9 +10982,9 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin):
             from hermes_cli.tips import get_random_tip
             _tip = get_random_tip()
             try:
-                _tip_color = _welcome_skin.get_color("banner_dim", "#B8860B")
+                _tip_color = _welcome_skin.get_color("banner_dim", "#9E1060")
             except Exception:
-                _tip_color = "#B8860B"
+                _tip_color = "#9E1060"
             self._console_print(f"[dim {_tip_color}]✦ Tip: {_tip}[/]")
         except Exception:
             pass  # Tips are non-critical — never break startup
@@ -11317,7 +11318,7 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin):
                 without requiring terminal settings changes. Ctrl+J (the raw
                 LF keystroke) also triggers this by virtue of being the same
                 key code — a harmless side effect since Ctrl+J has no
-                conflicting Hermes binding. See issue #22379.
+                conflicting OpenComputer binding. See issue #22379.
                 """
                 event.current_buffer.insert_text('\n')
 
@@ -11759,7 +11760,7 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin):
             import signal as _sig
             from prompt_toolkit.application import run_in_terminal
             from hermes_cli.skin_engine import get_active_skin
-            agent_name = get_active_skin().get_branding("agent_name", "Hermes Agent")
+            agent_name = get_active_skin().get_branding("agent_name", "OpenComputer")
             msg = f"\n{agent_name} has been suspended. Run `fg` to bring {agent_name} back."
             def _suspend():
                 os.write(1, msg.encode())
@@ -11962,7 +11963,7 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin):
                 # No image found — show a hint
                 pass  # silent when no image (avoid noise on accidental press)
 
-        # Dynamic prompt: shows Hermes symbol when agent is working,
+        # Dynamic prompt: shows OpenComputer symbol when agent is working,
         # or answer prompt when clarify freetext mode is active.
         cli_ref = self
 
@@ -12298,7 +12299,7 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin):
                 else f"  {other_num_prefix}. Other (type your answer)"
             )
             preview_lines.extend(_wrap_panel_text(other_label, 60, subsequent_indent="    "))
-            box_width = _panel_box_width("Hermes needs your input", preview_lines)
+            box_width = _panel_box_width("OpenComputer needs your input", preview_lines)
             inner_text_width = max(8, box_width - 2)
 
             # Pre-wrap choices + Other option — these are mandatory.
@@ -12393,8 +12394,8 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin):
             lines = []
             # Box top border
             lines.append(('class:clarify-border', '╭─ '))
-            lines.append(('class:clarify-title', 'Hermes needs your input'))
-            lines.append(('class:clarify-border', ' ' + ('─' * max(0, box_width - len("Hermes needs your input") - 3)) + '╮\n'))
+            lines.append(('class:clarify-title', 'OpenComputer needs your input'))
+            lines.append(('class:clarify-border', ' ' + ('─' * max(0, box_width - len("OpenComputer needs your input") - 3)) + '╮\n'))
             if not use_compact_chrome:
                 _append_blank_panel_line(lines, 'class:clarify-border', box_width)
 
@@ -12713,42 +12714,42 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin):
             'prompt-working': '#888888 italic',
             'hint': '#888888 italic',
             'status-bar': 'bg:#1a1a2e #C0C0C0',
-            'status-bar-strong': 'bg:#1a1a2e #FFD700 bold',
+            'status-bar-strong': 'bg:#1a1a2e #FF5FAF bold',
             'status-bar-dim': 'bg:#1a1a2e #8B8682',
             'status-bar-good': 'bg:#1a1a2e #8FBC8F bold',
-            'status-bar-warn': 'bg:#1a1a2e #FFD700 bold',
+            'status-bar-warn': 'bg:#1a1a2e #FF5FAF bold',
             'status-bar-bad': 'bg:#1a1a2e #FF8C00 bold',
             'status-bar-critical': 'bg:#1a1a2e #FF6B6B bold',
             'status-bar-yolo': 'bg:#1a1a2e #FF4444 bold',
             # Bronze horizontal rules around the input area
-            'input-rule': '#CD7F32',
+            'input-rule': '#C71585',
             # Clipboard image attachment badges
             'image-badge': '#87CEEB bold',
             'completion-menu': 'bg:#1a1a2e #FFF8DC',
             'completion-menu.completion': 'bg:#1a1a2e #FFF8DC',
-            'completion-menu.completion.current': 'bg:#333355 #FFD700',
+            'completion-menu.completion.current': 'bg:#333355 #FF5FAF',
             'completion-menu.meta.completion': 'bg:#1a1a2e #888888',
-            'completion-menu.meta.completion.current': 'bg:#333355 #FFBF00',
+            'completion-menu.meta.completion.current': 'bg:#333355 #FF2E97',
             # Clarify question panel
-            'clarify-border': '#CD7F32',
-            'clarify-title': '#FFD700 bold',
+            'clarify-border': '#C71585',
+            'clarify-title': '#FF5FAF bold',
             'clarify-question': '#FFF8DC bold',
             'clarify-choice': '#AAAAAA',
-            'clarify-selected': '#FFD700 bold',
-            'clarify-active-other': '#FFD700 italic',
-            'clarify-countdown': '#CD7F32',
+            'clarify-selected': '#FF5FAF bold',
+            'clarify-active-other': '#FF5FAF italic',
+            'clarify-countdown': '#C71585',
             # Sudo password panel
             'sudo-prompt': '#FF6B6B bold',
-            'sudo-border': '#CD7F32',
+            'sudo-border': '#C71585',
             'sudo-title': '#FF6B6B bold',
             'sudo-text': '#FFF8DC',
             # Dangerous command approval panel
-            'approval-border': '#CD7F32',
+            'approval-border': '#C71585',
             'approval-title': '#FF8C00 bold',
             'approval-desc': '#FFF8DC bold',
             'approval-cmd': '#AAAAAA italic',
             'approval-choice': '#AAAAAA',
-            'approval-selected': '#FFD700 bold',
+            'approval-selected': '#FF5FAF bold',
             # Voice mode
             'voice-prompt': '#87CEEB',
             'voice-recording': '#FF4444 bold',
@@ -13286,7 +13287,7 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin):
                 except (Exception, KeyboardInterrupt) as e:
                     logger.debug("Could not close session in DB: %s", e)
                 # Started-and-immediately-quit sessions never gained content;
-                # drop the empty row so /resume and `hermes sessions list`
+                # drop the empty row so /resume and `oc sessions list`
                 # stay clean (gemini-cli#27770 port). No-op for resumed or
                 # titled sessions and anything with messages or children.
                 if not getattr(self, '_delete_session_on_exit', False):
@@ -13459,7 +13460,7 @@ def main(
     ignore_rules: bool = False,
 ):
     """
-    Hermes Agent CLI - Interactive AI Assistant
+    OpenComputer CLI - Interactive AI Assistant
     
     Args:
         query: Single query to execute (then exit). Alias: -q
@@ -13510,7 +13511,7 @@ def main(
     if gateway:
         import asyncio
         from gateway.run import start_gateway
-        print("Starting Hermes Gateway (messaging platforms)...")
+        print("Starting OpenComputer Gateway (messaging platforms)...")
         asyncio.run(start_gateway())
         return
 
@@ -13556,7 +13557,7 @@ def main(
                 else:
                     toolsets_list.append(str(t))
     else:
-        # Coding posture (base Hermes): with no explicit --toolsets, collapse
+        # Coding posture (base OpenComputer): with no explicit --toolsets, collapse
         # to the coding toolset (+ enabled MCP servers) when sitting in a code
         # workspace. See agent/coding_context.py.
         _coding = None
@@ -13707,7 +13708,7 @@ def main(
             sys.exit(1)
         try:
             query, single_query_images = _collect_query_images(query, image)
-            # Kanban workers spawn with ``hermes chat -q "work kanban task <id>"``;
+            # Kanban workers spawn with ``oc chat -q "work kanban task <id>"``;
             # the actual task description lives in the task body. Mirror the
             # gateway/CLI behaviour for inbound images by scanning the body for
             # local image paths and http(s) image URLs and attaching them to the
@@ -13815,7 +13816,7 @@ def main(
                         cli.agent.quiet_mode = True
                         cli.agent.suppress_status_output = True
                         # Suppress streaming display callbacks so stdout stays
-                        # machine-readable (no styled "Hermes" box, no tool-gen
+                        # machine-readable (no styled "OpenComputer" box, no tool-gen
                         # status lines).  The response is printed once below.
                         cli.agent.stream_delta_callback = None
                         cli.agent.tool_gen_callback = None
@@ -13898,7 +13899,7 @@ def main(
                 # Exit with error code if credentials or agent init fails
                 sys.exit(1)
             else:
-                # Single-query mode (`hermes chat -q "…"`): skip the welcome
+                # Single-query mode (`oc chat -q "…"`): skip the welcome
                 # banner. Building the banner takes ~420 ms on cold start —
                 # ~200 ms of that is the version-update check, the rest is
                 # toolset / skill enumeration and Rich panel rendering. None

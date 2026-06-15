@@ -80,7 +80,7 @@ _DESTRUCTIVE_ACTIONS = frozenset({
 })
 
 # Hard-blocked key combinations. Mirrored from #4562 — these are destructive
-# regardless of approval level (e.g. logout kills the session Hermes runs in).
+# regardless of approval level (e.g. logout kills the session OpenComputer runs in).
 _BLOCKED_KEY_COMBOS = {
     frozenset({"cmd", "shift", "backspace"}),   # empty trash
     frozenset({"cmd", "option", "backspace"}),   # force delete
@@ -253,7 +253,7 @@ def handle_computer_use(args: Dict[str, Any], **kwargs) -> Any:
     except Exception as e:
         return json.dumps({
             "error": f"computer_use backend unavailable: {e}",
-            "hint": "Run `hermes tools` and enable Computer Use to install cua-driver.",
+            "hint": "Run `oc tools` and enable Computer Use to install cua-driver.",
         })
 
     try:

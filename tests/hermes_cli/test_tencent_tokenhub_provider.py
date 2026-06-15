@@ -418,7 +418,7 @@ class TestTencentTokenhubCLIDispatch:
 
     def test_in_api_key_provider_tuple(self):
         """tencent-tokenhub must appear in the elif tuple in _model_flow dispatch
-        so ``hermes model`` routes it through the generic api_key_provider flow.
+        so ``oc model`` routes it through the generic api_key_provider flow.
         """
         import inspect
         from hermes_cli import main as main_mod

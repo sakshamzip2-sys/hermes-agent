@@ -30,14 +30,42 @@ class CustomProfile(ProviderProfile):
             options["num_ctx"] = ollama_num_ctx
             extra_body["options"] = options
 
-        # Disable thinking when reasoning is turned off
+        # Reasoning handling.
+        top_level: dict[str, Any] = {}
         if reasoning_config and isinstance(reasoning_config, dict):
             _effort = (reasoning_config.get("effort") or "").strip().lower()
             _enabled = reasoning_config.get("enabled", True)
             if _effort == "none" or _enabled is False:
+                # Ollama-style off switch (ignored by remote OpenAI-compat routers).
                 extra_body["think"] = False
+            elif ctx.get("supports_reasoning"):
+                # Remote OpenAI-compatible routers (e.g. the OpenComputer router,
+                # which proxies Anthropic/xAI) honour the OpenAI-style top-level
+                # ``reasoning_effort`` and return ``reasoning_content`` — they
+                # ignore the OpenRouter-style ``extra_body.reasoning`` object.
+                # This branch only fires when the route is known reasoning-capable
+                # (see run_agent._supports_reasoning_extra_body), so Ollama/local
+                # endpoints — which report no reasoning support — are unaffected.
+                _clamp = {
+                    "minimal": "low",
+                    "low": "low",
+                    "medium": "medium",
+                    "high": "high",
+                    "xhigh": "high",
+                }
+                top_level["reasoning_effort"] = _clamp.get(_effort, "medium")
+                # Anthropic models require temperature == 1 whenever extended
+                # thinking is enabled (they reject any other value with HTTP
+                # 400), so force it for Claude only. Other backends behind the
+                # same router (e.g. xAI/Grok) have no such constraint and prefer
+                # the caller's temperature, so don't override it for them.
+                # ``top_level`` merges after the base temperature in
+                # _build_kwargs_from_profile, so this wins for Claude.
+                _model = (ctx.get("model") or "").lower()
+                if any(p in _model for p in ("claude", "opus", "sonnet", "haiku")):
+                    top_level["temperature"] = 1
 
-        return extra_body, {}
+        return extra_body, top_level
 
     def fetch_models(
         self,

@@ -39,7 +39,7 @@ def test_session_create_rejects_at_active_session_limit(monkeypatch, tmp_path):
 
         second = server._methods["session.create"]("r2", {"cols": 80})
         assert second["error"]["message"] == (
-            "Hermes is at the active session limit (1/1). "
+            "OpenComputer is at the active session limit (1/1). "
             "Try again when another session finishes."
         )
         assert list(server._sessions) == [sid]
@@ -3584,7 +3584,7 @@ def test_session_status_reads_live_gateway_agent(monkeypatch):
         server._sessions.pop("sid", None)
 
     out = resp["result"]["output"]
-    assert "Hermes TUI Status" in out
+    assert "OpenComputer TUI Status" in out
     assert "Session ID: session-key" in out
     assert "Title: Live TUI" in out
     assert "Model: live-model (live-provider)" in out
@@ -4900,13 +4900,13 @@ def test_session_delete_success_returns_deleted_id(monkeypatch):
 
 
 # --------------------------------------------------------------------------
-# model.options — curated-list parity with `hermes model` and classic /model
+# model.options — curated-list parity with `oc model` and classic /model
 # --------------------------------------------------------------------------
 
 
 def test_model_options_does_not_overwrite_curated_models(monkeypatch):
     """The TUI model.options handler must surface the same curated model
-    list as `hermes model` and the classic CLI /model picker.
+    list as `oc model` and the classic CLI /model picker.
 
     Regression: earlier versions of this handler unconditionally replaced
     each provider's curated ``models`` field with ``provider_model_ids()``
@@ -5253,7 +5253,7 @@ def test_session_active_list_excludes_finalized_sessions(monkeypatch):
     that window ``session.active_list`` would otherwise still report the dead
     session, which is exactly the footer "N sessions" count that only ever grew
     until a gateway restart. A live session on the real stdio transport (the
-    standalone ``hermes --tui`` case) must still be reported.
+    standalone ``oc --tui`` case) must still be reported.
     """
     class _DB:
         def get_session_title(self, key):
@@ -6570,7 +6570,7 @@ def test_notification_poller_requeues_when_busy(monkeypatch):
 
 
 def test_session_save_writes_under_hermes_home_with_system_prompt(monkeypatch, tmp_path):
-    """TUI /save (session.save RPC) must snapshot under the Hermes profile
+    """TUI /save (session.save RPC) must snapshot under the OpenComputer profile
     home — not the project/workspace CWD — and include the system prompt,
     mirroring the classic CLI /save and the dashboard save export.
 
@@ -6592,7 +6592,7 @@ def test_session_save_writes_under_hermes_home_with_system_prompt(monkeypatch, t
         model="hermes-test",
         session_id="20260101_120000_abc123",
         session_start=datetime(2026, 1, 1, 12, 0, 0),
-        _cached_system_prompt="You are Hermes.",
+        _cached_system_prompt="You are OpenComputer.",
     )
     history = [
         {"role": "user", "content": "hi"},
@@ -6624,7 +6624,7 @@ def test_session_save_writes_under_hermes_home_with_system_prompt(monkeypatch, t
     assert payload["model"] == "hermes-test"
     assert payload["session_id"] == "20260101_120000_abc123"
     assert payload["session_start"] == "2026-01-01T12:00:00"
-    assert payload["system_prompt"] == "You are Hermes."
+    assert payload["system_prompt"] == "You are OpenComputer."
     assert payload["messages"] == history
 
 

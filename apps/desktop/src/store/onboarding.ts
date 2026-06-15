@@ -189,7 +189,7 @@ async function checkRuntime(ctx: OnboardingContext): Promise<RuntimeReadinessRes
 }
 
 function notifyReady(provider: string) {
-  notify({ kind: 'success', title: 'Hermes is ready', message: `${provider} connected.` })
+  notify({ kind: 'success', title: 'OpenComputer is ready', message: `${provider} connected.` })
 }
 
 // Human-friendly labels for tools auto-routed through the Nous Tool Gateway,
@@ -263,7 +263,7 @@ async function fetchProviderDefaultModel(
   }
 
   // Prefer the backend's recommended default — it mirrors the curation
-  // `hermes model` does (for Nous it honors the user's free/paid tier, so a
+  // `oc model` does (for Nous it honors the user's free/paid tier, so a
   // free user gets a free model rather than a paid default like opus). Fall
   // back to the first curated model if the endpoint can't resolve one.
   let defaultModel = String(models[0])
@@ -360,8 +360,8 @@ function providerResolutionFailure(reason: null | string) {
   const detail = reason?.trim()
 
   return detail
-    ? `Connected, but Hermes still cannot resolve a usable provider. ${detail}`
-    : 'Connected, but Hermes still cannot resolve a usable provider.'
+    ? `Connected, but OpenComputer still cannot resolve a usable provider. ${detail}`
+    : 'Connected, but OpenComputer still cannot resolve a usable provider.'
 }
 
 async function refreshProviders() {
@@ -722,7 +722,7 @@ export async function recheckExternalSignin(ctx: OnboardingContext) {
       provider,
       message:
         reason?.trim() ||
-        `Hermes still cannot reach ${provider.name}. Run \`${provider.cli_command}\` in a terminal first.`
+        `OpenComputer still cannot reach ${provider.name}. Run \`${provider.cli_command}\` in a terminal first.`
     })
   )
 }
@@ -837,7 +837,7 @@ export async function saveOnboardingLocalEndpoint(baseUrl: string, apiKey: strin
     if (!runtime.ready) {
       const detail = (runtime.reason ?? '').trim()
 
-      return { ok: false, message: detail || `Saved, but Hermes still cannot reach ${url}.` }
+      return { ok: false, message: detail || `Saved, but OpenComputer still cannot reach ${url}.` }
     }
 
     notifyReady('Local / custom endpoint')

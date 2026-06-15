@@ -52,7 +52,7 @@ logger = logging.getLogger(__name__)
 
 _HERMES_MODEL_WARNING = (
     "Nous Research Hermes 3 & 4 models are NOT agentic and are not designed "
-    "for use with Hermes Agent. They lack the tool-calling capabilities "
+    "for use with OpenComputer. They lack the tool-calling capabilities "
     "required for agent workflows. Consider using an agentic model instead "
     "(Claude, GPT, Gemini, DeepSeek, etc.)."
 )
@@ -191,7 +191,7 @@ def _load_direct_aliases() -> dict[str, DirectAlias]:
             provider: custom
             base_url: "https://ollama.com/v1"
 
-    Also reads ``model.aliases`` (set by ``hermes config set model.aliases.xxx``)
+    Also reads ``model.aliases`` (set by ``oc config set model.aliases.xxx``)
     and converts simple string entries (``ds-flash: deepseek/deepseek-v4-flash``)
     into DirectAlias objects.  The provider is parsed from the ``provider/``
     prefix in the value; if no slash, the current provider is used.
@@ -679,7 +679,7 @@ def switch_model(
         if pdef is None:
             _switch_err = (
                 f"Unknown provider '{explicit_provider}'. "
-                f"Check 'hermes model' for available providers, or define it "
+                f"Check 'oc model' for available providers, or define it "
                 f"in config.yaml under 'providers:'."
             )
             # Check for common config issues that cause provider resolution failures
@@ -687,7 +687,7 @@ def switch_model(
                 from hermes_cli.config import validate_config_structure
                 _cfg_issues = validate_config_structure()
                 if _cfg_issues:
-                    _switch_err += "\n\nRun 'hermes doctor' — config issues detected:"
+                    _switch_err += "\n\nRun 'oc doctor' — config issues detected:"
                     for _ci in _cfg_issues[:3]:
                         _switch_err += f"\n  • {_ci.message}"
             except Exception:
@@ -1298,7 +1298,7 @@ def list_authenticated_providers(
     # "nous" pulls from the remote model-catalog manifest published at
     # https://hermes-agent.nousresearch.com/docs/api/model-catalog.json so
     # newly added Portal models surface in the /model picker without
-    # requiring a Hermes release. Falls back to the in-repo
+    # requiring a OpenComputer release. Falls back to the in-repo
     # _PROVIDER_MODELS["nous"] snapshot when the manifest is unreachable.
     curated["nous"] = get_curated_nous_model_ids()
     # Ollama Cloud uses dynamic discovery (no static curated list)
@@ -1334,7 +1334,7 @@ def list_authenticated_providers(
             live = [current_model]
         curated["lmstudio"] = live
 
-    # --- 1. Check Hermes-mapped providers ---
+    # --- 1. Check OpenComputer-mapped providers ---
     from hermes_cli.models import _AGGREGATOR_PROVIDERS as _AGG_PROVIDERS
     from hermes_cli.providers import ALIASES as _PROVIDER_ALIAS_TABLE
     for hermes_id, mdev_id in PROVIDER_TO_MODELS_DEV.items():
@@ -1391,7 +1391,7 @@ def list_authenticated_providers(
             continue
 
         # Unified pathway: route through cached_provider_model_ids() so the
-        # /model picker sees the SAME list `hermes model` would build, with
+        # /model picker sees the SAME list `oc model` would build, with
         # disk caching to keep the picker open snappy. Falls back to the
         # curated static list when the live fetcher returns nothing.
         model_ids = cached_provider_model_ids(hermes_id)
@@ -1419,20 +1419,20 @@ def list_authenticated_providers(
         seen_mdev_ids.add(mdev_id)
         _record_builtin_endpoint(slug)
 
-    # --- 2. Check Hermes-only providers (nous, openai-codex, copilot, opencode-go) ---
+    # --- 2. Check OpenComputer-only providers (nous, openai-codex, copilot, opencode-go) ---
     from hermes_cli.providers import HERMES_OVERLAYS
     from hermes_cli.auth import PROVIDER_REGISTRY as _auth_registry
 
-    # Build reverse mapping: models.dev ID → Hermes provider ID.
+    # Build reverse mapping: models.dev ID → OpenComputer provider ID.
     # HERMES_OVERLAYS keys may be models.dev IDs (e.g. "github-copilot")
-    # while _PROVIDER_MODELS and config.yaml use Hermes IDs ("copilot").
+    # while _PROVIDER_MODELS and config.yaml use OpenComputer IDs ("copilot").
     _mdev_to_hermes = {v: k for k, v in PROVIDER_TO_MODELS_DEV.items()}
 
     for pid, overlay in HERMES_OVERLAYS.items():
         if pid.lower() in seen_slugs:
             continue
 
-        # Resolve Hermes slug — e.g. "github-copilot" → "copilot"
+        # Resolve OpenComputer slug — e.g. "github-copilot" → "copilot"
         hermes_slug = _mdev_to_hermes.get(pid, pid)
         if hermes_slug.lower() in seen_slugs:
             continue
@@ -1519,7 +1519,7 @@ def list_authenticated_providers(
         elif hermes_slug == "nous":
             # Nous serves a large live /v1/models catalog (vendor-prefixed
             # models from many providers, returned alphabetically). The
-            # `hermes model` picker deliberately shows ONLY the curated agentic
+            # `oc model` picker deliberately shows ONLY the curated agentic
             # list — augmented with the Portal's free/paid recommendations so
             # newly-launched models surface without a CLI release — in curated
             # order. Mirror that exactly (see _model_flow_nous in main.py) so
@@ -1581,7 +1581,7 @@ def list_authenticated_providers(
     # --- 2b. Cross-check canonical provider list ---
     # Catches providers that are in CANONICAL_PROVIDERS but weren't found
     # in PROVIDER_TO_MODELS_DEV or HERMES_OVERLAYS (keeps /model in sync
-    # with `hermes model`).
+    # with `oc model`).
     try:
         from hermes_cli.models import CANONICAL_PROVIDERS as _canon_provs
     except ImportError:
@@ -1669,7 +1669,7 @@ def list_authenticated_providers(
             if ep_name.lower() in seen_slugs:
                 continue
             display_name = ep_cfg.get("name", "") or ep_name
-            # ``base_url`` is Hermes's canonical write key (matches
+            # ``base_url`` is OpenComputer's canonical write key (matches
             # custom_providers and _save_custom_provider); ``api`` / ``url``
             # remain as fallbacks for hand-edited / legacy configs.
             api_url = (
@@ -1687,7 +1687,7 @@ def list_authenticated_providers(
             if default_model:
                 models_list.append(default_model)
             # Also include the full models list from config.
-            # Hermes writes ``models:`` as a dict keyed by model id
+            # OpenComputer writes ``models:`` as a dict keyed by model id
             # (see hermes_cli/main.py::_save_custom_provider); older
             # configs or hand-edited files may still use a list.
             cfg_models = ep_cfg.get("models", [])
@@ -1806,7 +1806,7 @@ def list_authenticated_providers(
             if group_key not in groups:
                 # Strip per-model suffix so "Ollama — GLM 5.1" becomes
                 # "Ollama" for the grouped row. Em dash is the convention
-                # Hermes's own writer uses; a hyphen variant is accepted
+                # OpenComputer's own writer uses; a hyphen variant is accepted
                 # for hand-edited configs.
                 display_name = raw_name
                 for sep in ("—", " - "):
@@ -1833,7 +1833,7 @@ def list_authenticated_providers(
                     groups[group_key]["discover_models"] = False
 
             # The singular ``model:`` field only holds the currently
-            # active model. Hermes's own writer (main.py::_save_custom_provider)
+            # active model. OpenComputer's own writer (main.py::_save_custom_provider)
             # stores every configured model as a dict under ``models:``;
             # downstream readers (agent/models_dev.py, gateway/run.py,
             # run_agent.py, hermes_cli/config.py) already consume that dict.

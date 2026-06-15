@@ -80,7 +80,7 @@ class TestGetDefaultHermesRoot:
         assert get_default_hermes_root() == local_appdata / "hermes"
 
     def test_no_hermes_home_uses_windows_path_when_localappdata_missing(self, tmp_path, monkeypatch):
-        """Windows fallback still uses AppData/Local/hermes without LOCALAPPDATA."""
+        """Windows fallback still uses AppData/Local/oc without LOCALAPPDATA."""
         home = tmp_path / "Home"
         monkeypatch.delenv("HERMES_HOME", raising=False)
         monkeypatch.delenv("LOCALAPPDATA", raising=False)

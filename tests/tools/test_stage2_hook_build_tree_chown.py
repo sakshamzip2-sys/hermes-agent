@@ -101,7 +101,7 @@ def test_chown_fires_when_venv_owner_differs(stage2_text: str) -> None:
     fired = _run_build_tree_block(stage2_text, venv_owner=10000, hermes_uid=4242)
     assert fired, (
         "build-tree chown must fire when the venv is not owned by the runtime "
-        "hermes UID, regardless of $HERMES_HOME ownership (#35027 regression)"
+        "oc UID, regardless of $HERMES_HOME ownership (#35027 regression)"
     )
 
 

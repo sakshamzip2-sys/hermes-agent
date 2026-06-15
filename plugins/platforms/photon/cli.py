@@ -1,5 +1,5 @@
 """
-``hermes photon ...`` CLI subcommands — registered by the plugin via
+``oc photon ...`` CLI subcommands — registered by the plugin via
 ``ctx.register_cli_command()``.
 
 Subcommands:
@@ -10,7 +10,7 @@ Subcommands:
     telemetry          show or toggle Spectrum SDK telemetry (on/off)
 
 The device-code login runs automatically as the first step of ``setup``;
-there is no standalone ``login`` verb (matching how every other Hermes
+there is no standalone ``login`` verb (matching how every other OpenComputer
 gateway channel onboards through a single setup surface).
 
 Photon uses the spectrum-ts gRPC stream for inbound — there is no webhook
@@ -37,7 +37,7 @@ _SIDECAR_DIR = Path(__file__).parent / "sidecar"
 # argparse wiring
 
 def register_cli(parser: argparse.ArgumentParser) -> None:
-    """Wire up `hermes photon ...` subcommands."""
+    """Wire up `oc photon ...` subcommands."""
     subs = parser.add_subparsers(dest="photon_command", required=False)
 
     p_setup = subs.add_parser(
@@ -45,7 +45,7 @@ def register_cli(parser: argparse.ArgumentParser) -> None:
         help="First-time setup (device login + project + user + sidecar)",
     )
     p_setup.add_argument("--project-name", default=None,
-                         help="Project name (default: 'Hermes Agent')")
+                         help="Project name (default: 'OpenComputer')")
     p_setup.add_argument("--phone", default=None,
                          help="Your E.164 phone number (e.g. +15551234567)")
     p_setup.add_argument("--first-name", default=None)
@@ -98,7 +98,7 @@ def _run_device_login(args: argparse.Namespace) -> int:
     """Run the RFC 8628 device-code login flow and persist the token.
 
     Internal helper — invoked as the first step of ``setup``. There is
-    no standalone ``hermes photon login`` command; Photon onboards
+    no standalone ``oc photon login`` command; Photon onboards
     through the single ``setup`` surface like every other channel.
     """
     def _print_code(code):
@@ -141,7 +141,7 @@ def _cmd_setup(args: argparse.Namespace) -> int:
     else:
         print("[1/5] Reusing existing Photon token")
 
-    # 2. Find or create the "Hermes Agent" project.
+    # 2. Find or create the "OpenComputer" project.
     name = args.project_name or photon_auth.DEFAULT_PROJECT_NAME
     dashboard_id = photon_auth.load_dashboard_project_id()
     try:
@@ -314,8 +314,8 @@ def _cmd_status(_args: argparse.Namespace) -> int:
     node_bin = os.getenv("PHOTON_NODE_BIN") or shutil.which("node")
     sidecar_installed = (_SIDECAR_DIR / "node_modules").exists()
     print(f"  node binary         : {node_bin or '✗ missing (install Node 18+)'}")
-    print(f"  sidecar deps        : {'✓ installed' if sidecar_installed else '✗ run `hermes photon install-sidecar`'}")
-    print(f"  telemetry           : {'on' if _telemetry_enabled() else 'off'} (`hermes photon telemetry on|off`)")
+    print(f"  sidecar deps        : {'✓ installed' if sidecar_installed else '✗ run `oc photon install-sidecar`'}")
+    print(f"  telemetry           : {'on' if _telemetry_enabled() else 'off'} (`oc photon telemetry on|off`)")
     return 0
 
 
@@ -354,7 +354,7 @@ def _cmd_telemetry(args: argparse.Namespace) -> int:
     state = getattr(args, "state", None)
     if state is None:
         print(f"Photon telemetry: {'on' if _telemetry_enabled() else 'off'}")
-        print("  Toggle with `hermes photon telemetry on` / `hermes photon telemetry off`.")
+        print("  Toggle with `oc photon telemetry on` / `oc photon telemetry off`.")
         return 0
     try:
         from hermes_cli.config import save_env_value
@@ -404,15 +404,15 @@ def _install_sidecar() -> int:
 # ---------------------------------------------------------------------------
 # Gateway-setup entry point
 #
-# `hermes gateway setup` discovers platforms via the registry and calls each
+# `oc gateway setup` discovers platforms via the registry and calls each
 # entry's zero-arg ``setup_fn``. Photon registers this function so it appears
 # in the unified setup wizard alongside every other channel — same onboarding
 # surface, no Photon-specific detour. It runs the identical device-login +
-# project + user + sidecar flow as ``hermes photon setup`` with interactive
+# project + user + sidecar flow as ``oc photon setup`` with interactive
 # defaults (phone is prompted when stdin is a TTY).
 
 def gateway_setup() -> None:
-    """Run Photon first-time setup from the `hermes gateway setup` wizard."""
+    """Run Photon first-time setup from the `oc gateway setup` wizard."""
     args = argparse.Namespace(
         photon_command="setup",
         project_name=None,

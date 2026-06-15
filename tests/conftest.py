@@ -649,7 +649,7 @@ def _live_system_guard(request, monkeypatch):
         "hermes_cli.main gateway",
         "hermes_cli/main.py gateway",
         "gateway/run.py",
-        "hermes gateway",
+        "oc gateway",
     )
     _MUTATING_VERBS = (
         "restart", "start", "stop", "kill", "reload",
@@ -731,7 +731,7 @@ def _live_system_guard(request, monkeypatch):
                 "Mark with @pytest.mark.live_system_guard_bypass if "
                 "intentional."
             )
-        # Block any subprocess that would run `hermes update` (or the
+        # Block any subprocess that would run `oc update` (or the
         # equivalent `python -m hermes_cli.main update`).  These commands
         # run `git fetch origin + git pull` against the REAL checkout,
         # overwriting files like pyproject.toml mid-test-run and corrupting
@@ -750,13 +750,13 @@ def _live_system_guard(request, monkeypatch):
             # python -m hermes_cli.main update --gateway
             ("hermes_cli" in low and "update" in low.split())
             or
-            # venv/bin/hermes update  (absolute path variant used in tests)
+            # venv/bin/oc update  (absolute path variant used in tests)
             (".venv/bin/hermes" in low and "update" in low)
         ):
             raise RuntimeError(
                 f"tests/conftest.py live-system guard: blocked "
                 f"subprocess.{name}({cmd!r}) — this command would run "
-                "`hermes update` against the real checkout, fetching "
+                "`oc update` against the real checkout, fetching "
                 "from origin and overwriting repo files (e.g. "
                 "pyproject.toml) mid-test-run. This corrupts every "
                 "subsequent subprocess in the same runner. "

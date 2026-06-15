@@ -64,7 +64,7 @@ class TestApplyProfileOverrideHermesHomeGuard:
         HERMES_HOME to .../profiles/coder.
 
         Bug scenario from #22502: systemd sets HERMES_HOME to the hermes root
-        and the user switches to a profile via `hermes profile use`.
+        and the user switches to a profile via `oc profile use`.
         Before the fix, the guard returned early and active_profile was ignored.
         """
         hermes_root = tmp_path / ".hermes"
@@ -143,8 +143,8 @@ class TestApplyProfileOverrideHermesHomeGuard:
         """Command argv flags named --profile must stay with that command.
 
         Docker Desktop's MCP Toolkit uses `docker mcp gateway run --profile ...`.
-        When that argv is passed through `hermes mcp add --args`, the early
-        profile pre-parser must not interpret the Docker profile as a Hermes
+        When that argv is passed through `oc mcp add --args`, the early
+        profile pre-parser must not interpret the Docker profile as a OpenComputer
         profile.
         """
         hermes_root = tmp_path / ".hermes"
@@ -175,7 +175,7 @@ class TestApplyProfileOverrideHermesHomeGuard:
         assert sys.argv == argv
 
     def test_profile_after_chat_subcommand_is_still_consumed(self, tmp_path, monkeypatch):
-        """Profile flags historically work after normal Hermes subcommands."""
+        """Profile flags historically work after normal OpenComputer subcommands."""
         result = _run_apply_profile_override(
             tmp_path,
             monkeypatch,

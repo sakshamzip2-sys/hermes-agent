@@ -219,7 +219,7 @@ export interface ModelOptionProvider {
   authenticated?: boolean
   /** Auth flow for an unconfigured provider: "api_key" can be activated inline
    *  by pasting `key_env`; anything else (oauth_*, external, aws_sdk, …) needs
-   *  the `hermes model` CLI / onboarding OAuth flow. */
+   *  the `oc model` CLI / onboarding OAuth flow. */
   auth_type?: string
   /** Env var to paste an API key into, for unconfigured `api_key` providers. */
   key_env?: string
@@ -531,7 +531,7 @@ export interface ToolProvider {
   post_setup: string | null
   requires_nous_auth: boolean
   /** True when this is the provider currently written to config (mirrors the
-   *  CLI `hermes tools` active-provider detection). */
+   *  CLI `oc tools` active-provider detection). */
   is_active: boolean
 }
 

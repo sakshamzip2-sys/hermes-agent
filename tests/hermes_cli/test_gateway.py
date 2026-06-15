@@ -82,7 +82,7 @@ def test_run_gateway_refuses_root_in_official_docker(monkeypatch, tmp_path, caps
 
     assert exc_info.value.code == 1
     out = capsys.readouterr().out
-    assert "Refusing to run the Hermes gateway as root" in out
+    assert "Refusing to run the OpenComputer gateway as root" in out
     assert "/opt/hermes/docker/entrypoint.sh" in out
 
 
@@ -277,7 +277,7 @@ def test_gateway_start_in_container_with_operational_systemd_uses_systemd(monkey
 def test_gateway_restart_on_windows_without_service_uses_detached_backend(monkeypatch):
     """Windows manual restart must not fall back to foreground run_gateway().
 
-    A Telegram-hosted agent may run `hermes gateway restart` via the terminal
+    A Telegram-hosted agent may run `oc gateway restart` via the terminal
     tool. The generic manual fallback stops the gateway and then calls
     run_gateway() in the same foreground subprocess; on Windows that subprocess
     can be reaped when its gateway parent is terminated, leaving the gateway
@@ -492,7 +492,7 @@ def test_conflicting_systemd_units_warning(monkeypatch, tmp_path, capsys):
 
     out = capsys.readouterr().out
     assert "Both user and system gateway services are installed" in out
-    assert "hermes gateway uninstall" in out
+    assert "oc gateway uninstall" in out
     assert "--system" in out
 
 
@@ -608,7 +608,7 @@ def test_scan_gateway_pids_detects_windows_hermes_exe_case_variants(monkeypatch)
             return SimpleNamespace(
                 returncode=0,
                 stdout=(
-                    "CommandLine=C:\\Program Files\\Hermes\\Hermes.EXE gateway run --replace\n"
+                    "CommandLine=C:\\Program Files\\OpenComputer\\OpenComputer.EXE gateway run --replace\n"
                     "ProcessId=2468\n\n"
                 ),
                 stderr="",

@@ -2,11 +2,11 @@
 name: stocks
 description: Stock quotes, history, search, compare, crypto via Yahoo.
 version: 0.1.0
-author: Mibay (Mibayy), Hermes Agent
+author: Mibay (Mibayy), OpenComputer
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
-  hermes:
+  opencomputer:
     tags: [Stocks, Finance, Market, Crypto, Investing]
     category: finance
     related_skills: [dcf-model, comps-analysis, lbo-model]

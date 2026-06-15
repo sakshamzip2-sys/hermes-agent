@@ -1,4 +1,4 @@
-"""``hermes skills`` subcommand parser.
+"""``oc skills`` subcommand parser.
 
 Extracted from ``hermes_cli/main.py:main()`` (god-file Phase 2 follow-up).
 Handler injected to avoid importing ``main``.
@@ -145,7 +145,7 @@ def build_skills_parser(subparsers, *, cmd_skills: Callable) -> None:
         help="Reset a bundled skill — clears 'user-modified' tracking so updates work again",
         description=(
             "Clear a bundled skill's entry from the sync manifest (~/.hermes/skills/.bundled_manifest) "
-            "so future 'hermes update' runs stop marking it as user-modified. Pass --restore to also "
+            "so future 'oc update' runs stop marking it as user-modified. Pass --restore to also "
             "replace the current copy with the bundled version."
         ),
     )
@@ -169,7 +169,7 @@ def build_skills_parser(subparsers, *, cmd_skills: Callable) -> None:
         help="Stop bundled skills from being seeded into this profile",
         description=(
             "Write the .no-bundled-skills marker so the installer, "
-            "`hermes update`, and any direct sync stop seeding bundled skills "
+            "`oc update`, and any direct sync stop seeding bundled skills "
             "into the active profile. By default nothing already on disk is "
             "touched. Pass --remove to ALSO delete bundled skills that are "
             "unmodified (user-edited and hub/local skills are never removed)."
@@ -192,7 +192,7 @@ def build_skills_parser(subparsers, *, cmd_skills: Callable) -> None:
         help="Re-enable bundled-skill seeding (undo opt-out)",
         description=(
             "Remove the .no-bundled-skills marker so bundled skills are seeded "
-            "again on the next `hermes update`. Pass --sync to re-seed now."
+            "again on the next `oc update`. Pass --sync to re-seed now."
         ),
     )
     skills_opt_in.add_argument(

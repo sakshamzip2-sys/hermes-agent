@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-Skills Hub CLI — Unified interface for the Hermes Skills Hub.
+Skills Hub CLI — Unified interface for the OpenComputer Skills Hub.
 
 Powers both:
-  - `hermes skills <subcommand>` (CLI argparse entry point)
+  - `oc skills <subcommand>` (CLI argparse entry point)
   - `/skills <subcommand>` (slash command in the interactive chat)
 
 All logic lives in shared do_* functions. The CLI entry point and slash command
@@ -59,7 +59,7 @@ def _resolve_short_name(name: str, sources, console: Console) -> str:
         table.add_column("Source", style="dim")
         table.add_column("Trust", style="dim")
         # overflow="fold" keeps the full slug visible (wraps instead of ellipsis-truncating)
-        # so users can copy it for `hermes skills install`.
+        # so users can copy it for `oc skills install`.
         table.add_column("Identifier", style="bold cyan", overflow="fold", no_wrap=False)
         for r in exact:
             trust_style = {"builtin": "bright_cyan", "trusted": "green", "community": "yellow"}.get(r.trust_level, "dim")
@@ -294,7 +294,7 @@ def do_search(query: str, source: str = "all", limit: int = 10,
     # overflow="fold" keeps the full slug visible (wraps instead of
     # ellipsis-truncating). Browse.sh slugs end in a `-XXXXXX` hash that
     # is part of the actual identifier — truncating it makes copy-paste
-    # into `hermes skills install` fail.
+    # into `oc skills install` fail.
     table.add_column("Identifier", style="dim", overflow="fold", no_wrap=False)
 
     for r in results:
@@ -310,7 +310,7 @@ def do_search(query: str, source: str = "all", limit: int = 10,
 
     c.print(table)
     c.print("[dim]Use: hermes skills inspect <identifier> to preview, "
-            "hermes skills install <identifier> to install "
+            "oc skills install <identifier> to install "
             "(--json for scripting)[/]\n")
 
 
@@ -426,7 +426,7 @@ def do_browse(page: int = 1, page_size: int = 20, source: str = "all",
     table.add_column("Description", max_width=44)
     table.add_column("Source", style="dim", width=12)
     table.add_column("Trust", width=10)
-    # The identifier is what you pass to `hermes skills install`. Browse used
+    # The identifier is what you pass to `oc skills install`. Browse used
     # to omit it entirely, so users couldn't act on what they saw without a
     # second `search`. overflow="fold" keeps long slugs copy-pasteable.
     table.add_column("Identifier", style="dim", overflow="fold", no_wrap=False)
@@ -470,9 +470,9 @@ def do_browse(page: int = 1, page_size: int = 20, source: str = "all",
         c.print(f"  [yellow]⚡ Slow sources skipped: {', '.join(timed_out)} "
                 f"— run again for cached results[/]")
 
-    c.print("[dim]Tip: 'hermes skills inspect <identifier>' to preview, "
-            "'hermes skills install <identifier>' to install, "
-            "'hermes skills search <query>' to search deeper[/]\n")
+    c.print("[dim]Tip: 'oc skills inspect <identifier>' to preview, "
+            "'oc skills install <identifier>' to install, "
+            "'oc skills search <query>' to search deeper[/]\n")
 
 
 def do_install(identifier: str, category: str = "", force: bool = False,
@@ -789,7 +789,7 @@ def do_inspect(identifier: str, console: Optional[Console] = None) -> None:
         preview = "\n".join(lines[:50])
         if len(lines) > 50:
             preview += f"\n\n... ({len(lines) - 50} more lines)"
-        c.print(Panel(preview, title="SKILL.md Preview", subtitle="hermes skills install <id> to install"))
+        c.print(Panel(preview, title="SKILL.md Preview", subtitle="oc skills install <id> to install"))
 
     c.print()
 
@@ -891,7 +891,7 @@ def do_list(source_filter: str = "all",
         enabled_only: If True, hide disabled skills from the output.
 
     Enabled/disabled state is resolved against the currently active profile's
-    config — ``hermes -p <profile> skills list`` reads that profile's
+    config — ``oc -p <profile> skills list`` reads that profile's
     ``skills.disabled`` list because ``-p`` swaps ``HERMES_HOME`` at process
     start.  No explicit profile flag needed here.
     """
@@ -1225,7 +1225,7 @@ def do_opt_in(sync: bool = False,
     """Remove the opt-out marker so bundled-skill seeding resumes.
 
     With ``sync``, immediately re-seed bundled skills instead of waiting for
-    the next ``hermes update``.
+    the next ``oc update``.
     """
     from tools.skills_sync import set_bundled_skills_opt_out, sync_skills
 
@@ -1486,8 +1486,8 @@ def _github_publish(skill_path: Path, skill_name: str, target_repo: str,
             headers=headers, timeout=15,
             json={
                 "title": f"Add skill: {skill_name}",
-                "body": f"Submitting the `{skill_name}` skill via Hermes Skills Hub.\n\n"
-                        f"This skill was scanned by the Hermes Skills Guard before submission.",
+                "body": f"Submitting the `{skill_name}` skill via OpenComputer Skills Hub.\n\n"
+                        f"This skill was scanned by the OpenComputer Skills Guard before submission.",
                 "head": f"{fork_repo.split('/')[0]}:{branch_name}",
                 "base": default_branch,
             },
@@ -1593,7 +1593,7 @@ def do_snapshot_import(input_path: str, force: bool = False,
 # ---------------------------------------------------------------------------
 
 def skills_command(args) -> None:
-    """Router for `hermes skills <subcommand>` — called from hermes_cli/main.py."""
+    """Router for `oc skills <subcommand>` — called from hermes_cli/main.py."""
     action = getattr(args, "skills_action", None)
 
     if action == "browse":
@@ -1655,7 +1655,7 @@ def skills_command(args) -> None:
         do_tap(tap_action, repo=repo)
     else:
         _console.print("Usage: hermes skills [browse|search|install|inspect|list|check|update|audit|uninstall|reset|opt-out|opt-in|publish|snapshot|tap]\n")
-        _console.print("Run 'hermes skills <command> --help' for details.\n")
+        _console.print("Run 'oc skills <command> --help' for details.\n")
 
 
 # ---------------------------------------------------------------------------

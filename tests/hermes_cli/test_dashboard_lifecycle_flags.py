@@ -1,6 +1,6 @@
-"""Tests for ``hermes dashboard --stop`` / ``--status`` flags.
+"""Tests for ``oc dashboard --stop`` / ``--status`` flags.
 
-These flags share the detection + kill path with the post-``hermes update``
+These flags share the detection + kill path with the post-``oc update``
 cleanup, so the heavy coverage of SIGTERM / SIGKILL / Windows taskkill lives
 in ``test_update_stale_dashboard.py``.  This file just verifies the flag
 dispatch: argparse wiring, no-op when nothing is running, and correct
@@ -90,7 +90,7 @@ class TestDashboardStop:
         mock_kill.assert_called_once()
         # --stop should pass a reason so the output doesn't say "running
         # backend no longer matches the updated frontend" (that wording is
-        # for the post-`hermes update` path).
+        # for the post-`oc update` path).
         kwargs = mock_kill.call_args.kwargs
         assert "reason" in kwargs
         assert "stop" in kwargs["reason"].lower()
@@ -127,7 +127,7 @@ class TestLifecycleFlagsTakePrecedence:
     """If both --stop and --status are set, --status wins (it's listed
     first in cmd_dashboard).  Neither is allowed to fall through to the
     server-start path, which is the critical safety property — a user
-    who typed ``hermes dashboard --stop`` must not end up ALSO starting
+    who typed ``oc dashboard --stop`` must not end up ALSO starting
     a new server."""
 
     def test_status_wins_over_stop(self, capsys):
@@ -160,7 +160,7 @@ class TestLifecycleFlagsTakePrecedence:
 
 class TestArgparseWiring:
     """Confirm the flags are exposed via the real argparse tree so
-    ``hermes dashboard --stop`` / ``--status`` actually parse."""
+    ``oc dashboard --stop`` / ``--status`` actually parse."""
 
     def test_flags_are_registered(self):
         from hermes_cli.main import main as _cli_main  # noqa: F401

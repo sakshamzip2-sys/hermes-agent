@@ -8,7 +8,7 @@ import { Picker } from './desktop-onboarding-overlay'
 
 function provider(id: string, name = id): OAuthProvider {
   return {
-    cli_command: `hermes login ${id}`,
+    cli_command: `oc login ${id}`,
     docs_url: `https://example.com/${id}`,
     flow: 'pkce',
     id,

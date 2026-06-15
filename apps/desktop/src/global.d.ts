@@ -220,7 +220,7 @@ export interface DesktopUpdateApplyResult {
   error?: string
   message?: string
   /** True when no staged updater exists (CLI install) and the user should run
-   *  `hermes update` themselves. `command` is the exact line to run. */
+   *  `oc update` themselves. `command` is the exact line to run. */
   manual?: boolean
   command?: string
   hermesRoot?: string

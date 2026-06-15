@@ -138,7 +138,7 @@ class CLICommandsMixin:
             print(f"  ❌ {result['error']}")
 
     def _handle_snapshot_command(self, command: str):
-        """Handle /snapshot — lightweight state snapshots for Hermes config/state.
+        """Handle /snapshot — lightweight state snapshots for OpenComputer config/state.
 
         Syntax:
             /snapshot                  — list recent snapshots
@@ -594,7 +594,7 @@ class CLICommandsMixin:
             self._session_db.fail_handoff(self.session_id, "timed out waiting for gateway")
         except Exception:
             pass
-        _cprint("  Timed out waiting for the gateway. Is `hermes gateway` running?")
+        _cprint("  Timed out waiting for the gateway. Is `oc gateway` running?")
         _cprint("  Your CLI session is intact.")
         return True
 
@@ -628,7 +628,7 @@ class CLICommandsMixin:
                 # #34584.
                 self._pending_resume_sessions = self._list_recent_sessions(limit=10)
                 return
-            _cprint("  Tip:   Use /history or `hermes sessions list` to find sessions.")
+            _cprint("  Tip:   Use /history or `oc sessions list` to find sessions.")
             return
 
         # Any explicit /resume <target> supersedes a previously-armed bare
@@ -658,7 +658,7 @@ class CLICommandsMixin:
         session_meta = self._session_db.get_session(target_id)
         if not session_meta:
             _cprint(f"  Session not found: {target}")
-            _cprint("  Use /history or `hermes sessions list` to see available sessions.")
+            _cprint("  Use /history or `oc sessions list` to see available sessions.")
             return
 
         # If the target is the empty head of a compression chain, redirect to
@@ -1309,7 +1309,7 @@ class CLICommandsMixin:
     def _handle_curator_command(self, cmd: str):
         """Handle /curator slash command.
 
-        Delegates to hermes_cli.curator so the CLI and the `hermes curator`
+        Delegates to hermes_cli.curator so the CLI and the `oc curator`
         subcommand share the same handler set.
         """
         import shlex
@@ -1495,11 +1495,11 @@ class CLICommandsMixin:
                     try:
                         from hermes_cli.skin_engine import get_active_skin
                         _skin = get_active_skin()
-                        label = _skin.get_branding("response_label", "⚕ Hermes")
+                        label = _skin.get_branding("response_label", "⚕ OpenComputer")
                         _resp_color = _maybe_remap_for_light_mode(_skin.get_color("response_border", "#CD7F32"))
                         _resp_text = _maybe_remap_for_light_mode(_skin.get_color("banner_text", "#FFF8DC"))
                     except Exception:
-                        label = "⚕ Hermes"
+                        label = "⚕ OpenComputer"
                         _resp_color = "#CD7F32"
                         _resp_text = "#FFF8DC"
 
@@ -1550,7 +1550,7 @@ class CLICommandsMixin:
     def _handle_bundles_command(self, cmd: str) -> None:
         """In-session ``/bundles`` — show installed skill bundles.
 
-        Mirrors ``hermes bundles list`` but renders inside the running
+        Mirrors ``oc bundles list`` but renders inside the running
         CLI so users can discover what's available without dropping out
         of their session. Bundles are loaded via ``/<bundle-name>``.
         """
@@ -1583,7 +1583,7 @@ class CLICommandsMixin:
                 ChatConsole().print(f"        [dim]· {_escape(s)}[/]")
         _cprint(
             f"\n  {_DIM}Invoke a bundle with /<slug>. "
-            f"Manage with `hermes bundles`.{_RST}"
+            f"Manage with `oc bundles`.{_RST}"
         )
 
     def _handle_browser_command(self, cmd: str):
@@ -1702,7 +1702,7 @@ class CLICommandsMixin:
                     "Your browser_navigate, browser_snapshot, browser_click, and other browser tools now "
                     "control that CDP browser. The command itself is a signal that using browser tools for "
                     "their current browser-related request is expected; do not wait for separate permission "
-                    "just because CDP is connected. This is typically a Hermes-managed isolated debug "
+                    "just because CDP is connected. This is typically a OpenComputer-managed isolated debug "
                     "profile, not the user's main everyday browser. It is still user-visible and may contain "
                     "pages, logged-in sessions, or cookies in that debug profile, so avoid destructive actions, "
                     "closing tabs, or navigating away unless the user's task calls for it.]"
@@ -1847,7 +1847,7 @@ class CLICommandsMixin:
         _cprint(f"  ⊙ Goal set ({state.max_turns}-turn budget): {state.goal}")
         _cprint(
             f"  {_DIM}After each turn, a judge model will check if the goal is done. "
-            f"Hermes keeps working until it is, you pause/clear it, or the budget is "
+            f"OpenComputer keeps working until it is, you pause/clear it, or the budget is "
             f"exhausted. Use /goal status, /goal pause, /goal resume, /goal clear.{_RST}"
         )
         # Kick the loop off immediately so the user doesn't have to send a
@@ -2092,7 +2092,7 @@ class CLICommandsMixin:
             _cprint(f"  {_ACCENT}✓ Reasoning effort set to '{arg}' (session only){_RST}")
 
     def _handle_busy_command(self, cmd: str):
-        """Handle /busy — control what Enter does while Hermes is working.
+        """Handle /busy — control what Enter does while OpenComputer is working.
 
         Usage:
             /busy               Show current busy input mode
@@ -2124,11 +2124,11 @@ class CLICommandsMixin:
         self.busy_input_mode = arg
         if save_config_value("display.busy_input_mode", arg):
             if arg == "queue":
-                behavior = "Enter will queue follow-up input while Hermes is busy."
+                behavior = "Enter will queue follow-up input while OpenComputer is busy."
             elif arg == "steer":
                 behavior = "Enter will steer your message into the current run (after the next tool call)."
             else:
-                behavior = "Enter will interrupt the current run while Hermes is busy."
+                behavior = "Enter will interrupt the current run while OpenComputer is busy."
             _cprint(f"  {_ACCENT}✓ Busy input mode set to '{arg}' (saved to config){_RST}")
             _cprint(f"  {_DIM}{behavior}{_RST}")
         else:
@@ -2187,10 +2187,10 @@ class CLICommandsMixin:
         run_debug_share(args)
 
     def _handle_update_command(self) -> bool:
-        """Handle /update — update Hermes Agent to the latest version.
+        """Handle /update — update OpenComputer to the latest version.
 
         In the classic CLI this exits the session and relaunches as
-        ``hermes update`` so the user sees update output directly and gets
+        ``oc update`` so the user sees update output directly and gets
         the new version on next launch.
 
         Returns ``True`` when the update was confirmed (caller should trigger
@@ -2201,7 +2201,7 @@ class CLICommandsMixin:
         from hermes_cli.config import is_managed, format_managed_message
 
         if is_managed():
-            print(f"  ✗ {format_managed_message('update Hermes Agent')}")
+            print(f"  ✗ {format_managed_message('update OpenComputer')}")
             return False
 
         # Use the prompt_toolkit-native modal so the confirmation panel
@@ -2209,12 +2209,12 @@ class CLICommandsMixin:
         # with the prompt_toolkit event loop (same pattern as
         # _confirm_destructive_slash).
         choices = [
-            ("once", "Update Now", "exit the current session and update Hermes Agent"),
+            ("once", "Update Now", "exit the current session and update OpenComputer"),
             ("cancel", "Cancel", "keep the current session"),
         ]
         raw = self._prompt_text_input_modal(
-            title="⚕  Update Hermes Agent",
-            detail="This will exit the current session and run `hermes update`.",
+            title="⚕  Update OpenComputer",
+            detail="This will exit the current session and run `oc update`.",
             choices=choices,
         )
         if raw is None:

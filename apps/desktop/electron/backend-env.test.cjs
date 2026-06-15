@@ -10,7 +10,7 @@ const {
   pathEnvKey
 } = require('./backend-env.cjs')
 
-test('desktop backend PATH adds Hermes-managed bins and missing POSIX sane entries', () => {
+test('desktop backend PATH adds OpenComputer-managed bins and missing POSIX sane entries', () => {
   const result = buildDesktopBackendPath({
     hermesHome: '/Users/test/.hermes',
     venvRoot: '/Users/test/.hermes/hermes-agent/venv',

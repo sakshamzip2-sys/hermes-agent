@@ -1,4 +1,4 @@
-"""``hermes login`` subcommand parser.
+"""``oc login`` subcommand parser.
 
 Extracted verbatim from ``hermes_cli/main.py:main()`` (god-file Phase 2).
 Handler injected to avoid importing ``main``.
@@ -17,7 +17,7 @@ def build_login_parser(subparsers, *, cmd_login: Callable) -> None:
     login_parser = subparsers.add_parser(
         "login",
         help="Authenticate with an inference provider",
-        description="Run OAuth device authorization flow for Hermes CLI",
+        description="Run OAuth device authorization flow for OpenComputer CLI",
     )
     login_parser.add_argument(
         "--provider",

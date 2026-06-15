@@ -4,7 +4,7 @@ The dashboard host exposes a sanctioned, gated-mode-aware auth surface on the
 plugin SDK (``window.__HERMES_PLUGIN_SDK__``): ``fetchJSON`` (JSON REST),
 ``authedFetch`` (uploads / blob downloads), and ``buildWsUrl`` /
 ``buildWsAuthParam`` (WebSockets). These handle BOTH dashboard auth modes —
-loopback (``X-Hermes-Session-Token`` header) and gated OAuth
+loopback (``X-OpenComputer-Session-Token`` header) and gated OAuth
 (``hermes_session_at`` cookie / single-use ``?ticket=``).
 
 Plugins that hand-roll ``fetch`` / ``WebSocket`` and read

@@ -510,7 +510,7 @@ class ParallelWebSearchProvider(WebSearchProvider):
         """Return True when ``PARALLEL_API_KEY`` is set.
 
         Deliberately key-based: this gates the registry's active-provider walk
-        and the ``hermes tools`` picker (auto-selecting Parallel for a user who
+        and the ``oc tools`` picker (auto-selecting Parallel for a user who
         hasn't named it), so it must not claim availability on the keyless path.
         The keyless free-MCP path is reached independently via
         :func:`tools.web_tools._get_backend`'s ``parallel`` terminal default.

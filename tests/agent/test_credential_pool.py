@@ -622,7 +622,7 @@ def test_dead_manual_entry_pruned_after_24h(tmp_path, monkeypatch):
     Manual entries (``manual:*``) are independent credentials with no
     singleton to re-seed from, so we can clean them up after a quiet
     window without losing recoverability — the user can always re-add
-    via ``hermes auth add``.
+    via ``oc auth add``.
     """
     monkeypatch.setenv("HERMES_HOME", str(tmp_path / "hermes"))
     # DEAD entry from > 24h ago
@@ -1617,12 +1617,12 @@ def test_load_pool_prefers_anthropic_env_token_over_file_backed_oauth(tmp_path, 
 def test_load_pool_api_key_path_skips_oauth_autodiscovery(tmp_path, monkeypatch):
     """API-key auth path: autodiscovered OAuth creds must NOT be seeded.
 
-    When the user picks "Anthropic API key" at `hermes setup`,
+    When the user picks "Anthropic API key" at `oc setup`,
     `save_anthropic_api_key()` writes ANTHROPIC_API_KEY and zeros
     ANTHROPIC_TOKEN.  That env-var pattern is the explicit signal that the
     user opted into the API-key path and explicitly OUT of the OAuth
     masquerade (Claude Code identity injection + `mcp_` tool-name rewrite
-    + claude-cli user-agent).  Autodiscovered Claude Code / Hermes PKCE
+    + claude-cli user-agent).  Autodiscovered Claude Code / OpenComputer PKCE
     tokens from other tools' credential files must NOT be silently mixed
     into the anthropic pool — otherwise rotation on a 401/429 could flip
     the session onto OAuth credentials mid-conversation.
@@ -1673,7 +1673,7 @@ def test_load_pool_api_key_path_prunes_stale_oauth_entries(tmp_path, monkeypatch
 
     Without this, a user who logs into OAuth (seeding `claude_code` or
     `hermes_pkce` into auth.json) and later switches to the API key at
-    `hermes setup` would still have those OAuth entries dormant on disk.
+    `oc setup` would still have those OAuth entries dormant on disk.
     Pool rotation on a transient 401 could revive them and flip the
     session onto the OAuth masquerade.
     """
@@ -1724,7 +1724,7 @@ def test_load_pool_oauth_path_still_autodiscovers(tmp_path, monkeypatch):
     """OAuth path: ANTHROPIC_TOKEN set, autodiscovery still fires.
 
     Regression guard: the API-key gate must not affect users who chose the
-    OAuth path at `hermes setup`.  When ANTHROPIC_TOKEN is set (and
+    OAuth path at `oc setup`.  When ANTHROPIC_TOKEN is set (and
     ANTHROPIC_API_KEY is empty), autodiscovered Claude Code creds should
     still be seeded into the pool as before.
     """
@@ -2614,7 +2614,7 @@ def test_sync_codex_entry_from_auth_store_adopts_newer_tokens(tmp_path, monkeypa
     assert entry.access_token == "access-OLD"
     assert entry.refresh_token == "refresh-OLD"
 
-    # Simulate `hermes auth openai-codex` replacing the token pair on disk.
+    # Simulate `oc auth openai-codex` replacing the token pair on disk.
     _write_auth_store(tmp_path, _codex_auth_store("access-NEW", "refresh-NEW"))
 
     synced = pool._sync_codex_entry_from_auth_store(entry)
@@ -2645,7 +2645,7 @@ def test_codex_exhausted_entry_recovers_via_auth_store_sync(tmp_path, monkeypatc
     """An exhausted Codex entry should recover when auth.json has newer tokens.
 
     Reproduces the Discord report (p1aceho1der, Apr 2026): after a Codex
-    rate-limit reset the user ran `hermes model` to reauth, but the pool
+    rate-limit reset the user ran `oc model` to reauth, but the pool
     entry stayed marked EXHAUSTED with last_error_reset_at many hours in
     the future — so `_available_entries` kept returning empty and every
     request failed with "no available entries (all exhausted or empty)".
@@ -2679,7 +2679,7 @@ def test_codex_exhausted_entry_recovers_via_auth_store_sync(tmp_path, monkeypatc
     available_before = pool._available_entries(clear_expired=True, refresh=False)
     assert available_before == []
 
-    # Simulate `hermes model` / `hermes auth` refreshing the tokens.
+    # Simulate `oc model` / `oc auth` refreshing the tokens.
     _write_auth_store(tmp_path, _codex_auth_store("access-FRESH", "refresh-FRESH"))
 
     available = pool._available_entries(clear_expired=True, refresh=False)

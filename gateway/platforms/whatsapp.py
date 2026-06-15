@@ -339,7 +339,7 @@ class WhatsAppAdapter(WhatsAppBehaviorMixin, BasePlatformAdapter):
             logger.warning("[%s] Node.js not found. WhatsApp requires Node.js.", self.name)
             self._set_fatal_error(
                 "whatsapp_node_missing",
-                "Node.js is not installed — install Node.js and re-run `hermes gateway`.",
+                "Node.js is not installed — install Node.js and re-run `oc gateway`.",
                 retryable=False,
             )
             return False
@@ -365,13 +365,13 @@ class WhatsAppAdapter(WhatsAppBehaviorMixin, BasePlatformAdapter):
         if not creds_path.exists():
             logger.warning(
                 "[%s] WhatsApp is enabled but not paired (no creds.json at %s). "
-                "Run `hermes whatsapp` to pair, or remove WHATSAPP_ENABLED from "
+                "Run `oc whatsapp` to pair, or remove WHATSAPP_ENABLED from "
                 "your .env to disable.",
                 self.name, creds_path,
             )
             self._set_fatal_error(
                 "whatsapp_not_paired",
-                "WhatsApp enabled but not paired — run `hermes whatsapp` to pair.",
+                "WhatsApp enabled but not paired — run `oc whatsapp` to pair.",
                 retryable=False,
             )
             return False
@@ -390,7 +390,7 @@ class WhatsAppAdapter(WhatsAppBehaviorMixin, BasePlatformAdapter):
         try:
             # Auto-install npm dependencies when node_modules is missing OR
             # package.json changed since the last install (e.g. after
-            # `hermes update` bumps the Baileys pin).  The stamp file records
+            # `oc update` bumps the Baileys pin).  The stamp file records
             # the package.json hash of the last successful install.
             bridge_dir = bridge_path.parent
             _pkg_json = bridge_dir / "package.json"
@@ -451,7 +451,7 @@ class WhatsAppAdapter(WhatsAppBehaviorMixin, BasePlatformAdapter):
                                 # bridge if it is serving the same bridge.js
                                 # that is on disk right now.  A long-lived
                                 # bridge survives gateway restarts AND
-                                # `hermes update`, so without this check it
+                                # `oc update`, so without this check it
                                 # keeps serving pre-update code forever
                                 # (e.g. no inbound media download).  Old
                                 # bridges that don't report scriptHash are

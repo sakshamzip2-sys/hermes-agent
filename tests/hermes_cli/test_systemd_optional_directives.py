@@ -88,7 +88,7 @@ RestartMaxDelaySec=300
         )
         # What the installed unit looks like on older systemd (directives stripped)
         installed = """[Unit]
-Description=Hermes Gateway
+Description=OpenComputer Gateway
 After=network-online.target
 
 [Service]
@@ -104,7 +104,7 @@ WantedBy=default.target
 """
         # What generate_systemd_unit produces (with the directives)
         expected = """[Unit]
-Description=Hermes Gateway
+Description=OpenComputer Gateway
 After=network-online.target
 
 [Service]
@@ -145,7 +145,7 @@ class TestSystemdUnitIsCurrent:
         from hermes_cli import gateway as gw
 
         installed = """[Unit]
-Description=Hermes Gateway
+Description=OpenComputer Gateway
 
 [Service]
 Type=simple
@@ -173,7 +173,7 @@ WantedBy=default.target
         from hermes_cli import gateway as gw
 
         installed = """[Unit]
-Description=Hermes Gateway
+Description=OpenComputer Gateway
 
 [Service]
 Type=simple
@@ -185,7 +185,7 @@ RestartSec=10
 WantedBy=default.target
 """
         expected = """[Unit]
-Description=Hermes Gateway
+Description=OpenComputer Gateway
 
 [Service]
 Type=simple
@@ -215,7 +215,7 @@ WantedBy=default.target
         from hermes_cli import gateway as gw
 
         unit_text = """[Unit]
-Description=Hermes Gateway
+Description=OpenComputer Gateway
 
 [Service]
 Type=simple

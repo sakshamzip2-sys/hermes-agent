@@ -4,7 +4,7 @@ The guard fires when a tool tries to write into the per-task mirror
 directory created by a non-local terminal backend (Docker, Daytona, etc.).
 Those paths look like ``…/sandboxes/<backend>/<task>/home/.hermes/…`` and
 they accumulate divergent copies of authoritative profile state (SOUL.md,
-config.yaml, memories/*.md) because the host Hermes process never reads
+config.yaml, memories/*.md) because the host OpenComputer process never reads
 them. Soft guard — defense in depth, NOT a security boundary.
 
 Reference: #32049 — under ``terminal.backend: docker``, the agent's
@@ -72,7 +72,7 @@ class TestClassifySandboxMirrorTarget:
         assert backend in result["mirror_root"]
 
     def test_path_outside_sandbox_returns_none(self, tmp_path):
-        """A plain Hermes path is not a mirror."""
+        """A plain OpenComputer path is not a mirror."""
         from agent.file_safety import classify_sandbox_mirror_target
 
         target = tmp_path / ".hermes" / "profiles" / "group1" / "SOUL.md"
@@ -82,7 +82,7 @@ class TestClassifySandboxMirrorTarget:
         assert classify_sandbox_mirror_target(str(target)) is None
 
     def test_sandboxes_segment_without_home_hermes_returns_none(self, tmp_path):
-        """A ``sandboxes/`` directory unrelated to Hermes-state mirroring (e.g.
+        """A ``sandboxes/`` directory unrelated to OpenComputer-state mirroring (e.g.
         the sandbox workspace itself) is not flagged."""
         from agent.file_safety import classify_sandbox_mirror_target
 

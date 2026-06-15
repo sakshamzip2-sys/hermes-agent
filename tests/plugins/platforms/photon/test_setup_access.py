@@ -1,4 +1,4 @@
-"""Tests for `hermes photon setup`'s access auto-configuration.
+"""Tests for `oc photon setup`'s access auto-configuration.
 
 `_autoconfigure_access` allowlists the operator and points the cron home
 channel at their DM, writing to the per-test ~/.hermes/.env (the hermetic

@@ -29,7 +29,7 @@ You need **tenant admin rights** (or an admin to grant consent on your behalf) t
 2. Navigate to **Identity → Applications → App registrations**.
 3. Click **New registration**.
 4. Fill in:
-   - **Name:** `Hermes Teams Meeting Pipeline` (or any name you'll recognize).
+   - **Name:** `OpenComputer Teams Meeting Pipeline` (or any name you'll recognize).
    - **Supported account types:** *Accounts in this organizational directory only (Single tenant)*.
    - **Redirect URI:** leave blank — app-only auth does not need one.
 5. Click **Register**.
@@ -43,7 +43,7 @@ You'll land on the app's overview page. Copy two values:
 
 1. In the left nav, open **Certificates & secrets**.
 2. Click **New client secret**.
-3. **Description:** `hermes-graph-secret`. **Expires:** pick a value that matches your rotation policy (6-24 months is typical).
+3. **Description:** `opencomputer-graph-secret`. **Expires:** pick a value that matches your rotation policy (6-24 months is typical).
 4. Click **Add**.
 5. Copy the **Value** column immediately — it's only shown once. That value is `MSGRAPH_CLIENT_SECRET`.
 
@@ -95,19 +95,19 @@ Microsoft provides **Application Access Policies** for Teams exactly for this. T
 From an admin PowerShell with the MicrosoftTeams module installed and connected (`Connect-MicrosoftTeams`):
 
 ```powershell
-# Create a policy scoped to the Hermes app
+# Create a policy scoped to the OpenComputer app
 New-CsApplicationAccessPolicy `
-  -Identity "Hermes-Meeting-Pipeline-Policy" `
+  -Identity "OpenComputer-Meeting-Pipeline-Policy" `
   -AppIds "<MSGRAPH_CLIENT_ID>" `
-  -Description "Restrict Hermes meeting pipeline to allow-listed users"
+  -Description "Restrict OpenComputer meeting pipeline to allow-listed users"
 
 # Grant the policy to specific users whose meetings the pipeline may read
 Grant-CsApplicationAccessPolicy `
-  -PolicyName "Hermes-Meeting-Pipeline-Policy" `
+  -PolicyName "OpenComputer-Meeting-Pipeline-Policy" `
   -Identity "alice@example.com"
 
 Grant-CsApplicationAccessPolicy `
-  -PolicyName "Hermes-Meeting-Pipeline-Policy" `
+  -PolicyName "OpenComputer-Meeting-Pipeline-Policy" `
   -Identity "bob@example.com"
 ```
 
@@ -137,7 +137,7 @@ chmod 600 ~/.hermes/.env
 
 ## Step 6: Verify the Token Flow
 
-Hermes ships a Graph auth smoke-test. From your Hermes install:
+OpenComputer ships a Graph auth smoke-test. From your OpenComputer install:
 
 ```python
 python -c "
@@ -165,7 +165,7 @@ Azure client secrets have a hard expiry. Before yours expires:
 
 1. Create a second client secret in step 2 without deleting the first one.
 2. Update `MSGRAPH_CLIENT_SECRET` in `~/.hermes/.env` with the new value.
-3. Restart the gateway so the new secret is picked up: `hermes gateway restart`.
+3. Restart the gateway so the new secret is picked up: `opencomputer gateway restart`.
 4. Verify with the smoke test above.
 5. Delete the old secret from the Azure portal.
 

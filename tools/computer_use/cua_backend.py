@@ -90,7 +90,7 @@ def cua_driver_install_hint() -> str:
         "Or run the upstream installer directly:\n"
         '  /bin/bash -c "$(curl -fsSL '
         'https://raw.githubusercontent.com/trycua/cua/main/libs/cua-driver/scripts/install.sh)"\n'
-        "Or run `hermes tools` and enable the Computer Use toolset to install it automatically."
+        "Or run `oc tools` and enable the Computer Use toolset to install it automatically."
     )
 
 

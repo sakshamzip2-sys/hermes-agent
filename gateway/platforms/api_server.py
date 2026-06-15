@@ -2,14 +2,14 @@
 OpenAI-compatible API server platform adapter.
 
 Exposes an HTTP server with endpoints:
-- POST /v1/chat/completions        — OpenAI Chat Completions format (stateless; opt-in session continuity via X-Hermes-Session-Id header; opt-in long-term memory scoping via X-Hermes-Session-Key header)
-- POST /v1/responses               — OpenAI Responses API format (stateful via previous_response_id; X-Hermes-Session-Key supported)
+- POST /v1/chat/completions        — OpenAI Chat Completions format (stateless; opt-in session continuity via X-OpenComputer-Session-Id header; opt-in long-term memory scoping via X-OpenComputer-Session-Key header)
+- POST /v1/responses               — OpenAI Responses API format (stateful via previous_response_id; X-OpenComputer-Session-Key supported)
 - GET  /v1/responses/{response_id} — Retrieve a stored response
 - DELETE /v1/responses/{response_id} — Delete a stored response
 - GET  /v1/models                  — lists hermes-agent as an available model
 - GET  /v1/capabilities            — machine-readable API capabilities for external UIs
-- GET  /api/sessions               — list client-visible Hermes sessions
-- POST /api/sessions               — create an empty Hermes session
+- GET  /api/sessions               — list client-visible OpenComputer sessions
+- POST /api/sessions               — create an empty OpenComputer session
 - GET/PATCH/DELETE /api/sessions/{session_id} — read/update/delete a session
 - GET  /api/sessions/{session_id}/messages — read session message history
 - POST /api/sessions/{session_id}/fork — branch a session using SessionDB lineage
@@ -680,7 +680,7 @@ def _derive_chat_session_id(
     conversation history with every request.  The system prompt and first user
     message are constant across all turns of the same conversation, so hashing
     them produces a deterministic session ID that lets the API server reuse
-    the same Hermes session (and therefore the same Docker container sandbox
+    the same OpenComputer session (and therefore the same Docker container sandbox
     directory) across turns.
     """
     seed = f"{system_prompt or ''}\n{first_user_message}"
@@ -789,7 +789,7 @@ class APIServerAdapter(BasePlatformAdapter):
         Priority:
         1. Explicit override (config extra or API_SERVER_MODEL_NAME env var)
         2. Active profile name (so each profile advertises a distinct model)
-        3. Fallback: "hermes-agent"
+        3. Fallback: "open-computer"
         """
         if explicit and explicit.strip():
             return explicit.strip()
@@ -800,7 +800,7 @@ class APIServerAdapter(BasePlatformAdapter):
                 return profile
         except Exception:
             pass
-        return "hermes-agent"
+        return "open-computer"
 
     def _cors_headers_for_origin(self, origin: str) -> Optional[Dict[str, str]]:
         """Return CORS headers for an allowed browser origin."""
@@ -930,11 +930,11 @@ class APIServerAdapter(BasePlatformAdapter):
     def _parse_session_key_header(
         self, request: "web.Request"
     ) -> tuple[Optional[str], Optional["web.Response"]]:
-        """Extract and validate the ``X-Hermes-Session-Key`` header.
+        """Extract and validate the ``X-OpenComputer-Session-Key`` header.
 
         The session key is a stable per-channel identifier that scopes
         long-term memory (e.g. Honcho sessions) across transcripts.  It
-        is independent of ``X-Hermes-Session-Id``: callers may send
+        is independent of ``X-OpenComputer-Session-Id``: callers may send
         either, both, or neither.
 
         Returns ``(session_key, None)`` on success (with an empty/absent
@@ -946,18 +946,18 @@ class APIServerAdapter(BasePlatformAdapter):
         unauthenticated client on a local-only server can't inject itself
         into another user's long-term memory scope by guessing a key.
         """
-        raw = request.headers.get("X-Hermes-Session-Key", "").strip()
+        raw = request.headers.get("X-OpenComputer-Session-Key", "").strip()
         if not raw:
             return None, None
 
         if not self._api_key:
             logger.warning(
-                "X-Hermes-Session-Key rejected: no API key configured. "
+                "X-OpenComputer-Session-Key rejected: no API key configured. "
                 "Set API_SERVER_KEY to enable long-term memory scoping."
             )
             return None, web.json_response(
                 _openai_error(
-                    "X-Hermes-Session-Key requires API key authentication. "
+                    "X-OpenComputer-Session-Key requires API key authentication. "
                     "Configure API_SERVER_KEY to enable this feature."
                 ),
                 status=403,
@@ -986,7 +986,7 @@ class APIServerAdapter(BasePlatformAdapter):
     def _ensure_session_db(self):
         """Lazily initialise and return the shared SessionDB instance.
 
-        Sessions are persisted to ``state.db`` so that ``hermes sessions list``
+        Sessions are persisted to ``state.db`` so that ``oc sessions list``
         shows API-server conversations alongside CLI and gateway ones.
         """
         if self._session_db is None:
@@ -1006,6 +1006,7 @@ class APIServerAdapter(BasePlatformAdapter):
         ephemeral_system_prompt: Optional[str] = None,
         session_id: Optional[str] = None,
         stream_delta_callback=None,
+        reasoning_callback=None,
         tool_progress_callback=None,
         tool_start_callback=None,
         tool_complete_callback=None,
@@ -1020,7 +1021,7 @@ class APIServerAdapter(BasePlatformAdapter):
         gateway platforms), falling back to the hermes-api-server default.
 
         ``gateway_session_key`` is a stable per-channel identifier supplied
-        by the client (via ``X-Hermes-Session-Key``).  Unlike ``session_id``
+        by the client (via ``X-OpenComputer-Session-Key``).  Unlike ``session_id``
         which scopes the short-term transcript and rotates on /new, this
         key is meant to persist across transcripts so long-term memory
         providers (e.g. Honcho) can scope their per-chat state correctly
@@ -1054,6 +1055,7 @@ class APIServerAdapter(BasePlatformAdapter):
             session_id=session_id,
             platform="api_server",
             stream_delta_callback=stream_delta_callback,
+            reasoning_callback=reasoning_callback,
             tool_progress_callback=tool_progress_callback,
             tool_start_callback=tool_start_callback,
             tool_complete_callback=tool_complete_callback,
@@ -1083,10 +1085,17 @@ class APIServerAdapter(BasePlatformAdapter):
         """
         from gateway.status import read_runtime_status
 
+        try:
+            from hermes_cli.profiles import get_active_profile_name
+            _profile = get_active_profile_name() or "default"
+        except Exception:
+            _profile = "default"
+
         runtime = read_runtime_status() or {}
         return web.json_response({
             "status": "ok",
-            "platform": "hermes-agent",
+            "platform": "open-computer",
+            "profile": _profile,
             "version": _hermes_version(),
             "gateway_state": runtime.get("gateway_state"),
             "platforms": runtime.get("platforms", {}),
@@ -1109,7 +1118,7 @@ class APIServerAdapter(BasePlatformAdapter):
                     "id": self._model_name,
                     "object": "model",
                     "created": int(time.time()),
-                    "owned_by": "hermes",
+                    "owned_by": "opencomputer",
                     "permission": [],
                     "root": self._model_name,
                     "parent": None,
@@ -1122,7 +1131,7 @@ class APIServerAdapter(BasePlatformAdapter):
 
         External UIs and orchestrators use this endpoint to discover the API
         server's plugin-safe contract without scraping docs or assuming that
-        every Hermes version exposes the same endpoints.
+        every OpenComputer version exposes the same endpoints.
         """
         auth_err = self._check_auth(request)
         if auth_err:
@@ -1141,7 +1150,7 @@ class APIServerAdapter(BasePlatformAdapter):
                 "tool_execution": "server",
                 "split_runtime": False,
                 "description": (
-                    "The API server creates a server-side Hermes AIAgent; "
+                    "The API server creates a server-side OpenComputer AIAgent; "
                     "tools execute on the API-server host unless a future "
                     "explicit split-runtime mode is enabled."
                 ),
@@ -1168,8 +1177,8 @@ class APIServerAdapter(BasePlatformAdapter):
                 "skills_api": True,
                 "audio_api": False,
                 "realtime_voice": False,
-                "session_continuity_header": "X-Hermes-Session-Id",
-                "session_key_header": "X-Hermes-Session-Key",
+                "session_continuity_header": "X-OpenComputer-Session-Id",
+                "session_key_header": "X-OpenComputer-Session-Key",
                 "cors": bool(self._cors_origins),
             },
             "endpoints": {
@@ -1354,7 +1363,7 @@ class APIServerAdapter(BasePlatformAdapter):
             return []
 
     async def _handle_list_sessions(self, request: "web.Request") -> "web.Response":
-        """GET /api/sessions — list persisted Hermes sessions."""
+        """GET /api/sessions — list persisted OpenComputer sessions."""
         auth_err = self._check_auth(request)
         if auth_err:
             return auth_err
@@ -1383,7 +1392,7 @@ class APIServerAdapter(BasePlatformAdapter):
         })
 
     async def _handle_create_session(self, request: "web.Request") -> "web.Response":
-        """POST /api/sessions — create an empty Hermes session row."""
+        """POST /api/sessions — create an empty OpenComputer session row."""
         auth_err = self._check_auth(request)
         if auth_err:
             return auth_err
@@ -1566,9 +1575,9 @@ class APIServerAdapter(BasePlatformAdapter):
         )
         effective_session_id = result.get("session_id") if isinstance(result, dict) else session_id
         final_response = result.get("final_response", "") if isinstance(result, dict) else ""
-        headers = {"X-Hermes-Session-Id": effective_session_id or session_id}
+        headers = {"X-OpenComputer-Session-Id": effective_session_id or session_id}
         if gateway_session_key:
-            headers["X-Hermes-Session-Key"] = gateway_session_key
+            headers["X-OpenComputer-Session-Key"] = gateway_session_key
         return web.json_response(
             {
                 "object": "hermes.session.chat.completion",
@@ -1692,10 +1701,10 @@ class APIServerAdapter(BasePlatformAdapter):
             "Content-Type": "text/event-stream",
             "Cache-Control": "no-cache",
             "X-Accel-Buffering": "no",
-            "X-Hermes-Session-Id": session_id,
+            "X-OpenComputer-Session-Id": session_id,
         }
         if gateway_session_key:
-            headers["X-Hermes-Session-Key"] = gateway_session_key
+            headers["X-OpenComputer-Session-Key"] = gateway_session_key
         response = web.StreamResponse(status=200, headers=headers)
         await response.prepare(request)
         last_write = time.monotonic()
@@ -1777,26 +1786,26 @@ class APIServerAdapter(BasePlatformAdapter):
             )
 
         # Allow caller to scope long-term memory (e.g. Honcho) with a
-        # stable per-channel identifier via X-Hermes-Session-Key.  This
-        # is independent of X-Hermes-Session-Id: the key persists across
+        # stable per-channel identifier via X-OpenComputer-Session-Key.  This
+        # is independent of X-OpenComputer-Session-Id: the key persists across
         # transcripts while the id rotates when the caller starts a new
         # transcript (i.e. /new semantics).  See _parse_session_key_header.
         gateway_session_key, key_err = self._parse_session_key_header(request)
         if key_err is not None:
             return key_err
 
-        # Allow caller to continue an existing session by passing X-Hermes-Session-Id.
+        # Allow caller to continue an existing session by passing X-OpenComputer-Session-Id.
         # When provided, history is loaded from state.db instead of from the request body.
         #
         # Security: session continuation exposes conversation history, so it is
         # only allowed when the API key is configured and the request is
         # authenticated.  Without this gate, any unauthenticated client could
         # read arbitrary session history by guessing/enumerating session IDs.
-        provided_session_id = request.headers.get("X-Hermes-Session-Id", "").strip()
+        provided_session_id = request.headers.get("X-OpenComputer-Session-Id", "").strip()
         if provided_session_id:
             if not self._api_key:
                 logger.warning(
-                    "Session continuation via X-Hermes-Session-Id rejected: "
+                    "Session continuation via X-OpenComputer-Session-Id rejected: "
                     "no API key configured.  Set API_SERVER_KEY to enable "
                     "session continuity."
                 )
@@ -1824,7 +1833,7 @@ class APIServerAdapter(BasePlatformAdapter):
         else:
             # Derive a stable session ID from the conversation fingerprint so
             # that consecutive messages from the same Open WebUI (or similar)
-            # conversation map to the same Hermes session.  The first user
+            # conversation map to the same OpenComputer session.  The first user
             # message + system prompt are constant across all turns.
             first_user = ""
             for cm in conversation_messages:
@@ -1852,6 +1861,14 @@ class APIServerAdapter(BasePlatformAdapter):
                 # completion via agent_task.done() instead.
                 if delta is not None:
                     _stream_q.put(delta)
+
+            def _on_reasoning(text):
+                # Forward extended-thinking deltas as a tagged queue item; the
+                # SSE writer turns them into ``delta.reasoning_content`` chunks
+                # which the frontend renders as a thinking block. Reasoning
+                # arrives before content (Anthropic thinking), preserving order.
+                if text:
+                    _stream_q.put(("__reasoning__", text))
 
             # Track which tool_call_ids we've emitted a "running" lifecycle
             # event for, so a "completed" event without a matching "running"
@@ -1916,6 +1933,7 @@ class APIServerAdapter(BasePlatformAdapter):
                 ephemeral_system_prompt=system_prompt,
                 session_id=session_id,
                 stream_delta_callback=_on_delta,
+                reasoning_callback=_on_reasoning,
                 tool_start_callback=_on_tool_start,
                 tool_complete_callback=_on_tool_complete,
                 agent_ref=agent_ref,
@@ -1979,10 +1997,10 @@ class APIServerAdapter(BasePlatformAdapter):
             finish_reason = "stop"
 
         response_headers = {
-            "X-Hermes-Session-Id": result.get("session_id", session_id),
+            "X-OpenComputer-Session-Id": result.get("session_id", session_id),
         }
         if gateway_session_key:
-            response_headers["X-Hermes-Session-Key"] = gateway_session_key
+            response_headers["X-OpenComputer-Session-Key"] = gateway_session_key
 
         # Hard-fail path: no usable assistant text AND a real failure → 5xx
         # with OpenAI-style error envelope so SDK clients raise instead of
@@ -1998,13 +2016,13 @@ class APIServerAdapter(BasePlatformAdapter):
                 "partial": is_partial,
                 "failed": is_failed,
             }
-            response_headers["X-Hermes-Completed"] = "false"
-            response_headers["X-Hermes-Partial"] = "true" if is_partial else "false"
+            response_headers["X-OpenComputer-Completed"] = "false"
+            response_headers["X-OpenComputer-Partial"] = "true" if is_partial else "false"
             return web.json_response(err_body, status=502, headers=response_headers)
 
         # Soft-partial path: we have *some* text but the run did not complete
         # (e.g. truncation with partial buffered output). Still 200 but signal
-        # truncation via finish_reason="length" + Hermes-specific extras.
+        # truncation via finish_reason="length" + OpenComputer-specific extras.
         response_data = {
             "id": completion_id,
             "object": "chat.completion",
@@ -2034,10 +2052,10 @@ class APIServerAdapter(BasePlatformAdapter):
                 "error": err_msg,
                 "error_code": "output_truncated" if finish_reason == "length" else "agent_error",
             }
-            response_headers["X-Hermes-Completed"] = "false"
-            response_headers["X-Hermes-Partial"] = "true" if is_partial else "false"
+            response_headers["X-OpenComputer-Completed"] = "false"
+            response_headers["X-OpenComputer-Partial"] = "true" if is_partial else "false"
             if err_msg:
-                response_headers["X-Hermes-Error"] = err_msg[:200]
+                response_headers["X-OpenComputer-Error"] = err_msg[:200]
 
         return web.json_response(response_data, headers=response_headers)
 
@@ -2066,9 +2084,9 @@ class APIServerAdapter(BasePlatformAdapter):
         if cors:
             sse_headers.update(cors)
         if session_id:
-            sse_headers["X-Hermes-Session-Id"] = session_id
+            sse_headers["X-OpenComputer-Session-Id"] = session_id
         if gateway_session_key:
-            sse_headers["X-Hermes-Session-Key"] = gateway_session_key
+            sse_headers["X-OpenComputer-Session-Key"] = gateway_session_key
         response = web.StreamResponse(status=200, headers=sse_headers)
         await response.prepare(request)
 
@@ -2100,6 +2118,16 @@ class APIServerAdapter(BasePlatformAdapter):
                     await response.write(
                         f"event: hermes.tool.progress\ndata: {event_data}\n\n".encode()
                     )
+                elif isinstance(item, tuple) and len(item) == 2 and item[0] == "__reasoning__":
+                    # Extended-thinking delta → ``delta.reasoning_content`` chunk.
+                    # The frontend (oc-openai-stream) reads delta.reasoning /
+                    # reasoning_content and renders it as a thinking block.
+                    reasoning_chunk = {
+                        "id": completion_id, "object": "chat.completion.chunk",
+                        "created": created, "model": model,
+                        "choices": [{"index": 0, "delta": {"reasoning_content": item[1]}, "finish_reason": None}],
+                    }
+                    await response.write(f"data: {json.dumps(reasoning_chunk)}\n\n".encode())
                 else:
                     content_chunk = {
                         "id": completion_id, "object": "chat.completion.chunk",
@@ -2250,9 +2278,9 @@ class APIServerAdapter(BasePlatformAdapter):
         if cors:
             sse_headers.update(cors)
         if session_id:
-            sse_headers["X-Hermes-Session-Id"] = session_id
+            sse_headers["X-OpenComputer-Session-Id"] = session_id
         if gateway_session_key:
-            sse_headers["X-Hermes-Session-Key"] = gateway_session_key
+            sse_headers["X-OpenComputer-Session-Key"] = gateway_session_key
         response = web.StreamResponse(status=200, headers=sse_headers)
         await response.prepare(request)
 
@@ -3064,9 +3092,9 @@ class APIServerAdapter(BasePlatformAdapter):
             if conversation:
                 self._response_store.set_conversation(conversation, response_id)
 
-        response_headers = {"X-Hermes-Session-Id": session_id}
+        response_headers = {"X-OpenComputer-Session-Id": session_id}
         if gateway_session_key:
-            response_headers["X-Hermes-Session-Key"] = gateway_session_key
+            response_headers["X-OpenComputer-Session-Key"] = gateway_session_key
         return web.json_response(response_data, headers=response_headers)
 
     # ------------------------------------------------------------------
@@ -3490,6 +3518,7 @@ class APIServerAdapter(BasePlatformAdapter):
         ephemeral_system_prompt: Optional[str] = None,
         session_id: Optional[str] = None,
         stream_delta_callback=None,
+        reasoning_callback=None,
         tool_progress_callback=None,
         tool_start_callback=None,
         tool_complete_callback=None,
@@ -3523,6 +3552,7 @@ class APIServerAdapter(BasePlatformAdapter):
                     ephemeral_system_prompt=ephemeral_system_prompt,
                     session_id=session_id,
                     stream_delta_callback=stream_delta_callback,
+                    reasoning_callback=reasoning_callback,
                     tool_progress_callback=tool_progress_callback,
                     tool_start_callback=tool_start_callback,
                     tool_complete_callback=tool_complete_callback,
@@ -3542,7 +3572,7 @@ class APIServerAdapter(BasePlatformAdapter):
                     "total_tokens": getattr(agent, "session_total_tokens", 0) or 0,
                 }
                 # Include the effective session ID in the result so callers
-                # (e.g. X-Hermes-Session-Id header) can track compression-
+                # (e.g. X-OpenComputer-Session-Id header) can track compression-
                 # triggered session rotations. (#16938)
                 _eff_sid = getattr(agent, "session_id", session_id)
                 if isinstance(_eff_sid, str) and _eff_sid:
@@ -3910,7 +3940,7 @@ class APIServerAdapter(BasePlatformAdapter):
             task.add_done_callback(self._background_tasks.discard)
 
         response_headers = (
-            {"X-Hermes-Session-Key": gateway_session_key} if gateway_session_key else {}
+            {"X-OpenComputer-Session-Key": gateway_session_key} if gateway_session_key else {}
         )
         return web.json_response(
             {"run_id": run_id, "status": "started"},
@@ -4196,7 +4226,7 @@ class APIServerAdapter(BasePlatformAdapter):
             self._app.router.add_get("/v1/runs/{run_id}/events", self._handle_run_events)
             self._app.router.add_post("/v1/runs/{run_id}/approval", self._handle_run_approval)
             self._app.router.add_post("/v1/runs/{run_id}/stop", self._handle_stop_run)
-            # Store the adapter after native routes are registered. Local Hermes-Relay
+            # Store the adapter after native routes are registered. Local OpenComputer-Relay
             # bootstrap shims use this key as a feature-detection hook; registering
             # native routes first lets those shims no-op instead of shadowing the
             # upstream session-control handlers.

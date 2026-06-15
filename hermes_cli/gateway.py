@@ -33,7 +33,7 @@ from hermes_cli.config import (
 )
 
 # display_hermes_home is imported lazily at call sites to avoid ImportError
-# when hermes_constants is cached from a pre-update version during `hermes update`.
+# when hermes_constants is cached from a pre-update version during `oc update`.
 from hermes_cli.setup import (
     print_header,
     print_info,
@@ -158,7 +158,7 @@ def _get_parent_pid(pid: int) -> int | None:
     older implementation shelled out to ``ps -o ppid= -p <pid>``, which
     silently fails on Windows (no ``ps``) so the ancestor walk terminated
     at self — the caller's dedup / exclude logic then couldn't distinguish
-    "hermes CLI that invoked this scan" from "real gateway process".
+    "oc CLI that invoked this scan" from "real gateway process".
     """
     if pid <= 1:
         return None
@@ -281,7 +281,7 @@ def _get_ancestor_pids() -> set[int]:
 
     Walks from the current PID up to PID 1 (init) so that process-table scans
     never match the calling CLI process or any of its parents.  This prevents
-    ``hermes gateway status`` from falsely counting the ``hermes`` CLI that
+    ``oc gateway status`` from falsely counting the ``hermes`` CLI that
     invoked it as a running gateway instance (see #13242).
     """
     ancestors: set[int] = set()
@@ -314,7 +314,7 @@ def _scan_gateway_pids(exclude_pids: set[int], all_profiles: bool = False) -> li
     discover gateways outside the current profile.
     """
     # Exclude the entire ancestor chain so the CLI process that invoked this
-    # scan (e.g. ``hermes gateway status``) is never mistaken for a running
+    # scan (e.g. ``oc gateway status``) is never mistaken for a running
     # gateway.  See #13242.
     exclude_pids = exclude_pids | _get_ancestor_pids()
     pids: list[int] = []
@@ -325,7 +325,7 @@ def _scan_gateway_pids(exclude_pids: set[int], all_profiles: bool = False) -> li
         "hermes_cli/main.py gateway",
         "hermes_cli/main.py --profile",
         "hermes_cli/main.py -p",
-        "hermes gateway",
+        "oc gateway",
         # Windows: only match invocations that actually carry the ``gateway``
         # subcommand or the gateway-dedicated console-script shim. Bare
         # ``hermes.exe --profile`` / ``hermes.exe -p`` would also match
@@ -563,10 +563,10 @@ def find_gateway_pids(
         exclude_pids: PIDs to exclude from the result (e.g. service-managed
             PIDs that should not be killed during a stale-process sweep).
         all_profiles: When ``True``, return gateway PIDs across **all**
-            profiles (the pre-7923 global behaviour).  ``hermes update``
+            profiles (the pre-7923 global behaviour).  ``oc update``
             needs this because a code update affects every profile.
             When ``False`` (default), only PIDs belonging to the current
-            Hermes profile are returned.
+            OpenComputer profile are returned.
     """
     _exclude = set(exclude_pids or set())
     pids: list[int] = []
@@ -587,7 +587,7 @@ def find_gateway_pids(
 def find_profile_gateway_processes(
     exclude_pids: set | None = None,
 ) -> list[ProfileGatewayProcess]:
-    """Return running gateway PIDs mapped to Hermes profiles via PID files."""
+    """Return running gateway PIDs mapped to OpenComputer profiles via PID files."""
     _exclude = set(exclude_pids or set())
     processes: list[ProfileGatewayProcess] = []
     try:
@@ -634,8 +634,8 @@ def launch_detached_profile_gateway_restart(profile: str, old_pid: int) -> bool:
     #
     # Windows — ``start_new_session`` is silently accepted but does NOT
     # detach.  The watcher stays attached to the CLI's console and dies
-    # when the user closes the terminal, leaving ``hermes update`` users
-    # with no running gateway until they re-invoke ``hermes gateway``
+    # when the user closes the terminal, leaving ``oc update`` users
+    # with no running gateway until they re-invoke ``oc gateway``
     # manually.  The Win32 equivalent is the ``CREATE_NEW_PROCESS_GROUP |
     # DETACHED_PROCESS | CREATE_NO_WINDOW`` creationflags bundle.
     #
@@ -1155,14 +1155,14 @@ def _print_gateway_process_mismatch(snapshot: GatewayRuntimeSnapshot) -> None:
         "⚠ Gateway process is running for this profile, but the service is not active"
     )
     print(f"  PID(s): {_format_gateway_pids(snapshot.gateway_pids, limit=None)}")
-    print("  This is usually a manual foreground/tmux/nohup run, so `hermes gateway`")
+    print("  This is usually a manual foreground/tmux/nohup run, so `oc gateway`")
     print("  can refuse to start another copy until this process stops.")
 
 
 def _print_other_profiles_gateway_status() -> None:
     """Print a summary of gateway status across all profiles.
 
-    Shown at the bottom of ``hermes gateway status`` output so users with
+    Shown at the bottom of ``oc gateway status`` output so users with
     multiple profiles can tell at a glance which gateways are running and
     avoid confusing another profile's process with the current one.
     """
@@ -1337,7 +1337,7 @@ def _systemd_operational(system: bool = False) -> bool:
 def _container_systemd_operational() -> bool:
     """Return True when a container exposes working user or system systemd.
 
-    This is NOT our Hermes Docker image — that one runs s6-overlay as
+    This is NOT our OpenComputer Docker image — that one runs s6-overlay as
     PID 1 (since Phase 2 of the s6-overlay supervision plan) and is
     detected via ``service_manager.detect_service_manager() == "s6"``.
     This function handles the "container managed by something else"
@@ -1376,7 +1376,7 @@ def is_windows() -> bool:
 def _windows_gateway_should_absorb_console_controls() -> bool:
     """Return True for detached Windows gateway runs that should ignore Ctrl+C.
 
-    Foreground ``hermes gateway run`` must remain interruptible from
+    Foreground ``oc gateway run`` must remain interruptible from
     PowerShell/CMD. Detached service-style launches opt in via
     ``HERMES_GATEWAY_DETACHED=1``; older wrappers without the env marker are
     treated as detached when no interactive stdin is attached.
@@ -1399,7 +1399,7 @@ def _windows_gateway_should_absorb_console_controls() -> bool:
 # =============================================================================
 
 _SERVICE_BASE = "hermes-gateway"
-SERVICE_DESCRIPTION = "Hermes Agent Gateway - Messaging Platform Integration"
+SERVICE_DESCRIPTION = "OpenComputer Gateway - Messaging Platform Integration"
 
 
 def _profile_suffix() -> str:
@@ -1726,7 +1726,7 @@ def has_conflicting_systemd_units() -> bool:
     return len(get_installed_systemd_scopes()) > 1
 
 
-# Legacy service names from older Hermes installs that predate the
+# Legacy service names from older OpenComputer installs that predate the
 # hermes-gateway rename. Kept as an explicit allowlist (NOT a glob) so
 # profile units (hermes-gateway-*.service) and unrelated third-party
 # "hermes" units are never matched.
@@ -1739,7 +1739,7 @@ _LEGACY_UNIT_EXECSTART_MARKERS: tuple[str, ...] = (
     "hermes_cli/main.py gateway",
     "gateway/run.py",
     " hermes gateway ",
-    "/hermes gateway ",
+    "/oc gateway ",
 )
 
 
@@ -1756,9 +1756,9 @@ def _legacy_unit_search_paths() -> list[tuple[bool, Path]]:
 
 
 def _find_legacy_hermes_units() -> list[tuple[str, Path, bool]]:
-    """Return ``[(unit_name, unit_path, is_system)]`` for legacy Hermes gateway units.
+    """Return ``[(unit_name, unit_path, is_system)]`` for legacy OpenComputer gateway units.
 
-    Detects unit files installed by older Hermes versions that used a
+    Detects unit files installed by older OpenComputer versions that used a
     different service name (e.g. ``hermes.service`` before the rename to
     ``hermes-gateway.service``). When both a legacy unit and the current
     ``hermes-gateway.service`` are active, they fight over the same bot
@@ -1794,12 +1794,12 @@ def _find_legacy_hermes_units() -> list[tuple[str, Path, bool]]:
 
 
 def has_legacy_hermes_units() -> bool:
-    """Return True when any legacy Hermes gateway unit files exist."""
+    """Return True when any legacy OpenComputer gateway unit files exist."""
     return bool(_find_legacy_hermes_units())
 
 
 def print_legacy_unit_warning() -> None:
-    """Warn about legacy Hermes gateway unit files if any are installed.
+    """Warn about legacy OpenComputer gateway unit files if any are installed.
 
     Idempotent: prints nothing when no legacy units are detected. Safe to
     call from any status/install/setup path.
@@ -1807,7 +1807,7 @@ def print_legacy_unit_warning() -> None:
     legacy = _find_legacy_hermes_units()
     if not legacy:
         return
-    print_warning("Legacy Hermes gateway unit(s) detected from an older install:")
+    print_warning("Legacy OpenComputer gateway unit(s) detected from an older install:")
     for name, path, is_system in legacy:
         scope = "system" if is_system else "user"
         print_info(f"    {path}  ({scope} scope)")
@@ -1821,7 +1821,7 @@ def remove_legacy_hermes_units(
     interactive: bool = True,
     dry_run: bool = False,
 ) -> tuple[int, list[Path]]:
-    """Stop, disable, and remove legacy Hermes gateway unit files.
+    """Stop, disable, and remove legacy OpenComputer gateway unit files.
 
     Iterates over whatever ``_find_legacy_hermes_units()`` returns — which is
     an explicit allowlist of legacy names (not a glob). Profile units and
@@ -1839,14 +1839,14 @@ def remove_legacy_hermes_units(
     """
     legacy = _find_legacy_hermes_units()
     if not legacy:
-        print("No legacy Hermes gateway units found.")
+        print("No legacy OpenComputer gateway units found.")
         return 0, []
 
     user_units = [(n, p) for n, p, is_sys in legacy if not is_sys]
     system_units = [(n, p) for n, p, is_sys in legacy if is_sys]
 
     print()
-    print("Legacy Hermes gateway unit(s) found:")
+    print("Legacy OpenComputer gateway unit(s) found:")
     for name, path, is_system in legacy:
         scope = "system" if is_system else "user"
         print(f"  {path}  ({scope} scope)")
@@ -2020,7 +2020,7 @@ def install_linux_gateway_from_setup(force: bool = False, enable_on_startup: boo
         run_as_user = _default_system_service_user()
         if os.geteuid() != 0:  # windows-footgun: ok — Linux systemd install wizard, never invoked on Windows
             print_warning(
-                "  System service install requires sudo, so Hermes can't create it from this user session."
+                "  System service install requires sudo, so OpenComputer can't create it from this user session."
             )
             if run_as_user:
                 print_info(
@@ -2117,7 +2117,7 @@ def print_systemd_linger_guidance() -> None:
 def _launchd_user_home() -> Path:
     """Return the real macOS user home for launchd artifacts.
 
-    Profile-mode Hermes often sets ``HOME`` to a profile-scoped directory, but
+    Profile-mode OpenComputer often sets ``HOME`` to a profile-scoped directory, but
     launchd user agents still live under the actual account home.
     """
     import pwd
@@ -2244,7 +2244,7 @@ def _remap_path_for_user(path: str, target_home_dir: str) -> str:
     to *target_home_dir*; otherwise the path is returned unchanged.
 
       /root/.hermes/hermes-agent  -> /home/alice/.hermes/hermes-agent
-      /opt/hermes                 -> /opt/hermes  (kept as-is)
+      /opt/oc                 -> /opt/oc  (kept as-is)
 
     Note: this function intentionally does NOT resolve symlinks. A venv's
     ``bin/python`` is typically a symlink to the base interpreter (e.g. a
@@ -2331,7 +2331,7 @@ def _stable_service_working_dir() -> str:
     resolution does not depend on cwd. Pinning ``WorkingDirectory`` to
     ``PROJECT_ROOT`` (``Path(__file__).parent.parent``) is actively harmful:
     when the unit is generated from a transient checkout — a ``.worktrees/``
-    dir, or a clone that ``hermes update`` later relocates/removes — the path
+    dir, or a clone that ``oc update`` later relocates/removes — the path
     rots. systemd then fails the start at the CHDIR step (``status=200/CHDIR``,
     "Changing to the requested working directory failed") *before* Python
     loads, so the on-boot ``refresh_systemd_unit_if_needed()`` self-heal never
@@ -2541,7 +2541,7 @@ def _temp_home_in_service_definition(definition: str) -> str | None:
     service file silently breaks the user's gateway on the next (re)start:
     the gateway comes back "active (running)" but pointed at an empty temp
     home ("No messaging platforms enabled"), deaf to every platform.
-    Seen live 2026-06-11: an E2E guard probe ran ``hermes gateway restart``
+    Seen live 2026-06-11: an E2E guard probe ran ``oc gateway restart``
     with ``HERMES_HOME=/tmp/hermes-e2e-<pr>`` exported; the restart path's
     unit refresh baked the temp path into the production unit and the
     post-update restart produced a zombie gateway for 7+ hours.
@@ -2629,7 +2629,7 @@ def refresh_systemd_unit_if_needed(system: bool = False) -> bool:
     unit_path.write_text(new_unit, encoding="utf-8")
     _run_systemctl(["daemon-reload"], system=system, check=True, timeout=30)
     print(
-        f"↻ Updated gateway {_service_scope_label(system)} service definition to match the current Hermes install"
+        f"↻ Updated gateway {_service_scope_label(system)} service definition to match the current OpenComputer install"
     )
     return True
 
@@ -2896,7 +2896,7 @@ def systemd_stop(system: bool = False):
         label = _service_scope_label(system)
         print(
             f"Gateway {label} service is still stopping after 90s; "
-            "check `hermes gateway status` or logs for final shutdown state."
+            "check `oc gateway status` or logs for final shutdown state."
         )
         return
     print(f"✓ {_service_scope_label(system).capitalize()} service stopped")
@@ -2965,7 +2965,7 @@ def systemd_restart(system: bool = False):
             label = _service_scope_label(system)
             print(
                 f"Gateway {label} service is still restarting after 90s; "
-                "check `hermes gateway status` or logs for final state."
+                "check `oc gateway status` or logs for final state."
             )
             return
         _wait_for_systemd_service_restart(system=system, previous_pid=pid)
@@ -2995,7 +2995,7 @@ def systemd_restart(system: bool = False):
         label = _service_scope_label(system)
         print(
             f"Gateway {label} service is still restarting after 90s; "
-            "check `hermes gateway status` or logs for final state."
+            "check `oc gateway status` or logs for final state."
         )
         return
     _wait_for_systemd_service_restart(system=system, previous_pid=pid)
@@ -3134,7 +3134,7 @@ def get_launchd_label() -> str:
 
 
 # Cached launchd domain result — probing is cheap but should only run once per
-# process invocation (each ``hermes gateway start/stop/status`` call).
+# process invocation (each ``oc gateway start/stop/status`` call).
 _resolved_launchd_domain: str | None = None
 
 
@@ -3446,7 +3446,7 @@ def refresh_launchd_plist_if_needed() -> bool:
         timeout=30,
     )
     print(
-        "↻ Updated gateway launchd service definition to match the current Hermes install"
+        "↻ Updated gateway launchd service definition to match the current OpenComputer install"
     )
     return True
 
@@ -3587,7 +3587,7 @@ def launchd_stop():
     # bootout unloads the service definition so KeepAlive doesn't respawn
     # the process.  A plain `kill SIGTERM` only signals the process — launchd
     # immediately restarts it because KeepAlive is unconditionally true.
-    # `hermes gateway start` re-bootstraps when it detects the job is unloaded.
+    # `oc gateway start` re-bootstraps when it detects the job is unloaded.
     try:
         subprocess.run(["launchctl", "bootout", target], check=True, timeout=90)
     except subprocess.CalledProcessError as e:
@@ -3725,9 +3725,9 @@ def launchd_status(deep: bool = False):
 
     print(f"Launchd plist: {plist_path}")
     if launchd_plist_is_current():
-        print("✓ Service definition matches the current Hermes install")
+        print("✓ Service definition matches the current OpenComputer install")
     else:
-        print("⚠ Service definition is stale relative to the current Hermes install")
+        print("⚠ Service definition is stale relative to the current OpenComputer install")
         print("  Run: hermes gateway start")
 
     if loaded:
@@ -3772,12 +3772,12 @@ def _guard_official_docker_root_gateway() -> None:
         return
 
     print_error(
-        "Refusing to run the Hermes gateway as root inside the official Docker image."
+        "Refusing to run the OpenComputer gateway as root inside the official Docker image."
     )
     print(
         "  The image entrypoint normally drops privileges to the 'hermes' user. "
         "If you override entrypoint in Docker Compose, include "
-        "/opt/hermes/docker/entrypoint.sh before the Hermes command."
+        "/opt/hermes/docker/entrypoint.sh before the OpenComputer command."
     )
     print(
         "  Running the gateway as root can leave root-owned files in "
@@ -3803,7 +3803,7 @@ def run_gateway(verbose: int = 0, quiet: bool = False, replace: bool = False):
     sys.path.insert(0, str(PROJECT_ROOT))
 
     # Detached Windows gateway runs must ignore console-control broadcasts
-    # from sibling CLI processes, but foreground `hermes gateway run` still
+    # from sibling CLI processes, but foreground `oc gateway run` still
     # needs to obey the banner's "Press Ctrl+C to stop" contract.
     # Service-style launchers set HERMES_GATEWAY_DETACHED=1; older wrappers
     # without the marker are handled by the non-TTY fallback.
@@ -3845,10 +3845,10 @@ def run_gateway(verbose: int = 0, quiet: bool = False, replace: bool = False):
     # Refresh the systemd unit definition on every boot so that restart
     # settings (RestartSec, StartLimitIntervalSec, etc.) stay current even
     # when the process was respawned via exit-code-75 (stale-code or
-    # /restart) rather than through `hermes gateway restart` which already
+    # /restart) rather than through `oc gateway restart` which already
     # calls refresh_systemd_unit_if_needed().  Without this, a code update
     # that ships new unit settings won't take effect until the next manual
-    # `hermes gateway start/restart` — leaving the gateway vulnerable to
+    # `oc gateway start/restart` — leaving the gateway vulnerable to
     # the exact failure mode the new settings were meant to prevent.
     if supports_systemd_services():
         try:
@@ -3859,7 +3859,7 @@ def run_gateway(verbose: int = 0, quiet: bool = False, replace: bool = False):
     from gateway.run import start_gateway
 
     print("┌─────────────────────────────────────────────────────────┐")
-    print("│           ⚕ Hermes Gateway Starting...                 │")
+    print("│           ⚕ OpenComputer Gateway Starting...                 │")
     print("├─────────────────────────────────────────────────────────┤")
     print("│  Messaging platforms + cron scheduler                    │")
     print("│  Press Ctrl+C to stop                                   │")
@@ -4054,7 +4054,7 @@ _PLATFORMS = [
             "3. Get an access token: Element → Settings → Help & About → Access Token",
             "   Or via API: curl -X POST https://your-server/_matrix/client/v3/login \\",
             '     -d \'{"type":"m.login.password","user":"@bot:server","password":"..."}\'',
-            "4. Alternatively, provide user ID + password and Hermes will log in directly",
+            "4. Alternatively, provide user ID + password and OpenComputer will log in directly",
             "5. For E2EE: set MATRIX_ENCRYPTION=true (requires pip install 'mautrix[encryption]')",
             "6. To find your user ID: it's @username:your-server (shown in Element profile)",
         ],
@@ -4131,7 +4131,7 @@ _PLATFORMS = [
                 "name": "MATTERMOST_HOME_CHANNEL",
                 "prompt": "Home channel ID (for cron/notification delivery, or empty to set later with /set-home)",
                 "password": False,
-                "help": "Channel ID where Hermes delivers cron results and notifications.",
+                "help": "Channel ID where OpenComputer delivers cron results and notifications.",
             },
             {
                 "name": "MATTERMOST_REPLY_MODE",
@@ -4159,7 +4159,7 @@ _PLATFORMS = [
         "emoji": "📧",
         "token_var": "EMAIL_ADDRESS",
         "setup_instructions": [
-            "1. Use a dedicated email account for your Hermes agent",
+            "1. Use a dedicated email account for your OpenComputer",
             "2. For Gmail: enable 2FA, then create an App Password at",
             "   https://myaccount.google.com/apppasswords",
             "3. For other providers: use your email password or app-specific password",
@@ -4170,7 +4170,7 @@ _PLATFORMS = [
                 "name": "EMAIL_ADDRESS",
                 "prompt": "Email address",
                 "password": False,
-                "help": "The email address Hermes will use (e.g., hermes@gmail.com).",
+                "help": "The email address OpenComputer will use (e.g., hermes@gmail.com).",
             },
             {
                 "name": "EMAIL_PASSWORD",
@@ -4441,7 +4441,7 @@ _PLATFORMS = [
             "2. Complete the BlueBubbles setup wizard — sign in with your Apple ID",
             "3. In BlueBubbles Settings → API, note the Server URL and password",
             "4. The server URL is typically http://<your-mac-ip>:1234",
-            "5. Hermes connects via the BlueBubbles REST API and receives",
+            "5. OpenComputer connects via the BlueBubbles REST API and receives",
             "   incoming messages via a local webhook",
             "6. To authorize users, use DM pairing: hermes pairing generate bluebubbles",
             "   Share the code — the user sends it via iMessage to get approved",
@@ -4522,7 +4522,7 @@ _PLATFORMS = [
             "1. Download the Yuanbao app from https://yuanbao.tencent.com/",
             "2. In the app, go to PAI → My Bot and create a new bot",
             "3. After the bot is created, copy the App ID and App Secret",
-            "4. Enter them below and Hermes will connect automatically over WebSocket",
+            "4. Enter them below and OpenComputer will connect automatically over WebSocket",
         ],
         "vars": [
             {
@@ -4548,7 +4548,7 @@ def _all_platforms() -> list[dict]:
     Combines the built-in ``_PLATFORMS`` with plugin platforms registered via
     ``platform_registry``. Plugins are discovered on first call so bundled
     platforms (like IRC, which auto-load via ``kind: platform``) appear in
-    ``hermes setup gateway`` without needing the gateway to be running.
+    ``oc setup gateway`` without needing the gateway to be running.
     Built-ins keep their dict shape; plugin entries are adapted to the same
     shape with ``_registry_entry`` holding the source.
 
@@ -4828,7 +4828,7 @@ def _setup_standard_platform(platform: dict):
                 print()
                 access_choices = [
                     "Enable open access (anyone can message the bot)",
-                    "Use DM pairing (unknown users request access, you approve with 'hermes pairing approve')",
+                    "Use DM pairing (unknown users request access, you approve with 'oc pairing approve')",
                     "Skip for now (bot will deny all users until configured)",
                 ]
                 access_idx = prompt_choice(
@@ -4846,7 +4846,7 @@ def _setup_standard_platform(platform: dict):
                     )
                 else:
                     print_info(
-                        "  Skipped — configure later with 'hermes gateway setup'"
+                        "  Skipped — configure later with 'oc gateway setup'"
                     )
             continue
 
@@ -5034,7 +5034,7 @@ def _setup_wecom():
         print()
         access_choices = [
             "Enable open access (anyone can message the bot)",
-            "Use DM pairing (unknown users request access, you approve with 'hermes pairing approve')",
+            "Use DM pairing (unknown users request access, you approve with 'oc pairing approve')",
             "Disable direct messages",
             "Skip for now (bot will deny all users until configured)",
         ]
@@ -5055,7 +5055,7 @@ def _setup_wecom():
             save_env_value("WECOM_DM_POLICY", "disabled")
             print_warning("  Direct messages disabled.")
         else:
-            print_info("  Skipped — configure later with 'hermes gateway setup'")
+            print_info("  Skipped — configure later with 'oc gateway setup'")
 
     # ── Home channel (optional) ──
     print()
@@ -5147,10 +5147,10 @@ def _setup_weixin():
     print()
     print(color("  ─── 💬 Weixin / WeChat Setup ───", Colors.CYAN))
     print()
-    print_info("  1. Hermes will open Tencent iLink QR login in this terminal.")
+    print_info("  1. OpenComputer will open Tencent iLink QR login in this terminal.")
     print_info("  2. Use WeChat to scan and confirm the QR code.")
     print_info(
-        "  3. Hermes will store the returned account_id/token in ~/.hermes/.env."
+        "  3. OpenComputer will store the returned account_id/token in ~/.hermes/.env."
     )
     print_info(
         "  4. This adapter supports native text, image, video, and document delivery."
@@ -5173,7 +5173,7 @@ def _setup_weixin():
 
     if not check_weixin_requirements():
         print_error("  Missing dependencies: Weixin needs aiohttp and cryptography.")
-        print_info("  Install them, then rerun `hermes gateway setup`.")
+        print_info("  Install them, then rerun `oc gateway setup`.")
         return
 
     print()
@@ -5227,7 +5227,7 @@ def _setup_weixin():
         save_env_value("WEIXIN_ALLOWED_USERS", "")
         print_success("  DM pairing enabled.")
         print_info(
-            "  Unknown DM users can request access and you approve them with `hermes pairing approve`."
+            "  Unknown DM users can request access and you approve them with `oc pairing approve`."
         )
     elif access_idx == 1:
         save_env_value("WEIXIN_DM_POLICY", "open")
@@ -5456,7 +5456,7 @@ def _setup_feishu():
         save_env_value("FEISHU_ALLOWED_USERS", "")
         print_success("  DM pairing enabled.")
         print_info(
-            "  Unknown users can request access; approve with `hermes pairing approve`."
+            "  Unknown users can request access; approve with `oc pairing approve`."
         )
     elif access_idx == 1:
         save_env_value("FEISHU_ALLOW_ALL_USERS", "true")
@@ -5591,7 +5591,7 @@ def _setup_qqbot():
             save_env_value("QQ_ALLOWED_USERS", "")
         print_success("  DM pairing enabled.")
         print_info(
-            "  Unknown users can request access; approve with `hermes pairing approve`."
+            "  Unknown users can request access; approve with `oc pairing approve`."
         )
     elif access_idx == 1:
         save_env_value("QQ_ALLOW_ALL_USERS", "true")
@@ -5658,7 +5658,7 @@ def _setup_signal():
         print_info("    Docker: bbernhard/signal-cli-rest-api")
         print()
         print_info("  After installing, link your account and start the daemon:")
-        print_info('    signal-cli link -n "HermesAgent"')
+        print_info('    signal-cli link -n "OpenComputer"')
         print_info("    signal-cli --account +YOURNUMBER daemon --http 127.0.0.1:8080")
         print()
 
@@ -6069,7 +6069,7 @@ def gateway_setup():
                 print_info("  WSL detected but systemd is not running.")
                 print_info("  Run in foreground: hermes gateway run")
                 print_info(
-                    "  For persistence:   tmux new -s hermes 'hermes gateway run'"
+                    "  For persistence:   tmux new -s hermes 'oc gateway run'"
                 )
                 print_info(
                     "  To enable systemd: add systemd=true to /etc/wsl.conf, then 'wsl --shutdown'"
@@ -6087,7 +6087,7 @@ def gateway_setup():
                 print_info("  Run in foreground: hermes gateway run")
     else:
         print()
-        print_info("No platforms configured. Run 'hermes gateway setup' when ready.")
+        print_info("No platforms configured. Run 'oc gateway setup' when ready.")
 
     print()
 
@@ -6154,7 +6154,7 @@ def _dispatch_all_via_service_manager_if_s6(action: str) -> bool:
     Returns True iff dispatched (caller should ``return``); False
     otherwise — caller continues with the host-side code path.
 
-    Without this, ``hermes gateway stop --all`` and ``... restart --all``
+    Without this, ``oc gateway stop --all`` and ``... restart --all``
     fall through to ``kill_gateway_processes(all_profiles=True)``, which
     just ``pkill``s every gateway process. s6-supervise observes the
     crash and restarts each one ~1s later — so ``--all`` ends up
@@ -6211,7 +6211,7 @@ def gateway_command(args):
             print(f"  {line}")
         sys.exit(1)
     except SystemScopeRequiresRootError as e:
-        # The direct ``hermes gateway install|uninstall|start|stop|restart``
+        # The direct ``oc gateway install|uninstall|start|stop|restart``
         # path lands here when the user typed a system-scope action without
         # sudo. Same exit code as before — just gives the wizard a way to
         # intercept the same condition with friendlier guidance before the
@@ -6238,10 +6238,10 @@ def _maybe_redirect_run_to_s6_supervision(args) -> bool:
 
       1. ``_dispatch_via_service_manager_if_s6`` returns False unless
          we're in a container with s6 as PID 1. Host runs of
-         ``hermes gateway run`` are unaffected.
+         ``oc gateway run`` are unaffected.
       2. ``HERMES_S6_SUPERVISED_CHILD`` is exported by
          ``S6ServiceManager._render_run_script`` for the supervised
-         process itself — i.e. when s6-supervise execs ``hermes gateway
+         process itself — i.e. when s6-supervise execs ``oc gateway
          run --replace`` as a longrun, this guard short-circuits the
          redirect so the supervised gateway actually runs in
          foreground (otherwise we'd recurse: run → start → run → start
@@ -6373,7 +6373,7 @@ def _gateway_command_inner(args):
                     "  Consider running in foreground instead: hermes gateway run"
                 )
                 print_info(
-                    "  Or use tmux/screen for persistence: tmux new -s hermes 'hermes gateway run'"
+                    "  Or use tmux/screen for persistence: tmux new -s hermes 'oc gateway run'"
                 )
                 print()
             start_now = prompt_yes_no("Start the gateway now after installing the service?", True)
@@ -6408,7 +6408,7 @@ def _gateway_command_inner(args):
                 "  hermes gateway run                              # direct foreground"
             )
             print(
-                "  tmux new -s hermes 'hermes gateway run'         # persistent via tmux"
+                "  tmux new -s hermes 'oc gateway run'         # persistent via tmux"
             )
             print(
                 "  nohup hermes gateway run > ~/.hermes/logs/gateway.log 2>&1 &  # background"
@@ -6491,7 +6491,7 @@ def _gateway_command_inner(args):
         # Phase 4: inside a container with s6, dispatch via the service
         # manager instead of falling through to systemd/launchd/windows.
         # `--all` isn't meaningful here (each profile has its own service
-        # slot — start them individually via `hermes -p <name> gateway
+        # slot — start them individually via `oc -p <name> gateway
         # start`), so just bring up the current profile's slot.
         if not start_all and _dispatch_via_service_manager_if_s6("start"):
             return
@@ -6527,7 +6527,7 @@ def _gateway_command_inner(args):
                 "  hermes gateway run                              # direct foreground"
             )
             print(
-                "  tmux new -s hermes 'hermes gateway run'         # persistent via tmux"
+                "  tmux new -s hermes 'oc gateway run'         # persistent via tmux"
             )
             print(
                 "  nohup hermes gateway run > ~/.hermes/logs/gateway.log 2>&1 &  # background"
@@ -6562,7 +6562,7 @@ def _gateway_command_inner(args):
             print_error(
                 "Refusing to stop the gateway from inside the gateway process.\n"
                 "This command was blocked to prevent restart loops.\n"
-                "Use `hermes gateway stop` from a shell outside the running gateway."
+                "Use `oc gateway stop` from a shell outside the running gateway."
             )
             sys.exit(1)
 
@@ -6655,7 +6655,7 @@ def _gateway_command_inner(args):
             print_error(
                 "Refusing to restart the gateway from inside the gateway process.\n"
                 "This command was blocked to prevent restart loops.\n"
-                "Use `hermes gateway restart` from a shell outside the running gateway."
+                "Use `oc gateway restart` from a shell outside the running gateway."
             )
             sys.exit(1)
 
@@ -6882,7 +6882,7 @@ def _gateway_command_inner(args):
                     )
                 elif is_wsl():
                     print(
-                        "  tmux new -s hermes 'hermes gateway run'         # persistent via tmux"
+                        "  tmux new -s hermes 'oc gateway run'         # persistent via tmux"
                     )
                     print(
                         "  nohup hermes gateway run > ~/.hermes/logs/gateway.log 2>&1 &  # background"
@@ -6904,7 +6904,7 @@ def _gateway_command_inner(args):
         _gateway_list()
 
     elif subcmd == "migrate-legacy":
-        # Stop, disable, and remove legacy Hermes gateway unit files from
+        # Stop, disable, and remove legacy OpenComputer gateway unit files from
         # pre-rename installs (e.g. hermes.service). Profile units and
         # unrelated third-party services are never touched.
         dry_run = getattr(args, "dry_run", False)

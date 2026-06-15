@@ -129,11 +129,11 @@ class TestWriteToSandbox:
     def test_path_with_spaces_is_quoted(self):
         env = MagicMock()
         env.execute.return_value = {"output": "", "returncode": 0}
-        remote_path = "/tmp/hermes results/abc file.txt"
+        remote_path = "/tmp/oc results/abc file.txt"
         _write_to_sandbox("content", remote_path, env)
         cmd = env.execute.call_args[0][0]
-        assert "'/tmp/hermes results'" in cmd
-        assert "'/tmp/hermes results/abc file.txt'" in cmd
+        assert "'/tmp/oc results'" in cmd
+        assert "'/tmp/oc results/abc file.txt'" in cmd
 
     def test_shell_metacharacters_neutralized(self):
         """Paths with shell metacharacters must be quoted to prevent injection."""

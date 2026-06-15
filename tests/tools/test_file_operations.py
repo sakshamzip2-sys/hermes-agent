@@ -72,7 +72,7 @@ class TestIsWriteDenied:
         ],
     )
     def test_hermes_control_files_oauth_and_mcp_tokens_denied(self, path):
-        """Hermes control files, PKCE creds, mcp-tokens, and pairing entries must be write-denied."""
+        """OpenComputer control files, PKCE creds, mcp-tokens, and pairing entries must be write-denied."""
         from hermes_constants import get_hermes_home
         hermes_home = get_hermes_home()
         full_path = str(hermes_home / path)
@@ -88,7 +88,7 @@ class TestIsWriteDenied:
         ],
     )
     def test_hermes_control_files_and_oauth_traversal_denied(self, path):
-        """Path traversal attempts to protected Hermes files must be blocked."""
+        """Path traversal attempts to protected OpenComputer files must be blocked."""
         from hermes_constants import get_hermes_home
         hermes_home = get_hermes_home()
         full_path = str(hermes_home / path)

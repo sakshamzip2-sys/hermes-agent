@@ -1,6 +1,6 @@
 """CLI commands for the google_meet plugin.
 
-Wires ``hermes meet <subcommand>``:
+Wires ``oc meet <subcommand>``:
   setup       — preflight playwright, chromium, auth file, print fixes
   auth        — open a browser to sign into Google, save storage state
   join <url>  — join a Meet URL synchronously (also callable from the agent)
@@ -32,7 +32,7 @@ def _auth_state_path() -> Path:
 # ---------------------------------------------------------------------------
 
 def register_cli(subparser: argparse.ArgumentParser) -> None:
-    """Build the ``hermes meet`` argparse tree.
+    """Build the ``oc meet`` argparse tree.
 
     Called by :func:`_register_cli_commands` at plugin load time.
     """
@@ -57,7 +57,7 @@ def register_cli(subparser: argparse.ArgumentParser) -> None:
 
     join_p = subs.add_parser("join", help="Join a Meet URL")
     join_p.add_argument("url", help="https://meet.google.com/...")
-    join_p.add_argument("--guest-name", default="Hermes Agent")
+    join_p.add_argument("--guest-name", default="OpenComputer")
     join_p.add_argument("--duration", default=None, help="e.g. 30m, 2h, 90s")
     join_p.add_argument("--headed", action="store_true", help="show browser")
     join_p.add_argument(
@@ -93,7 +93,7 @@ def register_cli(subparser: argparse.ArgumentParser) -> None:
         # missing at import time etc.), leave the subparser present but
         # flag it. The argparse dispatch will surface a clear error.
         def _node_unavailable(args):
-            print(f"hermes meet node: module unavailable ({e})")
+            print(f"oc meet node: module unavailable ({e})")
             return 1
         node_p.set_defaults(func=_node_unavailable)
 
@@ -204,7 +204,7 @@ def _cmd_setup() -> int:
     if all_ok:
         print(
             "ready. Join a meeting:  "
-            "hermes meet join https://meet.google.com/abc-defg-hij"
+            "oc meet join https://meet.google.com/abc-defg-hij"
         )
     else:
         print("not ready yet — fix the items above.")
@@ -465,13 +465,13 @@ def _cmd_transcript(last: Optional[int]) -> int:
 
 
 def _cmd_stop() -> int:
-    res = pm.stop(reason="hermes meet stop")
+    res = pm.stop(reason="oc meet stop")
     print(json.dumps(res, indent=2))
     return 0 if res.get("ok") else 1
 
 
 if __name__ == "__main__":  # pragma: no cover
-    parser = argparse.ArgumentParser(prog="hermes meet")
+    parser = argparse.ArgumentParser(prog="oc meet")
     register_cli(parser)
     ns = parser.parse_args()
     sys.exit(meet_command(ns))

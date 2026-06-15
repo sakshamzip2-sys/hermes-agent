@@ -10,7 +10,7 @@ on:
       - 'Dockerfile'
       - 'docker/**'
       - '.github/workflows/docker-publish.yml'
-      - '.github/actions/hermes-smoke-test/**'
+      - '.github/actions/opencomputer-smoke-test/**'
   pull_request:
     branches: [main]
     paths:
@@ -20,7 +20,7 @@ on:
       - 'Dockerfile'
       - 'docker/**'
       - '.github/workflows/docker-publish.yml'
-      - '.github/actions/hermes-smoke-test/**'
+      - '.github/actions/opencomputer-smoke-test/**'
   release:
     types: [published]
 
@@ -79,7 +79,7 @@ jobs:
           cache-to: type=gha,mode=max,scope=docker-amd64
 
       - name: Smoke test image
-        uses: ./.github/actions/hermes-smoke-test
+        uses: ./.github/actions/opencomputer-smoke-test
         with:
           image: ${{ env.IMAGE_NAME }}:test
 
@@ -254,7 +254,7 @@ jobs:
           cache-to: type=registry,ref=ghcr.io/nousresearch/hermes-agent:buildcache-arm64,mode=max
 
       - name: Smoke test image
-        uses: ./.github/actions/hermes-smoke-test
+        uses: ./.github/actions/opencomputer-smoke-test
         with:
           image: ${{ env.IMAGE_NAME }}:test
 

@@ -1,4 +1,4 @@
-"""Verify `hermes -c` picks the session the user most recently used."""
+"""Verify `oc -c` picks the session the user most recently used."""
 
 from __future__ import annotations
 

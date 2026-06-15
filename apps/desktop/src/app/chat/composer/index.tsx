@@ -272,7 +272,7 @@ export function ChatBar({
   }, [followUpPlaceholders, newSessionPlaceholders, sessionId])
 
   // When the bar is disabled it's because the gateway isn't open. Distinguish a
-  // cold start ("Starting Hermes...") from a dropped connection we're trying to
+  // cold start ("Starting OpenComputer...") from a dropped connection we're trying to
   // restore (e.g. after the Mac slept) so the stuck state reads as recoverable.
   const placeholder = disabled
     ? gatewayState === 'closed' || gatewayState === 'error'

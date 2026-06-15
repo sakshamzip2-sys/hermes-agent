@@ -1,5 +1,5 @@
 """
-LINE Messaging API platform adapter for Hermes Agent.
+LINE Messaging API platform adapter for OpenComputer.
 
 A bundled platform plugin that runs an aiohttp webhook server, accepts LINE
 webhook events (signature-verified), and relays messages to/from the agent
@@ -41,7 +41,7 @@ Synthesis credits
 -----------------
 
 This file is a synthesis of seven open community PRs adding LINE support
-to Hermes Agent. It deliberately ports the *strongest* idea from each into
+to OpenComputer. It deliberately ports the *strongest* idea from each into
 a single plugin-form module that requires zero core edits:
 
 * PR #18153 (leepoweii)   — Template Buttons postback cache state machine,
@@ -1502,14 +1502,14 @@ def validate_config(config) -> bool:
 
 
 def is_connected(config) -> bool:
-    """Surface in ``hermes status`` even before the adapter is instantiated."""
+    """Surface in ``oc status`` even before the adapter is instantiated."""
     return validate_config(config)
 
 
 def _env_enablement() -> Optional[Dict[str, Any]]:
     """Auto-seed PlatformConfig.extra from env-only setups.
 
-    Lets ``hermes status`` reflect a LINE configuration that lives entirely
+    Lets ``oc status`` reflect a LINE configuration that lives entirely
     in ``.env`` without a ``platforms.line`` block in ``config.yaml``.
     Mirrors the IRC plugin's pattern.
     """
@@ -1576,7 +1576,7 @@ async def _standalone_send(
 
 
 def interactive_setup() -> None:
-    """Minimal stdin wizard for ``hermes setup line``.
+    """Minimal stdin wizard for ``oc setup line``.
 
     Mirrors the irc/teams style: prompts for the two required vars, plus
     one optional public URL. Writes to ``~/.hermes/.env`` via ``hermes_cli.config``.
@@ -1618,7 +1618,7 @@ def interactive_setup() -> None:
 
 
 def register(ctx) -> None:
-    """Plugin entry point — called by the Hermes plugin system at startup."""
+    """Plugin entry point — called by the OpenComputer plugin system at startup."""
     ctx.register_platform(
         name="line",
         label="LINE",

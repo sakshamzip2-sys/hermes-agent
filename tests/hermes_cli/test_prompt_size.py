@@ -1,4 +1,4 @@
-"""Tests for the ``hermes prompt-size`` diagnostic (issue #34667)."""
+"""Tests for the ``oc prompt-size`` diagnostic (issue #34667)."""
 
 import json
 

@@ -9,7 +9,7 @@ const emptySessionsResponse = {
   total: 0
 }
 
-describe('Hermes REST session helpers', () => {
+describe('OpenComputer REST session helpers', () => {
   let api: ReturnType<typeof vi.fn>
 
   beforeEach(() => {

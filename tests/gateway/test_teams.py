@@ -687,7 +687,7 @@ class TestTeamsMessageHandling:
         adapter.handle_message = AsyncMock()
 
         activity = self._make_activity(
-            text="<at>Hermes</at> what is the weather?",
+            text="<at>OpenComputer</at> what is the weather?",
             from_id="user-id",
         )
         await adapter._on_message(self._make_ctx(activity))

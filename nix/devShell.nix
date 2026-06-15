@@ -31,7 +31,7 @@
           uv
         ];
         shellHook = ''
-          echo "Hermes Agent dev shell"
+          echo "OpenComputer dev shell"
           ${combinedNonNpm}
           ${hermesNpmLib.mkNpmDevShellHook npmPackageJsonPaths fixLockfilesExe}
           echo "Ready. Run 'hermes' to start."

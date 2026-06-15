@@ -6,7 +6,7 @@ import path from "path";
 const BACKEND = process.env.HERMES_DASHBOARD_URL ?? "http://127.0.0.1:9119";
 
 /**
- * In production the Python `hermes dashboard` server injects a one-shot
+ * In production the Python `oc dashboard` server injects a one-shot
  * session token into `index.html` (see `hermes_cli/web_server.py`). The
  * Vite dev server serves its own `index.html`, so unless we forward that
  * token, every protected `/api/*` call 401s.
@@ -31,7 +31,7 @@ function hermesDevToken(): Plugin {
         if (!match) {
           console.warn(
             `[hermes] Could not find session token in ${BACKEND} — ` +
-              `is \`hermes dashboard\` running? /api calls will 401.`,
+              `is \`oc dashboard\` running? /api calls will 401.`,
           );
           return;
         }
@@ -49,7 +49,7 @@ function hermesDevToken(): Plugin {
       } catch (err) {
         console.warn(
           `[hermes] Dashboard at ${BACKEND} unreachable — ` +
-            `start it with \`hermes dashboard\` or set HERMES_DASHBOARD_URL. ` +
+            `start it with \`oc dashboard\` or set HERMES_DASHBOARD_URL. ` +
             `(${(err as Error).message})`,
         );
       }
@@ -92,7 +92,7 @@ export default defineConfig({
         target: BACKEND,
         ws: true,
       },
-      // Same host as `hermes dashboard` must serve these; Vite has no
+      // Same host as `oc dashboard` must serve these; Vite has no
       // dashboard-plugins/* files, so without this, plugin scripts 404
       // or receive index.html in dev.
       "/dashboard-plugins": BACKEND,

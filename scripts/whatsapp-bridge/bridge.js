@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Hermes Agent WhatsApp Bridge
+ * OpenComputer WhatsApp Bridge
  *
  * Standalone Node.js process that connects to WhatsApp via Baileys
  * and exposes HTTP endpoints for the Python gateway adapter.
@@ -71,7 +71,7 @@ try {
 const PAIR_ONLY = args.includes('--pair-only');
 const WHATSAPP_MODE = getArg('mode', process.env.WHATSAPP_MODE || 'self-chat'); // "bot" or "self-chat"
 const ALLOWED_USERS = parseAllowedUsers(process.env.WHATSAPP_ALLOWED_USERS || '');
-const DEFAULT_REPLY_PREFIX = '⚕ *Hermes Agent*\n────────────\n';
+const DEFAULT_REPLY_PREFIX = '⚕ *OpenComputer*\n────────────\n';
 const REPLY_PREFIX = process.env.WHATSAPP_REPLY_PREFIX === undefined
   ? DEFAULT_REPLY_PREFIX
   : process.env.WHATSAPP_REPLY_PREFIX.replace(/\\n/g, '\n');
@@ -206,7 +206,7 @@ async function startSocket() {
     auth: state,
     logger,
     printQRInTerminal: false,
-    browser: ['Hermes Agent', 'Chrome', '120.0'],
+    browser: ['OpenComputer', 'Chrome', '120.0'],
     syncFullHistory: false,
     markOnlineOnConnect: false,
     // Required for Baileys 7.x: without this, incoming messages that need
@@ -420,7 +420,7 @@ async function startSocket() {
         body = `[${mediaType} received]`;
       }
 
-      // Ignore Hermes' own reply messages in self-chat mode to avoid loops.
+      // Ignore OpenComputer' own reply messages in self-chat mode to avoid loops.
       if (msg.key.fromMe && ((REPLY_PREFIX && body.startsWith(REPLY_PREFIX)) || recentlySentIds.has(msg.key.id))) {
         if (WHATSAPP_DEBUG) {
           try { console.log(JSON.stringify({ event: 'ignored', reason: 'agent_echo', chatId, messageId: msg.key.id })); } catch {}

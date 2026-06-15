@@ -107,10 +107,10 @@ export type {
 export class HermesGateway extends JsonRpcGatewayClient {
   constructor() {
     super({
-      closedErrorMessage: 'Hermes gateway connection closed',
-      connectErrorMessage: 'Could not connect to Hermes gateway',
+      closedErrorMessage: 'OpenComputer gateway connection closed',
+      connectErrorMessage: 'Could not connect to OpenComputer gateway',
       createRequestId: nextId => nextId,
-      notConnectedErrorMessage: 'Hermes gateway is not connected',
+      notConnectedErrorMessage: 'OpenComputer gateway is not connected',
       requestTimeoutMs: DEFAULT_GATEWAY_REQUEST_TIMEOUT_MS
     })
   }
@@ -635,7 +635,7 @@ export interface RecommendedDefaultModel {
 }
 
 // Recommended default model for a freshly-authenticated provider. Mirrors the
-// curation `hermes model` does — for Nous it honors the free/paid tier so a
+// curation `oc model` does — for Nous it honors the free/paid tier so a
 // free user gets a free model instead of a paid default.
 export function getRecommendedDefaultModel(provider: string): Promise<RecommendedDefaultModel> {
   return window.hermesDesktop.api<RecommendedDefaultModel>({

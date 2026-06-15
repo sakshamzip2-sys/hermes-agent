@@ -1,12 +1,12 @@
 """
-Baked-in build metadata for Hermes Agent.
+Baked-in build metadata for OpenComputer.
 
 Source installs report their git revision live via ``git rev-parse`` (see
 ``hermes_cli/dump.py`` and ``hermes_cli/banner.py``).  That doesn't work inside
 the published Docker image because ``.dockerignore`` excludes ``.git``, so
 those callsites fall back to ``"(unknown)"`` / drop the banner suffix entirely.
 
-To make ``hermes dump`` and the startup banner identify the exact commit the
+To make ``oc dump`` and the startup banner identify the exact commit the
 image was built from, the Docker build writes the build-time ``$HERMES_GIT_SHA``
 arg into ``<project_root>/.hermes_build_sha``.  This module is the single
 read-side helper consumed by both callsites — keeping the lookup in one place

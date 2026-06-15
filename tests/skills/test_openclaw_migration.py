@@ -48,12 +48,12 @@ def test_extract_markdown_entries_promotes_heading_context():
 
 ### Active Projects
 
-- Hermes Agent
+- OpenComputer
 """
     entries = mod.extract_markdown_entries(text)
     assert "Tyler Williams: Founder of VANTA Research" in entries
     assert "Tyler Williams: Timezone: America/Los_Angeles" in entries
-    assert "Tyler Williams > Active Projects: Hermes Agent" in entries
+    assert "Tyler Williams > Active Projects: OpenComputer" in entries
 
 
 def test_merge_entries_respects_limit_and_reports_overflow():
@@ -823,7 +823,7 @@ def test_cron_store_is_archived_without_config_cron_section(tmp_path: Path):
     assert Path(archived_store["destination"]).joinpath("jobs.json").exists()
 
     notes_text = (output_dir / "MIGRATION_NOTES.md").read_text(encoding="utf-8")
-    assert "Run `hermes cron` to recreate scheduled tasks" in notes_text
+    assert "Run `oc cron` to recreate scheduled tasks" in notes_text
     assert "archive/cron-config.json" not in notes_text
 
 
@@ -857,24 +857,24 @@ def test_skill_installs_cleanly_under_skills_guard():
 
 def test_rebrand_text_replaces_openclaw_variants():
     mod = load_module()
-    # Mixed-case / capitalized matches → capital-H ``Hermes``.
-    assert mod.rebrand_text("OpenClaw prefers Python 3.11") == "Hermes prefers Python 3.11"
-    assert mod.rebrand_text("I told Open Claw to use dark mode") == "I told Hermes to use dark mode"
-    assert mod.rebrand_text("Open-Claw config is great") == "Hermes config is great"
-    assert mod.rebrand_text("OPENCLAW uses tools well") == "Hermes uses tools well"
+    # Mixed-case / capitalized matches → capital-H ``OpenComputer``.
+    assert mod.rebrand_text("OpenClaw prefers Python 3.11") == "OpenComputer prefers Python 3.11"
+    assert mod.rebrand_text("I told Open Claw to use dark mode") == "I told OpenComputer to use dark mode"
+    assert mod.rebrand_text("Open-Claw config is great") == "OpenComputer config is great"
+    assert mod.rebrand_text("OPENCLAW uses tools well") == "OpenComputer uses tools well"
     # All-lowercase matches → lowercase ``hermes``; this preserves the
-    # real filesystem path ``~/.hermes`` (Hermes home) when rebranding
+    # real filesystem path ``~/.hermes`` (OpenComputer home) when rebranding
     # memory entries that reference ``~/.openclaw`` or ``openclaw`` prose.
-    assert mod.rebrand_text("openclaw should always respond concisely") == "hermes should always respond concisely"
+    assert mod.rebrand_text("openclaw should always respond concisely") == "oc should always respond concisely"
 
 
 def test_rebrand_text_replaces_legacy_bot_names():
     mod = load_module()
     # Same case-preservation rule as above.
-    assert mod.rebrand_text("ClawdBot remembers my timezone") == "Hermes remembers my timezone"
-    assert mod.rebrand_text("clawdbot prefers tabs") == "hermes prefers tabs"
-    assert mod.rebrand_text("MoltBot was configured for Spanish") == "Hermes was configured for Spanish"
-    assert mod.rebrand_text("moltbot uses Python") == "hermes uses Python"
+    assert mod.rebrand_text("ClawdBot remembers my timezone") == "OpenComputer remembers my timezone"
+    assert mod.rebrand_text("clawdbot prefers tabs") == "oc prefers tabs"
+    assert mod.rebrand_text("MoltBot was configured for Spanish") == "OpenComputer was configured for Spanish"
+    assert mod.rebrand_text("moltbot uses Python") == "oc uses Python"
 
 
 def test_rebrand_text_preserves_unrelated_content():
@@ -886,17 +886,17 @@ def test_rebrand_text_preserves_unrelated_content():
 def test_rebrand_text_handles_multiple_replacements():
     mod = load_module()
     text = "OpenClaw said to ask ClawdBot about MoltBot settings"
-    assert mod.rebrand_text(text) == "Hermes said to ask Hermes about Hermes settings"
+    assert mod.rebrand_text(text) == "OpenComputer said to ask OpenComputer about OpenComputer settings"
 
 
 def test_rebrand_text_preserves_filesystem_path_casing():
     """Lowercase matches — especially ``.openclaw`` filesystem paths — must
-    rewrite to lowercase ``.hermes`` (the real Hermes home), not the broken
-    ``.Hermes``.
+    rewrite to lowercase ``.hermes`` (the real OpenComputer home), not the broken
+    ``.OpenComputer``.
 
     Regression test for @versun's OpenClaw-residue feedback: after migration,
     memory entries that referenced ``~/.openclaw/config.yaml`` were being
-    rewritten to ``~/.Hermes/config.yaml`` — a path that doesn't exist —
+    rewritten to ``~/.OpenComputer/config.yaml`` — a path that doesn't exist —
     and the agent kept trying to read it.
     """
     mod = load_module()
@@ -906,7 +906,7 @@ def test_rebrand_text_preserves_filesystem_path_casing():
     assert mod.rebrand_text("Path.home() / '.openclaw'") == "Path.home() / '.hermes'"
     # Sentence with both lowercase path and capitalized prose.
     assert mod.rebrand_text("openclaw config path: ~/.openclaw/") == \
-        "hermes config path: ~/.hermes/"
+        "oc config path: ~/.hermes/"
 
 
 def test_migrate_memory_rebrands_entries(tmp_path):
@@ -940,7 +940,7 @@ def test_migrate_memory_rebrands_entries(tmp_path):
     result = (target_root / "memories" / "MEMORY.md").read_text(encoding="utf-8")
     assert "OpenClaw" not in result
     assert "ClawdBot" not in result
-    assert "Hermes" in result
+    assert "OpenComputer" in result
 
 
 def test_migrate_soul_rebrands_content(tmp_path):
@@ -969,7 +969,7 @@ def test_migrate_soul_rebrands_content(tmp_path):
 
     result = (target_root / "SOUL.md").read_text(encoding="utf-8")
     assert "OpenClaw" not in result
-    assert "You are Hermes" in result
+    assert "You are OpenComputer" in result
 
 
 # ── migrate_model_config: alias resolution (issue #16745) ──────────────────

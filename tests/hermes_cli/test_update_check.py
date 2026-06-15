@@ -171,7 +171,7 @@ def test_check_for_updates_docker_returns_none(tmp_path, monkeypatch):
     falls through to check_via_pypi(), whose version-mismatch flag (1) gets
     rendered by both the Rich banner and the Ink TUI badge as a phantom
     "1 commit behind" — despite there being no git repo or commit math in the
-    container, and `hermes update` correctly refusing to run there. The guard
+    container, and `oc update` correctly refusing to run there. The guard
     must return None (so the > 0 render guards stay false) AND not reach the
     git/pypi probes or write a cache entry.
     """

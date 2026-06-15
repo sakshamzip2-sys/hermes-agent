@@ -5,7 +5,7 @@ when argv contains a known subcommand name.  This forces deterministic
 routing on Python versions where argparse fails to match subcommand tokens
 when the parent parser has nargs='?' optional arguments (--continue).
 
-If the subcommand token is consumed as a flag value (e.g. `hermes -c model`
+If the subcommand token is consumed as a flag value (e.g. `oc -c model`
 to resume a session named 'model'), the required=True parse raises
 SystemExit and the code falls back to the default required=False behaviour.
 """

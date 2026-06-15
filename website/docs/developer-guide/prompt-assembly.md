@@ -1,12 +1,12 @@
 ---
 sidebar_position: 5
 title: "Prompt Assembly"
-description: "How Hermes builds the system prompt, preserves cache stability, and injects ephemeral layers"
+description: "How OpenComputer builds the system prompt, preserves cache stability, and injects ephemeral layers"
 ---
 
 # Prompt Assembly
 
-Hermes deliberately separates:
+OpenComputer deliberately separates:
 
 - **cached system prompt state**
 - **ephemeral API-call-time additions**
@@ -47,7 +47,7 @@ Here is a simplified view of what the final system prompt looks like when all la
 
 ```
 # Layer 1: Agent Identity (from ~/.hermes/SOUL.md)
-You are Hermes, an AI assistant created by Nous Research.
+You are OpenComputer, an AI assistant created by Nous Research.
 You are an expert software engineer and researcher.
 You value correctness, clarity, and efficiency.
 ...
@@ -137,7 +137,7 @@ When `load_soul_md()` returns content, it replaces the hardcoded `DEFAULT_AGENT_
 If `SOUL.md` doesn't exist, the system falls back to:
 
 ```
-You are Hermes Agent, an intelligent AI assistant created by Nous Research.
+You are OpenComputer, an intelligent AI assistant created by Nous Research.
 You are helpful, knowledgeable, and direct. You assist users with a wide
 range of tasks including answering questions, writing and editing code,
 analyzing information, creative work, and executing actions via your tools.
@@ -157,7 +157,7 @@ def build_context_files_prompt(cwd=None, skip_soul=False):
 
     # Priority: first match wins — only ONE project context loaded
     project_context = (
-        _load_hermes_md(cwd_path)       # 1. .hermes.md / HERMES.md (walks to git root)
+        _load_hermes_md(cwd_path)       # 1. .hermes.md / OPENCOMPUTER.md (walks to git root)
         or _load_agents_md(cwd_path)    # 2. AGENTS.md (cwd only)
         or _load_claude_md(cwd_path)    # 3. CLAUDE.md (cwd only)
         or _load_cursorrules(cwd_path)  # 4. .cursorrules / .cursor/rules/*.mdc
@@ -188,7 +188,7 @@ def build_context_files_prompt(cwd=None, skip_soul=False):
 
 | Priority | Files | Search scope | Notes |
 |----------|-------|-------------|-------|
-| 1 | `.hermes.md`, `HERMES.md` | CWD up to git root | Hermes-native project config |
+| 1 | `.hermes.md`, `OPENCOMPUTER.md` | CWD up to git root | OpenComputer-native project config |
 | 2 | `AGENTS.md` | CWD only | Common agent instruction file |
 | 3 | `CLAUDE.md` | CWD only | Claude Code compatibility |
 | 4 | `.cursorrules`, `.cursor/rules/*.mdc` | CWD only | Cursor compatibility |
@@ -207,7 +207,7 @@ These are intentionally *not* persisted as part of the cached system prompt:
 - gateway-derived session context overlays
 - later-turn Honcho/external recall injected into the current-turn user message
 
-`pre_llm_call` plugin context also lands in this API-call-time path: it is appended to the current turn's **user message**, not written into the cached system prompt. When multiple plugins return context, Hermes concatenates those context blocks (see [Hooks → `pre_llm_call`](../user-guide/features/hooks.md#pre_llm_call)).
+`pre_llm_call` plugin context also lands in this API-call-time path: it is appended to the current turn's **user message**, not written into the cached system prompt. When multiple plugins return context, OpenComputer concatenates those context blocks (see [Hooks → `pre_llm_call`](../user-guide/features/hooks.md#pre_llm_call)).
 
 This separation keeps the stable prefix stable for caching.
 
@@ -219,7 +219,7 @@ Local memory and user profile data are captured in the system prompt's **volatil
 
 `agent/prompt_builder.py` scans and sanitizes project context files using a **priority system** — only one type is loaded (first match wins):
 
-1. `.hermes.md` / `HERMES.md` (walks to git root)
+1. `.hermes.md` / `OPENCOMPUTER.md` (walks to git root)
 2. `AGENTS.md` (CWD at startup; subdirectories discovered progressively during the session via `agent/subdirectory_hints.py`)
 3. `CLAUDE.md` (CWD only)
 4. `.cursorrules` / `.cursor/rules/*.mdc` (CWD only)
@@ -234,15 +234,15 @@ The skills system contributes a compact skills index to the prompt when skills t
 
 ## Supported prompt customization surfaces
 
-Most users should treat `agent/prompt_builder.py` as implementation code, not a configuration surface. The supported customization path is to change the prompt inputs Hermes already loads, rather than editing Python templates in place.
+Most users should treat `agent/prompt_builder.py` as implementation code, not a configuration surface. The supported customization path is to change the prompt inputs OpenComputer already loads, rather than editing Python templates in place.
 
 ### Use these surfaces first
 
 - `~/.hermes/SOUL.md` — replace the built-in default identity block with your own agent persona and standing behavior.
 - `~/.hermes/MEMORY.md` and `~/.hermes/USER.md` — provide durable cross-session facts and user profile data that should be snapshotted into new sessions.
-- Project context files such as `.hermes.md`, `HERMES.md`, `AGENTS.md`, `CLAUDE.md`, or `.cursorrules` — inject repo-specific working rules.
+- Project context files such as `.hermes.md`, `OPENCOMPUTER.md`, `AGENTS.md`, `CLAUDE.md`, or `.cursorrules` — inject repo-specific working rules.
 - Skills — package reusable workflows and references without editing core prompt code.
-- Optional system prompt config / API overrides — add deployment-specific instruction text without forking Hermes.
+- Optional system prompt config / API overrides — add deployment-specific instruction text without forking OpenComputer.
 - Ephemeral overlays such as `HERMES_EPHEMERAL_SYSTEM_PROMPT` or prefill messages — add turn-scoped guidance that should not become part of the cached prompt prefix.
 
 ### When to edit code instead
@@ -254,7 +254,7 @@ In other words:
 - if you want a different assistant identity, edit `SOUL.md`
 - if you want different repo rules, edit project context files
 - if you want reusable operating procedures, add or modify skills
-- if you want to change how Hermes assembles prompts for everyone, change Python and treat it as a code contribution
+- if you want to change how OpenComputer assembles prompts for everyone, change Python and treat it as a code contribution
 
 ## Why prompt assembly is split this way
 

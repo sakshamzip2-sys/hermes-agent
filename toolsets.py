@@ -41,7 +41,7 @@ _HERMES_CORE_TOOLS = [
     # Vision + image generation
     "vision_analyze", "image_generate",
     # Skills
-    "skills_list", "skill_view", "skill_manage",
+    "skills_list", "skill_view", "skill_run", "skill_manage",
     # Browser automation
     "browser_navigate", "browser_snapshot", "browser_click",
     "browser_type", "browser_scroll", "browser_back",
@@ -107,7 +107,7 @@ TOOLSETS = {
             "Search X (Twitter) posts and threads via xAI's built-in "
             "x_search Responses tool. Available when xAI credentials are "
             "configured (SuperGrok OAuth or XAI_API_KEY). Off by default; "
-            "enable in `hermes tools` → X (Twitter) Search."
+            "enable in `oc tools` → X (Twitter) Search."
         ),
         "tools": ["x_search"],
         "includes": []
@@ -136,7 +136,7 @@ TOOLSETS = {
             "Video generation tools. Single ``video_generate`` tool covers "
             "text-to-video (prompt only) and image-to-video (prompt + "
             "image_url) — the active backend auto-routes. Configure via "
-            "``hermes tools`` → Video Generation."
+            "``oc tools`` → Video Generation."
         ),
         "tools": ["video_generate"],
         "includes": []
@@ -166,7 +166,7 @@ TOOLSETS = {
     
     "skills": {
         "description": "Access, create, edit, and manage skill documents with specialized instructions and knowledge",
-        "tools": ["skills_list", "skill_view", "skill_manage"],
+        "tools": ["skills_list", "skill_view", "skill_run", "skill_manage"],
         "includes": []
     },
     
@@ -340,7 +340,7 @@ TOOLSETS = {
         "includes": ["web", "vision", "image_gen"]
     },
 
-    # Coding posture (base Hermes — CLI/TUI/desktop/ACP). Auto-selected in a
+    # Coding posture (base OpenComputer — CLI/TUI/desktop/ACP). Auto-selected in a
     # code workspace; see agent/coding_context.py. Keeps everything you reach
     # for while pairing on code and drops the rest (messaging, tts, image_gen,
     # spotify, home-assistant, cron, computer-use).
@@ -351,7 +351,7 @@ TOOLSETS = {
             "terminal", "process", "read_terminal",
             "read_file", "write_file", "patch", "search_files",
             "vision_analyze",
-            "skills_list", "skill_view", "skill_manage",
+            "skills_list", "skill_view", "skill_run", "skill_manage",
             "browser_navigate", "browser_snapshot", "browser_click",
             "browser_type", "browser_scroll", "browser_back",
             "browser_press", "browser_get_images",
@@ -368,7 +368,7 @@ TOOLSETS = {
     },
     
     # ==========================================================================
-    # Full Hermes toolsets (CLI + messaging platforms)
+    # Full OpenComputer toolsets (CLI + messaging platforms)
     #
     # All platforms share the same core tools (including send_message,
     # which is gated on gateway running via its check_fn).
@@ -381,7 +381,7 @@ TOOLSETS = {
             "terminal", "process",
             "read_file", "write_file", "patch", "search_files",
             "vision_analyze",
-            "skills_list", "skill_view", "skill_manage",
+            "skills_list", "skill_view", "skill_run", "skill_manage",
             "browser_navigate", "browser_snapshot", "browser_click",
             "browser_type", "browser_scroll", "browser_back",
             "browser_press", "browser_get_images",
@@ -405,7 +405,7 @@ TOOLSETS = {
             # Vision + image generation
             "vision_analyze", "image_generate",
             # Skills
-            "skills_list", "skill_view", "skill_manage",
+            "skills_list", "skill_view", "skill_run", "skill_manage",
             # Browser automation
             "browser_navigate", "browser_snapshot", "browser_click",
             "browser_type", "browser_scroll", "browser_back",
@@ -434,11 +434,11 @@ TOOLSETS = {
 
     "hermes-cron": {
         # Mirrors hermes-cli so cron's "default" toolset is the same set of
-        # core tools users see interactively — then `hermes tools` filters
+        # core tools users see interactively — then `oc tools` filters
         # them down per the platform config. _DEFAULT_OFF_TOOLSETS (moa,
         # homeassistant) are excluded by _get_platform_tools() unless
         # the user explicitly enables them.
-        "description": "Default cron toolset - same core tools as hermes-cli; gated by `hermes tools`",
+        "description": "Default cron toolset - same core tools as hermes-cli; gated by `oc tools`",
         "tools": _HERMES_CORE_TOOLS,
         "includes": []
     },
@@ -489,7 +489,7 @@ TOOLSETS = {
     },
 
     "hermes-email": {
-        "description": "Email bot toolset - interact with Hermes via email (IMAP/SMTP)",
+        "description": "Email bot toolset - interact with OpenComputer via email (IMAP/SMTP)",
         "tools": _HERMES_CORE_TOOLS,
         "includes": []
     },
@@ -562,7 +562,7 @@ TOOLSETS = {
     },
 
     "hermes-sms": {
-        "description": "SMS bot toolset - interact with Hermes via SMS (Twilio)",
+        "description": "SMS bot toolset - interact with OpenComputer via SMS (Twilio)",
         "tools": _HERMES_CORE_TOOLS,
         "includes": []
     },

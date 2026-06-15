@@ -635,7 +635,7 @@ export function useMessageStream({
 
       if (document.hidden && sessionId === activeSessionIdRef.current) {
         void window.hermesDesktop?.notify({
-          title: 'Hermes finished',
+          title: 'OpenComputer finished',
           body: text.slice(0, 140) || 'The response is ready.'
         })
       }
@@ -649,7 +649,7 @@ export function useMessageStream({
         const streamId = state.streamId ?? `assistant-error-${Date.now()}`
         const groupId = state.pendingBranchGroup ?? undefined
         const prev = state.messages
-        const error = errorMessage.trim() || 'Hermes reported an error'
+        const error = errorMessage.trim() || 'OpenComputer reported an error'
 
         const nextMessages = prev.some(m => m.id === streamId)
           ? prev.map(message =>
@@ -1021,7 +1021,7 @@ export function useMessageStream({
           void refreshBackgroundProcesses(sessionId)
         }
       } else if (event.type === 'error') {
-        const errorMessage = payload?.message || 'Hermes reported an error'
+        const errorMessage = payload?.message || 'OpenComputer reported an error'
         const looksLikeProviderSetup = isProviderSetupErrorMessage(errorMessage)
 
         // A turn that errors out has also ended — drop any open blocking prompt
@@ -1036,7 +1036,7 @@ export function useMessageStream({
         } else if (isActiveEvent) {
           notify({
             kind: 'error',
-            title: 'Hermes error',
+            title: 'OpenComputer error',
             message: errorMessage
           })
         }

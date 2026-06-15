@@ -11,7 +11,7 @@ The API server exposes hermes-agent as an OpenAI-compatible HTTP endpoint. Any f
 Your agent handles requests with its full toolset (terminal, file operations, web search, memory, skills) and returns the final response. When streaming, tool progress indicators appear inline so frontends can show what the agent is doing.
 
 :::tip One backend covers models + tools
-Hermes itself needs a configured provider and tool backends for the API server to be useful. A [Nous Portal](/user-guide/features/tool-gateway) subscription handles both — 300+ models plus web/image/TTS/browser via the Tool Gateway. Run `hermes setup --portal` once before starting the API server and frontends like Open WebUI or LobeChat get a fully tool-equipped backend.
+OpenComputer itself needs a configured provider and tool backends for the API server to be useful. A [Nous Portal](/user-guide/features/tool-gateway) subscription handles both — 300+ models plus web/image/TTS/browser via the Tool Gateway. Run `opencomputer setup --portal` once before starting the API server and frontends like Open WebUI or LobeChat get a fully tool-equipped backend.
 :::
 
 ## Quick Start
@@ -23,14 +23,14 @@ Add to `~/.hermes/.env`:
 ```bash
 API_SERVER_ENABLED=true
 API_SERVER_KEY=change-me-local-dev
-# Optional: only if a browser must call Hermes directly
+# Optional: only if a browser must call OpenComputer directly
 # API_SERVER_CORS_ORIGINS=http://localhost:3000
 ```
 
 ### 2. Start the gateway
 
 ```bash
-hermes gateway
+opencomputer gateway
 ```
 
 You'll see:
@@ -106,11 +106,11 @@ Standard OpenAI Chat Completions format. Stateless — the full conversation is 
 
 Uploaded files (`file` / `input_file` / `file_id`) and non-image `data:` URLs return `400 unsupported_content_type`.
 
-**Streaming** (`"stream": true`): Returns Server-Sent Events (SSE) with token-by-token response chunks. For **Chat Completions**, the stream uses standard `chat.completion.chunk` events plus Hermes' custom `hermes.tool.progress` event for tool-start UX. For **Responses**, the stream uses OpenAI Responses event types such as `response.created`, `response.output_text.delta`, `response.output_item.added`, `response.output_item.done`, and `response.completed`.
+**Streaming** (`"stream": true`): Returns Server-Sent Events (SSE) with token-by-token response chunks. For **Chat Completions**, the stream uses standard `chat.completion.chunk` events plus OpenComputer' custom `opencomputer.tool.progress` event for tool-start UX. For **Responses**, the stream uses OpenAI Responses event types such as `response.created`, `response.output_text.delta`, `response.output_item.added`, `response.output_item.done`, and `response.completed`.
 
 **Tool progress in streams**:
-- **Chat Completions**: Hermes emits `event: hermes.tool.progress` for tool-start visibility without polluting persisted assistant text.
-- **Responses**: Hermes emits spec-native `function_call` and `function_call_output` output items during the SSE stream, so clients can render structured tool UI in real time.
+- **Chat Completions**: OpenComputer emits `event: opencomputer.tool.progress` for tool-start visibility without polluting persisted assistant text.
+- **Responses**: OpenComputer emits spec-native `function_call` and `function_call_output` output items during the SSE stream, so clients can render structured tool UI in real time.
 
 ### POST /v1/responses
 
@@ -204,7 +204,7 @@ Returns a machine-readable description of the API server's stable surface for ex
 
 ```json
 {
-  "object": "hermes.api_server.capabilities",
+  "object": "opencomputer.api_server.capabilities",
   "platform": "hermes-agent",
   "model": "hermes-agent",
   "auth": {"type": "bearer", "required": true},
@@ -219,7 +219,7 @@ Returns a machine-readable description of the API server's stable surface for ex
 }
 ```
 
-Use this endpoint when integrating dashboards, browser UIs, or control planes so they can discover whether the running Hermes version supports runs, streaming, cancellation, and session continuity without depending on private Python internals.
+Use this endpoint when integrating dashboards, browser UIs, or control planes so they can discover whether the running OpenComputer version supports runs, streaming, cancellation, and session continuity without depending on private Python internals.
 
 ### GET /health
 
@@ -244,7 +244,7 @@ Create a new agent run. Returns a `run_id` that can be used to subscribe to prog
 }
 ```
 
-Runs accept a simple `input` string and optional `session_id`, `instructions`, `conversation_history`, or `previous_response_id`. When `session_id` is provided, Hermes surfaces it in the run status so external UIs can correlate runs with their own conversation IDs.
+Runs accept a simple `input` string and optional `session_id`, `instructions`, `conversation_history`, or `previous_response_id`. When `session_id` is provided, OpenComputer surfaces it in the run status so external UIs can correlate runs with their own conversation IDs.
 
 ### GET /v1/runs/\{run_id\}
 
@@ -252,7 +252,7 @@ Poll the current run state. This is useful for dashboards that need status witho
 
 ```json
 {
-  "object": "hermes.run",
+  "object": "opencomputer.run",
   "run_id": "run_abc123",
   "status": "completed",
   "session_id": "space-session",
@@ -270,7 +270,7 @@ Server-Sent Events stream of the run's tool-call progress, token deltas, and lif
 
 ### POST /v1/runs/\{run_id\}/stop
 
-Interrupt a running agent turn. The endpoint returns immediately with `{"status": "stopping"}` while Hermes asks the active agent to stop at the next safe interruption point.
+Interrupt a running agent turn. The endpoint returns immediately with `{"status": "stopping"}` while OpenComputer asks the active agent to stop at the next safe interruption point.
 
 ### POST /v1/runs/\{run_id\}/approval
 
@@ -286,7 +286,7 @@ List all scheduled jobs.
 
 ### POST /api/jobs
 
-Create a new scheduled job. Body accepts the same shape as `hermes cron` — prompt, schedule, skills, provider override, delivery target.
+Create a new scheduled job. Body accepts the same shape as `opencomputer cron` — prompt, schedule, skills, provider override, delivery target.
 
 ### GET /api/jobs/\{job_id\}
 
@@ -314,7 +314,7 @@ Trigger the job to run immediately, out of schedule.
 
 ## Sessions API (session control over REST)
 
-External UIs can manage Hermes sessions over REST without standing up the dashboard. All endpoints are gated by `API_SERVER_KEY` and live under `/api/sessions/*`.
+External UIs can manage OpenComputer sessions over REST without standing up the dashboard. All endpoints are gated by `API_SERVER_KEY` and live under `/api/sessions/*`.
 
 | Method | Path | Description |
 |--------|------|-------------|
@@ -359,18 +359,18 @@ curl http://localhost:8642/v1/toolsets \
 
 `/v1/skills` returns the same metadata the skills hub uses internally. `/v1/toolsets` returns toolsets resolved for the `api_server` platform with the concrete `tools` list each one expands to. Both are advertised under `endpoints.*` in `/v1/capabilities`.
 
-## Long-term memory scoping (`X-Hermes-Session-Key`)
+## Long-term memory scoping (`X-OpenComputer-Session-Key`)
 
-Multi-user frontends like Open WebUI need a stable per-channel identifier for long-term memory (Honcho, etc.) that is **independent** of the transcript-scoped `X-Hermes-Session-Id` (which rotates on `/new`). Pass `X-Hermes-Session-Key` on `/v1/chat/completions`, `/v1/responses`, or `/v1/runs` and Hermes threads it through to `AIAgent(gateway_session_key=...)`, where the Honcho memory provider uses it to derive a stable scope.
+Multi-user frontends like Open WebUI need a stable per-channel identifier for long-term memory (Honcho, etc.) that is **independent** of the transcript-scoped `X-OpenComputer-Session-Id` (which rotates on `/new`). Pass `X-OpenComputer-Session-Key` on `/v1/chat/completions`, `/v1/responses`, or `/v1/runs` and OpenComputer threads it through to `AIAgent(gateway_session_key=...)`, where the Honcho memory provider uses it to derive a stable scope.
 
 ```http
 POST /v1/chat/completions HTTP/1.1
 Authorization: Bearer ***
-X-Hermes-Session-Id: transcript-alpha
-X-Hermes-Session-Key: agent:main:webui:dm:user-42
+X-OpenComputer-Session-Id: transcript-alpha
+X-OpenComputer-Session-Key: agent:main:webui:dm:user-42
 ```
 
-Rules: max 256 chars, control characters (`\r`, `\n`, `\x00`) are rejected, and the value is echoed back on responses (JSON + SSE). `/v1/capabilities` advertises support via `"session_key_header": "X-Hermes-Session-Key"`. Without the key, Honcho's `per-session` strategy produces a different scope per `session_id` — exactly the behavior Hermes had before.
+Rules: max 256 chars, control characters (`\r`, `\n`, `\x00`) are rejected, and the value is echoed back on responses (JSON + SSE). `/v1/capabilities` advertises support via `"session_key_header": "X-OpenComputer-Session-Key"`. Without the key, Honcho's `per-session` strategy produces a different scope per `session_id` — exactly the behavior OpenComputer had before.
 
 ## System Prompt Handling
 
@@ -388,7 +388,7 @@ Bearer token auth via the `Authorization` header:
 Authorization: Bearer ***
 ```
 
-Configure the key via `API_SERVER_KEY` env var. If you need a browser to call Hermes directly, also set `API_SERVER_CORS_ORIGINS` to an explicit allowlist.
+Configure the key via `API_SERVER_KEY` env var. If you need a browser to call OpenComputer directly, also set `API_SERVER_CORS_ORIGINS` to an explicit allowlist.
 
 :::warning Security
 The API server gives full access to hermes-agent's toolset, **including terminal commands**. `API_SERVER_KEY` is **required for every deployment**, including the default loopback bind on `127.0.0.1`. Keep `API_SERVER_CORS_ORIGINS` narrow to control browser access when you explicitly allow browser callers.
@@ -457,12 +457,12 @@ Any frontend that supports the OpenAI API format works. Tested/documented integr
 
 ## Multi-User Setup with Profiles
 
-To give multiple users their own isolated Hermes instance (separate config, memory, skills), use [profiles](/user-guide/profiles):
+To give multiple users their own isolated OpenComputer instance (separate config, memory, skills), use [profiles](/user-guide/profiles):
 
 ```bash
 # Create a profile per user
-hermes profile create alice
-hermes profile create bob
+opencomputer profile create alice
+opencomputer profile create bob
 
 # Configure each profile's API server on a different port. API_SERVER_* are env
 # vars (not config.yaml keys), so write them to each profile's .env:
@@ -479,8 +479,8 @@ API_SERVER_KEY=bob-secret
 EOF
 
 # Start each profile's gateway
-hermes -p alice gateway &
-hermes -p bob gateway &
+opencomputer -p alice gateway &
+opencomputer -p bob gateway &
 ```
 
 Each profile's API server automatically advertises the profile name as the model ID:
@@ -488,7 +488,7 @@ Each profile's API server automatically advertises the profile name as the model
 - `http://localhost:8643/v1/models` → model `alice`
 - `http://localhost:8644/v1/models` → model `bob`
 
-In Open WebUI, add each as a separate connection. The model dropdown shows `alice` and `bob` as distinct models, each backed by a fully isolated Hermes instance. See the [Open WebUI guide](/user-guide/messaging/open-webui#multi-user-setup-with-profiles) for details.
+In Open WebUI, add each as a separate connection. The model dropdown shows `alice` and `bob` as distinct models, each backed by a fully isolated OpenComputer instance. See the [Open WebUI guide](/user-guide/messaging/open-webui#multi-user-setup-with-profiles) for details.
 
 ## Limitations
 
@@ -498,6 +498,6 @@ In Open WebUI, add each as a separate connection. The model dropdown shows `alic
 
 ## Proxy Mode
 
-The API server also serves as the backend for **gateway proxy mode**. When another Hermes gateway instance is configured with `GATEWAY_PROXY_URL` pointing at this API server, it forwards all messages here instead of running its own agent. This enables split deployments — for example, a Docker container handling Matrix E2EE that relays to a host-side agent.
+The API server also serves as the backend for **gateway proxy mode**. When another OpenComputer gateway instance is configured with `GATEWAY_PROXY_URL` pointing at this API server, it forwards all messages here instead of running its own agent. This enables split deployments — for example, a Docker container handling Matrix E2EE that relays to a host-side agent.
 
 See [Matrix Proxy Mode](/user-guide/messaging/matrix#proxy-mode-e2ee-on-macos) for the full setup guide.

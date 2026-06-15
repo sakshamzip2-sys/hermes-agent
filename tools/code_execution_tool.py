@@ -2,7 +2,7 @@
 """
 Code Execution Tool -- Programmatic Tool Calling (PTC)
 
-Lets the LLM write a Python script that calls Hermes tools via RPC,
+Lets the LLM write a Python script that calls OpenComputer tools via RPC,
 collapsing multi-step tool chains into a single inference turn.
 
 Architecture (two transports):
@@ -51,7 +51,7 @@ from tools.thread_context import propagate_context_to_thread
 # Availability gate.  On Windows we fall back to loopback TCP for the
 # sandbox RPC transport (AF_UNIX is unreliable on Windows Python) — see
 # ``_use_tcp_rpc`` in ``_execute_local`` below.  That makes execute_code
-# available on every platform Hermes itself runs on.
+# available on every platform OpenComputer itself runs on.
 logger = logging.getLogger(__name__)
 
 SANDBOX_AVAILABLE = True
@@ -232,7 +232,7 @@ _TOOL_STUBS = {
     "write_file": (
         "write_file",
         "path: str, content: str, cross_profile: bool = False",
-        '"""Write content to a file (always overwrites). Returns dict with status. cross_profile=True opts out of the cross-Hermes-profile soft guard."""',
+        '"""Write content to a file (always overwrites). Returns dict with status. cross_profile=True opts out of the cross-OpenComputer-profile soft guard."""',
         '{"path": path, "content": content, "cross_profile": cross_profile}',
     ),
     "search_files": (
@@ -244,7 +244,7 @@ _TOOL_STUBS = {
     "patch": (
         "patch",
         'path: str = None, old_string: str = None, new_string: str = None, replace_all: bool = False, mode: str = "replace", patch: str = None, cross_profile: bool = False',
-        '"""Targeted find-and-replace (mode="replace") or V4A multi-file patches (mode="patch"). Returns dict with status. cross_profile=True opts out of the cross-Hermes-profile soft guard."""',
+        '"""Targeted find-and-replace (mode="replace") or V4A multi-file patches (mode="patch"). Returns dict with status. cross_profile=True opts out of the cross-OpenComputer-profile soft guard."""',
         '{"path": path, "old_string": old_string, "new_string": new_string, "replace_all": replace_all, "mode": mode, "patch": patch, "cross_profile": cross_profile}',
     ),
     "terminal": (
@@ -334,7 +334,7 @@ def retry(fn, max_attempts=3, delay=2):
 # ---- UDS transport (local backend) ---------------------------------------
 
 _UDS_TRANSPORT_HEADER = '''\
-"""Auto-generated Hermes tools RPC stubs."""
+"""Auto-generated OpenComputer tools RPC stubs."""
 import json, os, socket, shlex, threading, time
 
 _sock = None
@@ -398,7 +398,7 @@ def _call(tool_name, args):
 # ---- File-based transport (remote backends) -------------------------------
 
 _FILE_TRANSPORT_HEADER = '''\
-"""Auto-generated Hermes tools RPC stubs (file-based transport)."""
+"""Auto-generated OpenComputer tools RPC stubs (file-based transport)."""
 import json, os, shlex, tempfile, threading, time
 
 _RPC_DIR = os.environ.get("HERMES_RPC_DIR") or os.path.join(tempfile.gettempdir(), "hermes_rpc")
@@ -1070,7 +1070,7 @@ def execute_code(
 ) -> str:
     """
     Run a Python script in a sandboxed child process with RPC access
-    to a subset of Hermes tools.
+    to a subset of OpenComputer tools.
 
     Dispatches to the local (UDS) or remote (file-based RPC) path
     depending on the configured terminal backend.
@@ -1254,7 +1254,7 @@ def execute_code(
         child_env["PYTHONPATH"] = os.pathsep.join(_pp_parts)
         # Inject user's configured timezone so datetime.now() in sandboxed
         # code reflects the correct wall-clock time.  Only TZ is set —
-        # HERMES_TIMEZONE is an internal Hermes setting and must not leak
+        # HERMES_TIMEZONE is an internal OpenComputer setting and must not leak
         # into child processes.
         _tz_name = os.getenv("HERMES_TIMEZONE", "").strip()
         if _tz_name:
@@ -1554,7 +1554,7 @@ def _load_config() -> dict:
     This helper is called while building the module-level execute_code schema
     during tool discovery.  Importing ``cli`` here pulls prompt_toolkit/Rich and
     a large chunk of the classic REPL onto every agent startup path, including
-    ``hermes --tui`` where it is never used.  Read the lightweight raw config
+    ``oc --tui`` where it is never used.  Read the lightweight raw config
     instead; the config layer already caches by (mtime, size), and an absent
     key cleanly falls back to DEFAULT_EXECUTION_MODE.
     """
@@ -1725,7 +1725,7 @@ def build_execute_code_schema(enabled_sandbox_tools: set = None,
                               mode: str = None) -> dict:
     """Build the execute_code schema with description listing only enabled tools.
 
-    When tools are disabled via ``hermes tools`` (e.g. web is turned off),
+    When tools are disabled via ``oc tools`` (e.g. web is turned off),
     the schema description should NOT mention web_search / web_extract —
     otherwise the model thinks they are available and keeps trying to use them.
 
@@ -1769,7 +1769,7 @@ def build_execute_code_schema(enabled_sandbox_tools: set = None,
         )
 
     description = (
-        "Run a Python script that can call Hermes tools programmatically. "
+        "Run a Python script that can call OpenComputer tools programmatically. "
         "Use this when you need 3+ tool calls with processing logic between them, "
         "need to filter/reduce large tool outputs before they enter your context, "
         "need conditional branching (if X then Y else Z), or need to loop "

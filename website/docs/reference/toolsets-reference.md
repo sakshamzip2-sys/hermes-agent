@@ -1,7 +1,7 @@
 ---
 sidebar_position: 4
 title: "Toolsets Reference"
-description: "Reference for Hermes core, composite, platform, and dynamic toolsets"
+description: "Reference for OpenComputer core, composite, platform, and dynamic toolsets"
 ---
 
 # Toolsets Reference
@@ -21,9 +21,9 @@ Every tool belongs to exactly one toolset. When you enable a toolset, all tools 
 ### Per-session (CLI)
 
 ```bash
-hermes chat --toolsets web,file,terminal
-hermes chat --toolsets debugging        # composite — expands to file + terminal + web
-hermes chat --toolsets all              # everything
+opencomputer chat --toolsets web,file,terminal
+opencomputer chat --toolsets debugging        # composite — expands to file + terminal + web
+opencomputer chat --toolsets all              # everything
 ```
 
 ### Per-platform (config.yaml)
@@ -37,7 +37,7 @@ toolsets:
 ### Interactive management
 
 ```bash
-hermes tools                            # curses UI to enable/disable per platform
+opencomputer tools                            # curses UI to enable/disable per platform
 ```
 
 Or in-session:
@@ -54,7 +54,7 @@ Or in-session:
 |---------|-------|---------|
 | `browser` | `browser_back`, `browser_cdp`, `browser_click`, `browser_console`, `browser_dialog`, `browser_get_images`, `browser_navigate`, `browser_press`, `browser_scroll`, `browser_snapshot`, `browser_type`, `browser_vision`, `web_search` | Core browser automation. Includes `web_search` as a fallback for quick lookups. `browser_cdp` and `browser_dialog` are gated at runtime — registered only when a CDP endpoint is reachable at session start (via `/browser connect`, `browser.cdp_url` config, Browserbase, or Camofox). `browser_dialog` works together with the `pending_dialogs` and `frame_tree` fields that `browser_snapshot` adds when a CDP supervisor is attached. |
 | `clarify` | `clarify` | Ask the user a question when the agent needs clarification. |
-| `code_execution` | `execute_code` | Run Python scripts that call Hermes tools programmatically. |
+| `code_execution` | `execute_code` | Run Python scripts that call OpenComputer tools programmatically. |
 | `cronjob` | `cronjob` | Schedule and manage recurring tasks. |
 | `debugging` | composite (`file` + `terminal` + `web`) | Debug bundle — file, process/terminal, web extract/search. |
 | `delegation` | `delegate_task` | Spawn isolated subagent instances for parallel work. |
@@ -83,7 +83,7 @@ Or in-session:
 | `vision` | `vision_analyze` | Image analysis via vision-capable models. |
 | `video` | `video_analyze` | Video analysis and understanding tools (opt-in, not in the default toolset — add explicitly via `--toolsets`). |
 | `web` | `web_extract`, `web_search` | Web search and page content extraction. |
-| `x_search` | `x_search` | Search X (Twitter) posts and threads via xAI's built-in `x_search` Responses tool. Off by default; opt in via `hermes tools`. Schema only registered when xAI credentials (SuperGrok OAuth or `XAI_API_KEY`) are configured. |
+| `x_search` | `x_search` | Search X (Twitter) posts and threads via xAI's built-in `x_search` Responses tool. Off by default; opt in via `opencomputer tools`. Schema only registered when xAI credentials (SuperGrok OAuth or `XAI_API_KEY`) are configured. |
 | `yuanbao` | `yb_query_group_info`, `yb_query_group_members`, `yb_search_sticker`, `yb_send_dm`, `yb_send_sticker` | Yuanbao DM/group actions and sticker search. Registered only on `hermes-yuanbao`. |
 
 ## Platform Toolsets
@@ -94,8 +94,8 @@ Platform toolsets define the complete tool configuration for a deployment target
 |---------|-------------------------------|
 | `hermes-cli` | Full toolset — the default for interactive CLI sessions. Includes file, terminal, web, browser, memory, skills, vision, image_gen, todo, tts, delegation, code_execution, cronjob, session_search, clarify, and `safe` (read-only) bundles plus the standard messaging tools. |
 | `hermes-acp` | Drops `clarify`, `cronjob`, `image_generate`, `send_message`, `text_to_speech`, and all four Home Assistant tools. Focused on coding tasks in IDE context. |
-| `hermes-api-server` | Drops `clarify`, `send_message`, and `text_to_speech`. Keeps everything else — suitable for programmatic access where user interaction isn't possible. |
-| `hermes-cron` | Same as `hermes-cli`. |
+| `opencomputer-api-server` | Drops `clarify`, `send_message`, and `text_to_speech`. Keeps everything else — suitable for programmatic access where user interaction isn't possible. |
+| `opencomputer-cron` | Same as `hermes-cli`. |
 | `hermes-telegram` | Same as `hermes-cli`. |
 | `hermes-discord` | Adds `discord` and `discord_admin` on top of `hermes-cli`. |
 | `hermes-slack` | Same as `hermes-cli`. |
@@ -105,17 +105,17 @@ Platform toolsets define the complete tool configuration for a deployment target
 | `hermes-mattermost` | Same as `hermes-cli`. |
 | `hermes-email` | Same as `hermes-cli`. |
 | `hermes-sms` | Same as `hermes-cli`. |
-| `hermes-bluebubbles` | Same as `hermes-cli`. |
-| `hermes-dingtalk` | Same as `hermes-cli`. |
-| `hermes-feishu` | Adds the five `feishu_doc_*` / `feishu_drive_*` tools (only used by the document-comment handler, not the regular chat adapter). |
+| `opencomputer-bluebubbles` | Same as `hermes-cli`. |
+| `opencomputer-dingtalk` | Same as `hermes-cli`. |
+| `opencomputer-feishu` | Adds the five `feishu_doc_*` / `feishu_drive_*` tools (only used by the document-comment handler, not the regular chat adapter). |
 | `hermes-qqbot` | Same as `hermes-cli`. |
-| `hermes-wecom` | Same as `hermes-cli`. |
-| `hermes-wecom-callback` | Same as `hermes-cli`. |
-| `hermes-weixin` | Same as `hermes-cli`. |
+| `opencomputer-wecom` | Same as `hermes-cli`. |
+| `opencomputer-wecom-callback` | Same as `hermes-cli`. |
+| `opencomputer-weixin` | Same as `hermes-cli`. |
 | `hermes-yuanbao` | Adds the five `yb_*` tools (DM/group/sticker) on top of `hermes-cli`. |
 | `hermes-homeassistant` | Same as `hermes-cli` (the Home Assistant tools are already present by default and activate when `HASS_TOKEN` is set). |
-| `hermes-webhook` | Same as `hermes-cli`. |
-| `hermes-gateway` | Internal gateway orchestrator toolset — union of every `hermes-<platform>` toolset; used when the gateway needs to accept any message source. |
+| `opencomputer-webhook` | Same as `hermes-cli`. |
+| `hermes-gateway` | Internal gateway orchestrator toolset — union of every `opencomputer-<platform>` toolset; used when the gateway needs to accept any message source. |
 
 ## Dynamic Toolsets
 
@@ -162,8 +162,8 @@ A handful of tools have an additional availability check on top of toolset membe
 - **Capability-gated** tools (browser, `computer_use`, `code_execution`, Feishu, Home Assistant, cronjob) appear only when their backend/credential prerequisite is configured.
 - **Workflow-gated** tools — the `kanban` toolset — are deliberately opt-in. `all`/`*` does **not** enable kanban; you must list `kanban` explicitly (or be a dispatcher-spawned worker with `HERMES_KANBAN_TASK` set). Kanban tools mutate shared board state, so they stay off by default even under `all`.
 
-## Relationship to `hermes tools`
+## Relationship to `opencomputer tools`
 
-The `hermes tools` command provides a curses-based UI for toggling individual tools on or off per platform. This operates at the tool level (finer than toolsets) and persists to `config.yaml`. Disabled tools are filtered out even if their toolset is enabled.
+The `opencomputer tools` command provides a curses-based UI for toggling individual tools on or off per platform. This operates at the tool level (finer than toolsets) and persists to `config.yaml`. Disabled tools are filtered out even if their toolset is enabled.
 
 See also: [Tools Reference](./tools-reference.md) for the complete list of individual tools and their parameters.

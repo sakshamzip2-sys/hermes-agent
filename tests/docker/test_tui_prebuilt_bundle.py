@@ -25,7 +25,7 @@ def _exec_py(image: str, py: str) -> str:
     """Run a Python snippet inside the image as the hermes user, return stdout."""
     inner = (
         "source /opt/hermes/.venv/bin/activate && "
-        "cd /opt/hermes && "
+        "cd /opt/oc && "
         f"python3 -c {shlex.quote(py)}"
     )
     # Drop to the hermes user (UID 10000) so we exercise the same path the

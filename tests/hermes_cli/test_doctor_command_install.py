@@ -97,7 +97,7 @@ class TestDoctorCommandInstallation:
         assert "Command Installation" in out
         assert "Venv entry point exists" in out
         assert "not found" in out
-        assert "hermes doctor --fix" in out
+        assert "oc doctor --fix" in out
 
     @pytest.mark.skipif(sys.platform == "win32", reason="Symlink check is Unix-only")
     def test_fix_creates_missing_symlink(self, monkeypatch, tmp_path):
@@ -209,7 +209,7 @@ class TestDoctorCommandInstallation:
 
     @pytest.mark.skipif(sys.platform == "win32", reason="Symlink check is Unix-only")
     def test_non_symlink_regular_file_shows_ok(self, monkeypatch, tmp_path):
-        """If ~/.local/bin/hermes is a regular file (not symlink), accept it."""
+        """If ~/.local/bin/oc is a regular file (not symlink), accept it."""
         home, project, hermes_bin = _setup_doctor_env(monkeypatch, tmp_path)
 
         cmd_link_dir = tmp_path / ".local" / "bin"

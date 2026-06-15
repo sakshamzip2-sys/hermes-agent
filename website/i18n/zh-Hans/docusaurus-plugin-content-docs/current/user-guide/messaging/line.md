@@ -1,12 +1,12 @@
 ---
 sidebar_position: 17
 title: "LINE"
-description: "将 Hermes Agent 设置为 LINE Messaging API 机器人"
+description: "将 OpenComputer 设置为 LINE Messaging API 机器人"
 ---
 
 # LINE 配置
 
-通过官方 LINE Messaging API 将 Hermes Agent 作为 [LINE](https://line.me/) 机器人运行。适配器以捆绑平台插件的形式存放于 `plugins/platforms/line/` — 无需修改核心代码，像其他平台一样启用即可。
+通过官方 LINE Messaging API 将 OpenComputer 作为 [LINE](https://line.me/) 机器人运行。适配器以捆绑平台插件的形式存放于 `plugins/platforms/line/` — 无需修改核心代码，像其他平台一样启用即可。
 
 LINE 是日本、台湾和泰国的主流即时通讯应用。如果你的用户在这些地区，这就是他们与你沟通的方式。
 
@@ -44,16 +44,16 @@ cloudflared tunnel --url http://localhost:8646
 ngrok http 8646
 
 # devtunnel
-devtunnel create hermes-line --allow-anonymous
-devtunnel port create hermes-line -p 8646 --protocol https
-devtunnel host hermes-line
+devtunnel create opencomputer-line --allow-anonymous
+devtunnel port create opencomputer-line -p 8646 --protocol https
+devtunnel host opencomputer-line
 ```
 
 复制 `https://...` URL — 稍后将其设置为 webhook URL。**保持隧道运行**以便测试。生产环境请配置固定的 Cloudflare 命名隧道，避免重启后 webhook URL 变更。
 
 ---
 
-## 第三步：配置 Hermes
+## 第三步：配置 OpenComputer
 
 在 `~/.hermes/.env` 中添加：
 
@@ -98,7 +98,7 @@ gateway:
 ## 第五步：运行 gateway
 
 ```bash
-hermes gateway
+opencomputer gateway
 ```
 
 Agent 日志显示：
@@ -186,7 +186,7 @@ LINE_HOME_CHANNEL=Uxxxxxxxxxxxxxxxxxxxx     # 默认推送目标
 
 **postback 按钮始终不出现。** 要么 LLM 的响应速度快于 `LINE_SLOW_RESPONSE_THRESHOLD`，要么其他气泡（工具进度、流式输出）已提前消耗了 reply token。参见"LLM 响应缓慢"中的抑制配置。
 
-**"already in use by another profile"。** 同一个频道访问 token 已被另一个运行中的 Hermes profile 占用。请停止另一个 gateway，或使用独立的频道。
+**"already in use by another profile"。** 同一个频道访问 token 已被另一个运行中的 OpenComputer profile 占用。请停止另一个 gateway，或使用独立的频道。
 
 ---
 

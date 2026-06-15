@@ -1,9 +1,9 @@
-# Hermes TUI
+# OpenComputer TUI
 
-React + Ink terminal UI for Hermes. TypeScript owns the screen. Python owns sessions, tools, model calls, and most command logic.
+React + Ink terminal UI for OpenComputer. TypeScript owns the screen. Python owns sessions, tools, model calls, and most command logic.
 
 ```bash
-hermes --tui
+opencomputer --tui
 ```
 
 ## What runs
@@ -38,7 +38,7 @@ Malformed stdout lines are treated as protocol noise and surfaced as `gateway.pr
 From the repo root, the normal path is:
 
 ```bash
-hermes --tui
+opencomputer --tui
 ```
 
 The CLI expects `ui-tui/dist/entry.js` to exist, or the whole source code available in which to run `npm install` and `npm run dev`.
@@ -330,7 +330,7 @@ ui-tui/
       text.ts            text helpers, ANSI detection, previews
 
     types/
-      hermes-ink.d.ts    type declarations for @hermes/ink
+      hermes-ink.d.ts    type declarations for @opencomputer/ink
 
     __tests__/           vitest suite
 ```

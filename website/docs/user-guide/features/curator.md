@@ -16,7 +16,7 @@ Tracks [issue #7816](https://github.com/NousResearch/hermes-agent/issues/7816).
 
 ## How it runs
 
-The curator is triggered by an inactivity check, not a cron daemon. On CLI session start, and on a recurring tick inside the gateway's cron-ticker thread, Hermes checks whether:
+The curator is triggered by an inactivity check, not a cron daemon. On CLI session start, and on a recurring tick inside the gateway's cron-ticker thread, OpenComputer checks whether:
 
 1. Enough time has passed since the last curator run (`interval_hours`, default **7 days**), and
 2. The agent has been idle long enough (`min_idle_hours`, default **2 hours**).
@@ -24,9 +24,9 @@ The curator is triggered by an inactivity check, not a cron daemon. On CLI sessi
 If both are true, it spawns a background fork of `AIAgent` — the same pattern used by the memory/skill self-improvement nudges. The fork runs in its own prompt cache and never touches the active conversation.
 
 :::info First-run behavior
-On a brand-new install (or the first time a pre-curator install ticks after `hermes update`), the curator **does not run immediately**. The first observation seeds `last_run_at` to "now" and defers the first real pass by one full `interval_hours`. This gives you a full interval to review your skill library, pin anything important, or opt out entirely before the curator ever touches it.
+On a brand-new install (or the first time a pre-curator install ticks after `opencomputer update`), the curator **does not run immediately**. The first observation seeds `last_run_at` to "now" and defers the first real pass by one full `interval_hours`. This gives you a full interval to review your skill library, pin anything important, or opt out entirely before the curator ever touches it.
 
-If you want to see what the curator *would* do before it runs for real, run `hermes curator run --dry-run` — it produces the same review report without mutating the library.
+If you want to see what the curator *would* do before it runs for real, run `opencomputer curator run --dry-run` — it produces the same review report without mutating the library.
 :::
 
 A run has two phases:
@@ -56,10 +56,10 @@ To disable entirely, set `curator.enabled: false`.
 
 The curator's LLM review pass is a regular auxiliary task slot — `auxiliary.curator` — alongside Vision, Compression, Session Search, etc. "Auto" means "use my main chat model"; override the slot to pin a specific provider + model for the review pass instead.
 
-**Easiest — `hermes model`:**
+**Easiest — `opencomputer model`:**
 
 ```bash
-hermes model                   # → "Auxiliary models — side-task routing"
+opencomputer model                   # → "Auxiliary models — side-task routing"
                                # → pick "Curator" → pick provider → pick model
 ```
 
@@ -78,44 +78,44 @@ auxiliary:
 Leaving `provider: auto` (the default) routes the review pass through whatever your main chat model is, matching the behavior of every other auxiliary task.
 
 :::note Legacy config
-Earlier releases used a one-off `curator.auxiliary.{provider,model}` block. That path still works but emits a deprecation log line — please migrate to `auxiliary.curator` above so the curator shares the same plumbing (`hermes model`, dashboard Models tab, `base_url`, `api_key`, `timeout`, `extra_body`) as every other aux task.
+Earlier releases used a one-off `curator.auxiliary.{provider,model}` block. That path still works but emits a deprecation log line — please migrate to `auxiliary.curator` above so the curator shares the same plumbing (`opencomputer model`, dashboard Models tab, `base_url`, `api_key`, `timeout`, `extra_body`) as every other aux task.
 :::
 
 ## CLI
 
 ```bash
-hermes curator status         # last run, counts, pinned list, LRU top 5
-hermes curator run            # trigger a review now (blocks until the LLM pass finishes)
-hermes curator run --background  # fire-and-forget: start the LLM pass in a background thread
-hermes curator run --dry-run  # preview only — report without any mutations
-hermes curator backup         # take a manual snapshot of ~/.hermes/skills/
-hermes curator rollback       # restore from the newest snapshot
-hermes curator rollback --list     # list available snapshots
-hermes curator rollback --id <ts>  # restore a specific snapshot
-hermes curator rollback -y         # skip the confirmation prompt
-hermes curator pause          # stop runs until resumed
-hermes curator resume
-hermes curator pin <skill>    # never auto-transition this skill
-hermes curator unpin <skill>
-hermes curator restore <skill>  # move an archived skill back to active
-hermes curator list-archived    # list skills currently in ~/.hermes/skills/.archive/
-hermes curator archive <skill>  # manually archive a single skill now
-hermes curator prune [--days N] # bulk-archive agent-created skills idle >= N days (default 90)
+opencomputer curator status         # last run, counts, pinned list, LRU top 5
+opencomputer curator run            # trigger a review now (blocks until the LLM pass finishes)
+opencomputer curator run --background  # fire-and-forget: start the LLM pass in a background thread
+opencomputer curator run --dry-run  # preview only — report without any mutations
+opencomputer curator backup         # take a manual snapshot of ~/.hermes/skills/
+opencomputer curator rollback       # restore from the newest snapshot
+opencomputer curator rollback --list     # list available snapshots
+opencomputer curator rollback --id <ts>  # restore a specific snapshot
+opencomputer curator rollback -y         # skip the confirmation prompt
+opencomputer curator pause          # stop runs until resumed
+opencomputer curator resume
+opencomputer curator pin <skill>    # never auto-transition this skill
+opencomputer curator unpin <skill>
+opencomputer curator restore <skill>  # move an archived skill back to active
+opencomputer curator list-archived    # list skills currently in ~/.hermes/skills/.archive/
+opencomputer curator archive <skill>  # manually archive a single skill now
+opencomputer curator prune [--days N] # bulk-archive agent-created skills idle >= N days (default 90)
 ```
 
 ## Backups and rollback
 
-Before every real curator pass, Hermes takes a tar.gz snapshot of `~/.hermes/skills/` at `~/.hermes/skills/.curator_backups/<utc-iso>/skills.tar.gz`. If a pass archives or consolidates something you didn't want touched, you can undo the whole run with one command:
+Before every real curator pass, OpenComputer takes a tar.gz snapshot of `~/.hermes/skills/` at `~/.hermes/skills/.curator_backups/<utc-iso>/skills.tar.gz`. If a pass archives or consolidates something you didn't want touched, you can undo the whole run with one command:
 
 ```bash
-hermes curator rollback        # restore newest snapshot (with confirmation)
-hermes curator rollback -y     # skip the prompt
-hermes curator rollback --list # see all snapshots with reason + size
+opencomputer curator rollback        # restore newest snapshot (with confirmation)
+opencomputer curator rollback -y     # skip the prompt
+opencomputer curator rollback --list # see all snapshots with reason + size
 ```
 
-The rollback itself is reversible: before replacing the skills tree, Hermes takes another snapshot tagged `pre-rollback to <target-id>`, so a mistaken rollback can be undone by rolling forward to that one with `--id`.
+The rollback itself is reversible: before replacing the skills tree, OpenComputer takes another snapshot tagged `pre-rollback to <target-id>`, so a mistaken rollback can be undone by rolling forward to that one with `--id`.
 
-You can also take manual snapshots at any time with `hermes curator backup --reason "before-refactor"`. The `--reason` string lands in the snapshot's `manifest.json` and is shown in `--list`.
+You can also take manual snapshots at any time with `opencomputer curator backup --reason "before-refactor"`. The `--reason` string lands in the snapshot's `manifest.json` and is shown in `--list`.
 
 Snapshots are pruned to `curator.backup.keep` (default 5) to keep disk usage bounded:
 
@@ -126,9 +126,9 @@ curator:
     keep: 5
 ```
 
-Set `curator.backup.enabled: false` to disable automatic snapshotting. The manual `hermes curator backup` command still works when backups are disabled only if you set `enabled: true` first — the flag gates both paths symmetrically so there's no way to accidentally skip the pre-run snapshot on mutating runs.
+Set `curator.backup.enabled: false` to disable automatic snapshotting. The manual `opencomputer curator backup` command still works when backups are disabled only if you set `enabled: true` first — the flag gates both paths symmetrically so there's no way to accidentally skip the pre-run snapshot on mutating runs.
 
-`hermes curator status` also lists the five least-recently-used skills — a quick way to see what's likely to become stale next.
+`opencomputer curator status` also lists the five least-recently-used skills — a quick way to see what's likely to become stale next.
 
 The same subcommands are available as the `/curator` slash command inside a running session (CLI or gateway platforms).
 
@@ -153,12 +153,12 @@ conversation are **not** marked as agent-created — they are considered
 user-directed and the curator intentionally leaves them alone.
 
 :::warning Your hand-written skills are NOT curated
-If you manually created a `SKILL.md` or pointed Hermes at an external skill
+If you manually created a `SKILL.md` or pointed OpenComputer at an external skill
 directory, that skill will have a `.usage.json` entry with `created_by: null`
 (or the field absent). The curator will not touch it. The same applies to
 skills the foreground agent created at your request.
 
-**To see which skills the curator actually manages**, run `hermes curator status`.
+**To see which skills the curator actually manages**, run `opencomputer curator status`.
 If the agent-created count is 0, no skills are currently in the curator's
 jurisdiction — the LLM review pass is skipped and the report will show
 `Model: (not resolved) via (not resolved)` with `Duration: 0s`.
@@ -168,10 +168,10 @@ Skills that ARE agent-created follow the full lifecycle:
 
 - `active` → (30d unused) `stale` → (90d unused) `archived`
 - Pinned skills bypass all auto-transitions
-- Archives are recoverable via `hermes curator restore <name>`
+- Archives are recoverable via `opencomputer curator restore <name>`
 
 If you want to protect a specific skill from ever being touched — for example a
-hand-authored skill you rely on — use `hermes curator pin <name>`. See the next
+hand-authored skill you rely on — use `opencomputer curator pin <name>`. See the next
 section.
 
 ## Pinning a skill
@@ -179,18 +179,18 @@ section.
 Pinning protects a skill from deletion — both the curator's automated archive passes and the agent's `skill_manage(action="delete")` tool call. Once a skill is pinned:
 
 - The **curator** skips it during auto-transitions (`active → stale → archived`), and its LLM review pass is instructed to leave it alone.
-- The **agent's `skill_manage` tool** refuses `delete` on it, pointing the user at `hermes curator unpin <name>`. Patches and edits still go through, so the agent can improve a pinned skill's content as pitfalls come up without a pin/unpin/re-pin dance.
+- The **agent's `skill_manage` tool** refuses `delete` on it, pointing the user at `opencomputer curator unpin <name>`. Patches and edits still go through, so the agent can improve a pinned skill's content as pitfalls come up without a pin/unpin/re-pin dance.
 
 Pin and unpin with:
 
 ```bash
-hermes curator pin <skill>
-hermes curator unpin <skill>
+opencomputer curator pin <skill>
+opencomputer curator unpin <skill>
 ```
 
 The flag is stored as `"pinned": true` on the skill's entry in `~/.hermes/skills/.usage.json`, so it survives across sessions.
 
-Only **agent-created** skills can be pinned — `hermes curator pin` refuses on bundled and hub-installed skills with an explanatory message if you try. Hub-installed skills are never subject to curator mutation. Bundled built-in skills are only touched when `curator.prune_builtins: true` (the default), and even then only archived after `archive_after_days` of non-use — never patched, consolidated, or deleted. Set `curator.prune_builtins: false` to exempt bundled skills entirely.
+Only **agent-created** skills can be pinned — `opencomputer curator pin` refuses on bundled and hub-installed skills with an explanatory message if you try. Hub-installed skills are never subject to curator mutation. Bundled built-in skills are only touched when `curator.prune_builtins: true` (the default), and even then only archived after `archive_after_days` of non-use — never patched, consolidated, or deleted. Set `curator.prune_builtins: false` to exempt bundled skills entirely.
 
 A small set of **protected built-ins** is hardcoded as never-archivable and never-consolidatable, regardless of `curator.prune_builtins`, pin state, or LLM judgment. These back load-bearing UX — for example, `plan` powers the `/plan` slash-command flow — so silently archiving one would turn its slash command into an "Unknown command" error with no signal to you. Protected built-ins are filtered out of the curator's candidate list entirely, so the consolidation pass never sees them.
 
@@ -249,14 +249,14 @@ runs and reports its counts normally.
 
 ### Rename map in the summary
 
-If a run consolidated multiple skills under an umbrella (or merged near-duplicates), the user-visible summary printed at the end of the run includes an explicit rename map showing every `old-name → new-name` pair the curator applied. This is in addition to per-skill transition lines, so when a wave of renames lands you can spot them at a glance without diffing the JSON report. The hint also surfaces under `hermes curator pin` so you can pin the umbrella name immediately if you want to lock the new label in.
+If a run consolidated multiple skills under an umbrella (or merged near-duplicates), the user-visible summary printed at the end of the run includes an explicit rename map showing every `old-name → new-name` pair the curator applied. This is in addition to per-skill transition lines, so when a wave of renames lands you can spot them at a glance without diffing the JSON report. The hint also surfaces under `opencomputer curator pin` so you can pin the umbrella name immediately if you want to lock the new label in.
 
 ## Restoring an archived skill
 
 If the curator archived something you still want:
 
 ```bash
-hermes curator restore <skill-name>
+opencomputer curator restore <skill-name>
 ```
 
 This moves the skill back from `~/.hermes/skills/.archive/` to the active tree and resets its state to `active`. The restore refuses if a bundled or hub-installed skill has since been installed under the same name (would shadow upstream).
@@ -266,7 +266,7 @@ This moves the skill back from `~/.hermes/skills/.archive/` to the active tree a
 The curator is on by default. To turn it off:
 
 - **For one profile only:** edit `~/.hermes/config.yaml` (or the active profile's config) and set `curator.enabled: false`.
-- **For just one run:** `hermes curator pause` — the pause persists across sessions; use `resume` to re-enable.
+- **For just one run:** `opencomputer curator pause` — the pause persists across sessions; use `resume` to re-enable.
 
 The curator also refuses to run if `min_idle_hours` hasn't elapsed, so on an active dev machine it naturally only runs during quiet stretches.
 

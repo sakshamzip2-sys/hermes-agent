@@ -2,11 +2,11 @@
 name: solana
 description: Query Solana blockchain data with USD pricing — wallet balances, token portfolios with values, transaction details, NFTs, whale detection, and live network stats. Uses Solana RPC + CoinGecko. No API key required.
 version: 0.2.0
-author: Deniz Alagoz (gizdusum), enhanced by Hermes Agent
+author: Deniz Alagoz (gizdusum), enhanced by OpenComputer
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
-  hermes:
+  opencomputer:
     tags: [Solana, Blockchain, Crypto, Web3, RPC, DeFi, NFT]
     related_skills: []
 ---

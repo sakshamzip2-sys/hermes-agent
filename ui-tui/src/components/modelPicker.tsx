@@ -241,7 +241,7 @@ export function ModelPicker({ allowPersistGlobal = true, gw, onCancel, onSelect,
                         authenticated: false,
                         models: [],
                         total_models: 0,
-                        warning: p.key_env ? `paste ${p.key_env} to activate` : 'run `hermes model` to configure'
+                        warning: p.key_env ? `paste ${p.key_env} to activate` : 'run `oc model` to configure'
                       }
                     : p
                 )

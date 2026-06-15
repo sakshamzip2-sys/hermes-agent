@@ -42,7 +42,7 @@ plugin is warn-by-default precisely because of that.
 Plugins are opt-in. Add it to your allow-list:
 
 ```bash
-hermes plugins enable security-guidance
+opencomputer plugins enable security-guidance
 # or edit ~/.hermes/config.yaml manually:
 plugins:
   enabled:
@@ -60,7 +60,7 @@ plugins:
 ## What it does **not** do (yet)
 
 * **No LLM diff review.** Anthropic's layer 2 spawns an auxiliary LLM call
-  on every agent turn that touched files. On hermes that would route
+  on every agent turn that touched files. On opencomputer that would route
   through the main model by default (`auxiliary_client._resolve_auto()` is
   main-model-first), which is real money on reasoning models. A separate
   PR can wire layer 2 to a cheap auxiliary model with explicit opt-in.

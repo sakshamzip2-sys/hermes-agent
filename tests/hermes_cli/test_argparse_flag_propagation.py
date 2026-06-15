@@ -1,7 +1,7 @@
 """Tests for parent→subparser flag propagation.
 
 When flags like --yolo, -w, -s exist on both the parent parser and the 'chat'
-subparser, placing the flag BEFORE the subcommand (e.g. 'hermes --yolo chat')
+subparser, placing the flag BEFORE the subcommand (e.g. 'oc --yolo chat')
 must not silently drop the flag value.
 
 Regression test for: argparse subparser default=False overwriting parent's
@@ -150,7 +150,7 @@ class TestAcceptHooksOnAgentSubparsers:
     position (before the subcommand, between group/subcommand, and
     after the leaf subcommand) for gateway/cron/mcp/acp.  Regression
     against prior behaviour where the flag only worked on the root
-    parser and `chat`, so `hermes gateway run --accept-hooks` failed
+    parser and `chat`, so `oc gateway run --accept-hooks` failed
     with `unrecognized arguments`."""
 
     @pytest.mark.parametrize("argv", [
@@ -167,7 +167,7 @@ class TestAcceptHooksOnAgentSubparsers:
         ["acp", "--accept-hooks", "--help"],
     ])
     def test_accepted_at_every_position(self, argv):
-        """Invoking `hermes <argv>` must exit 0 (help) rather than
+        """Invoking `oc <argv>` must exit 0 (help) rather than
         failing with `unrecognized arguments`."""
         import subprocess
         result = subprocess.run(

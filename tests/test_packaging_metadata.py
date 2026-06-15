@@ -274,7 +274,7 @@ def test_optional_mcps_manifests_ship_in_both_wheel_and_sdist():
     when that directory is absent. optional-mcps/ is a bare data directory (no
     __init__.py), invisible to packages.find and package-data. It must ship as
     setuptools data-files (wheel) AND be grafted in MANIFEST.in (sdist), or
-    `hermes mcp catalog` and the dashboard catalog screen come up empty on
+    `oc mcp catalog` and the dashboard catalog screen come up empty on
     pip / Homebrew / Nix installs even though the manifests exist in the repo.
 
     data-files flattens every glob match into its single target dir, so each

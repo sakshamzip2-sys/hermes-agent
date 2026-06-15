@@ -891,7 +891,7 @@ def test_reconcile_mixed_declarations_and_legacy_calls(curator_env):
 # ---------------------------------------------------------------------------
 # _build_rename_summary — surfaces the "where did my skills go?" map to the
 # user-visible curator summary (gateway 💾 line, CLI Rich panel,
-# `hermes curator status`). The full data has always been in REPORT.md on
+# `oc curator status`). The full data has always been in REPORT.md on
 # disk; this helper makes it visible without digging.
 # ---------------------------------------------------------------------------
 
@@ -1023,7 +1023,7 @@ def test_rename_summary_mixed_consolidation_and_pruning(curator_env):
 
 
 # ---------------------------------------------------------------------------
-# Pin hint — surfaces `hermes curator pin <umbrella>` in the rename block so
+# Pin hint — surfaces `oc curator pin <umbrella>` in the rename block so
 # users learn the command exists at the moment they care (a consolidation
 # just landed against their library). The hint is gated on having at least
 # one umbrella destination — pruned-only runs skip it.
@@ -1055,7 +1055,7 @@ def test_rename_summary_pin_hint_appears_when_consolidation_produced_umbrella(cu
         ],
         model_final="",
     )
-    assert "hermes curator pin document-tools" in result
+    assert "oc curator pin document-tools" in result
     assert "keep an umbrella stable" in result
 
 
@@ -1086,7 +1086,7 @@ def test_rename_summary_pin_hint_skipped_for_pruned_only_runs(curator_env):
     )
     # Block still renders (skills were archived) but no pin hint.
     assert "archived 2 skill(s):" in result
-    assert "hermes curator pin" not in result
+    assert "oc curator pin" not in result
     assert "keep an umbrella stable" not in result
 
 
@@ -1119,7 +1119,7 @@ def test_rename_summary_pin_hint_picks_one_umbrella_when_multiple_absorbed(curat
         model_final="",
     )
     # Sorted picks alphabetically first.
-    assert "hermes curator pin umbrella-alpha" in result
+    assert "oc curator pin umbrella-alpha" in result
     # Exactly one hint line, not one per umbrella.
-    pin_lines = [ln for ln in result.splitlines() if "hermes curator pin" in ln]
+    pin_lines = [ln for ln in result.splitlines() if "oc curator pin" in ln]
     assert len(pin_lines) == 1

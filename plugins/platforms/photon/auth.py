@@ -22,7 +22,7 @@ as ``PHOTON_PROJECT_ID`` for the runtime is the **spectrumProjectId**, not
 the Dashboard ``id``.  The Dashboard ``id`` is kept only for management
 calls.
 
-Credential storage mirrors every other Hermes channel:
+Credential storage mirrors every other OpenComputer channel:
 
     * runtime SDK creds  -> ``~/.hermes/.env``  (``PHOTON_PROJECT_ID`` =
       spectrumProjectId, ``PHOTON_PROJECT_SECRET``) via ``save_env_value``
@@ -64,15 +64,15 @@ class PhotonDashboardAuthError(RuntimeError):
 # endpoint — an unregistered client_id is rejected with
 # `400 {"error":"invalid_client"}`.  Use Photon's published CLI device
 # client (matches `CLI_CLIENT_ID` in photon-hq/cli) until the dashboard API
-# registers Hermes as its own client_id.
+# registers OpenComputer as its own client_id.
 DEFAULT_CLIENT_ID = "photon-cli"
 DEFAULT_SCOPE = "openid profile email"
 
 DEFAULT_DASHBOARD_HOST = "https://app.photon.codes"
 DEFAULT_SPECTRUM_HOST = "https://spectrum.photon.codes"
 
-# Default name of the project Hermes provisions for the operator.
-DEFAULT_PROJECT_NAME = "Hermes Agent"
+# Default name of the project OpenComputer provisions for the operator.
+DEFAULT_PROJECT_NAME = "OpenComputer"
 
 # Polling defaults per RFC 8628.  Photon overrides via `interval` /
 # `expires_in` in the device-code response — those win.
@@ -86,7 +86,7 @@ E164_RE = re.compile(r"^\+[1-9]\d{6,14}$")
 # auth.json helpers — share the file with the rest of hermes-agent.
 
 def _auth_json_path() -> Path:
-    """Resolve ``~/.hermes/auth.json`` honouring the active Hermes profile."""
+    """Resolve ``~/.hermes/auth.json`` honouring the active OpenComputer profile."""
     try:
         from hermes_constants import get_hermes_home
         return Path(get_hermes_home()) / "auth.json"
@@ -1004,7 +1004,7 @@ def print_credential_summary(emit: Any = print) -> None:
     labels: Dict[str, str] = {}
     labels["device_token"] = (
         "✓ stored" if load_photon_token()
-        else "✗ missing (run `hermes photon setup`)"
+        else "✗ missing (run `oc photon setup`)"
     )
     sid, sec = load_project_credentials()
     labels["spectrum_project_id"] = sid if sid else "✗ missing"
@@ -1012,10 +1012,10 @@ def print_credential_summary(emit: Any = print) -> None:
     labels["project_key"] = "✓ stored" if sec else "✗ missing"
     phone, assigned = load_user_numbers()
     labels["phone_number"] = (
-        phone if phone else "✗ missing (run `hermes photon setup --phone ...`)"
+        phone if phone else "✗ missing (run `oc photon setup --phone ...`)"
     )
     labels["assigned_phone_number"] = (
-        assigned if assigned else "✗ missing (run `hermes photon setup`)"
+        assigned if assigned else "✗ missing (run `oc photon setup`)"
     )
 
     rows = [
@@ -1036,7 +1036,7 @@ def credential_summary() -> Dict[str, str]:
     def _present_token() -> str:
         return (
             "✓ stored" if load_photon_token()
-            else "✗ missing (run `hermes photon setup`)"
+            else "✗ missing (run `oc photon setup`)"
         )
 
     def _present_spectrum_id() -> str:
@@ -1049,11 +1049,11 @@ def credential_summary() -> Dict[str, str]:
 
     def _present_phone() -> str:
         phone, _assigned = load_user_numbers()
-        return phone or "✗ missing (run `hermes photon setup --phone ...`)"
+        return phone or "✗ missing (run `oc photon setup --phone ...`)"
 
     def _present_assigned_phone() -> str:
         _phone, assigned = load_user_numbers()
-        return assigned or "✗ missing (run `hermes photon setup`)"
+        return assigned or "✗ missing (run `oc photon setup`)"
 
     return {
         "device_token": _present_token(),

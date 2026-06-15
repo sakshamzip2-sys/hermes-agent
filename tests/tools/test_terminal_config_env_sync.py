@@ -9,7 +9,7 @@ at startup, by THREE separate code paths:
                           platforms)
   3. hermes_cli/config.py:set_config_value
                        -> bridges via the canonical ``TERMINAL_CONFIG_ENV_MAP``
-                          (one-shot when the user runs ``hermes config set …``)
+                          (one-shot when the user runs ``oc config set …``)
 
 If any one of these is missing a key, the corresponding config.yaml setting
 silently does nothing for that entry-point.  This bug already shipped once
@@ -87,7 +87,7 @@ def _gateway_env_map_keys() -> set[str]:
 
 
 def _save_config_env_sync_keys() -> set[str]:
-    """terminal config keys bridged by ``hermes config set foo bar``.
+    """terminal config keys bridged by ``oc config set foo bar``.
 
     ``set_config_value`` no longer carries its own ``_config_to_env_sync``
     dict — it bridges through the canonical ``TERMINAL_CONFIG_ENV_MAP`` via
@@ -161,7 +161,7 @@ def test_cli_and_gateway_env_maps_agree():
 
 
 def test_save_config_set_supports_critical_bridged_keys():
-    """``hermes config set terminal.X true`` must propagate to .env for
+    """``oc config set terminal.X true`` must propagate to .env for
     known-critical keys.  This used to be an all-keys invariant but the SSH
     terminal keys (ssh_*) aren't in _config_to_env_sync and are instead
     handled via the separate api_keys TERMINAL_SSH_* fallback path or
@@ -185,7 +185,7 @@ def test_save_config_set_supports_critical_bridged_keys():
     }
     missing = required - save_keys
     assert not missing, (
-        f"`hermes config set terminal.X` doesn't sync these load-bearing "
+        f"`oc config set terminal.X` doesn't sync these load-bearing "
         f"keys to .env: {sorted(missing)}.  Add them to TERMINAL_CONFIG_ENV_MAP "
         f"in hermes_cli/config.py (set_config_value bridges through it)."
     )
@@ -239,7 +239,7 @@ def test_docker_persist_across_processes_is_bridged_everywhere():
     ``terminal.docker_persist_across_processes`` (issue #20561) controls
     whether ``DockerEnvironment.__init__`` probes for and reuses an existing
     labeled container at startup, and whether ``cleanup()`` removes the
-    container on Hermes exit or just stops it (keeping it for the next
+    container on OpenComputer exit or just stops it (keeping it for the next
     process).  Same four-bridge invariant as docker_run_as_host_user /
     docker_env / docker_mount_cwd_to_workspace — drift between any of the
     four sites means ``terminal.docker_persist_across_processes: false`` in
@@ -256,7 +256,7 @@ def test_docker_persist_across_processes_is_bridged_everywhere():
 def test_docker_orphan_reaper_is_bridged_everywhere():
     """Regression pin for the startup orphan reaper toggle (issue #20561).
 
-    ``terminal.docker_orphan_reaper`` controls whether Hermes sweeps stale
+    ``terminal.docker_orphan_reaper`` controls whether OpenComputer sweeps stale
     Exited containers from prior SIGKILL'd processes at startup.  Same
     four-site bridge invariant — drift means
     ``terminal.docker_orphan_reaper: false`` silently does nothing for one
@@ -271,12 +271,12 @@ def test_docker_orphan_reaper_is_bridged_everywhere():
 
 def test_docker_volumes_is_bridged_everywhere():
     """Regression pin for ``terminal.docker_volumes`` being silently dropped by
-    ``hermes config set``.
+    ``oc config set``.
 
     The JSON list of ``host:container`` bind mounts was bridged by cli.py and
     gateway/run.py and consumed by terminal_tool (via json.loads), but was
     missing from set_config_value's _config_to_env_sync.  So
-    ``hermes config set terminal.docker_volumes '["/host:/workspace"]'`` wrote
+    ``oc config set terminal.docker_volumes '["/host:/workspace"]'`` wrote
     config.yaml yet left the running process's TERMINAL_DOCKER_VOLUMES stale —
     the mounts didn't apply until a full restart.  Same four-site bridge
     invariant as docker_env / docker_run_as_host_user.
@@ -294,7 +294,7 @@ def test_docker_forward_env_is_bridged_everywhere():
     The JSON list of host env-var names forwarded into the container was
     bridged by cli.py and gateway/run.py and consumed by terminal_tool (via
     json.loads), but missing from set_config_value's _config_to_env_sync, so
-    ``hermes config set terminal.docker_forward_env '["GITHUB_TOKEN"]'`` had no
+    ``oc config set terminal.docker_forward_env '["GITHUB_TOKEN"]'`` had no
     effect on the running process until restart.
     """
     assert "docker_forward_env" in _cli_env_map_keys()

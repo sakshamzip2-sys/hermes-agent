@@ -460,7 +460,7 @@ def _resolve_stdio_command(command: str, env: dict) -> tuple[str, dict]:
                 os.path.join(os.path.expanduser("~"), ".local", "bin", resolved_command),
                 # /usr/local/bin is the canonical install location for Node on
                 # Linux from-source builds, the upstream node:bookworm-slim
-                # image (which the Hermes Docker image copies node + npm +
+                # image (which the OpenComputer Docker image copies node + npm +
                 # corepack from since #4977), and macOS Homebrew on Intel.
                 # Without this candidate, any MCP server configured with an
                 # env.PATH that omits /usr/local/bin (a common pattern when
@@ -483,7 +483,7 @@ def _resolve_stdio_command(command: str, env: dict) -> tuple[str, dict]:
 
 
 # ---------------------------------------------------------------------------
-# MCP ImageContent block → Hermes MEDIA tag
+# MCP ImageContent block → OpenComputer MEDIA tag
 # ---------------------------------------------------------------------------
 
 
@@ -498,7 +498,7 @@ def _mcp_image_extension_for_mime_type(mime_type: str) -> str:
 
 def _cache_mcp_image_block(block) -> str:
     """Cache an MCP ``ImageContent`` block to the shared image cache and
-    return a ``MEDIA:<path>`` tag that Hermes gateways know how to render.
+    return a ``MEDIA:<path>`` tag that OpenComputer gateways know how to render.
 
     Returns an empty string when *block* is not an image, when the base64
     payload is malformed, or when the cache helper rejects the bytes (e.g.
@@ -1943,7 +1943,7 @@ class MCPServerTask:
                 # CancelledError inherits from BaseException (not Exception)
                 # in Python 3.11+, so the broad ``except Exception`` below
                 # would NOT catch it; we'd silently exit the reconnect loop
-                # and the MCP server would stay dead until Hermes is fully
+                # and the MCP server would stay dead until OpenComputer is fully
                 # restarted. Re-raise so the task's cancellation propagates
                 # correctly to asyncio's task machinery and ``shutdown()``'s
                 # ``await self._task`` completes. See #9930.
@@ -2307,7 +2307,7 @@ def _handle_auth_error_and_retry(
     return json.dumps({
         "error": (
             f"MCP server '{server_name}' requires re-authentication. "
-            f"Run `hermes mcp login {server_name}` (or delete the tokens "
+            f"Run `oc mcp login {server_name}` (or delete the tokens "
             f"file under ~/.hermes/mcp-tokens/ and restart). Do NOT retry "
             f"this tool — ask the user to re-authenticate."
         ),
@@ -2674,7 +2674,7 @@ def _interpolate_env_vars(value):
 
 
 def _load_mcp_config() -> Dict[str, dict]:
-    """Read ``mcp_servers`` from the Hermes config file.
+    """Read ``mcp_servers`` from the OpenComputer config file.
 
     Returns a dict of ``{server_name: server_config}`` or empty dict.
     Server config can contain either ``command``/``args``/``env`` for stdio
@@ -2786,13 +2786,13 @@ def _make_tool_handler(server_name: str, tool_name: str, tool_timeout: float):
             # Collect text from content blocks. MCP tool results can also
             # include ImageContent blocks (screenshot / Blockbench / Playwright
             # etc.); cache those via the gateway's image-cache helper so they
-            # flow through Hermes' MEDIA: tag convention and out to messaging
+            # flow through OpenComputer' MEDIA: tag convention and out to messaging
             # adapters that render images natively. Without this, image blocks
             # were silently dropped and the agent got an empty response.
             #
             # Distilled from #17915 (c3115644151) and #10848 (gnanirahulnutakki),
             # both too stale to cherry-pick. #10848's approach (integrate with
-            # Hermes' MEDIA tag + cache_image_from_bytes) was the cleaner of
+            # OpenComputer' MEDIA tag + cache_image_from_bytes) was the cleaner of
             # the two — plugs into existing infrastructure.
             parts: List[str] = []
             for block in (result.content or []):
@@ -3248,7 +3248,7 @@ def _normalize_mcp_input_schema(schema: dict | None) -> dict:
 def sanitize_mcp_name_component(value: str) -> str:
     """Return an MCP name component safe for tool and prefix generation.
 
-    Preserves Hermes's historical behavior of converting hyphens to
+    Preserves OpenComputer's historical behavior of converting hyphens to
     underscores, and also replaces any other character outside
     ``[A-Za-z0-9_]`` with ``_`` so generated tool names are compatible with
     provider validation rules.
@@ -3257,7 +3257,7 @@ def sanitize_mcp_name_component(value: str) -> str:
 
 
 def _convert_mcp_schema(server_name: str, mcp_tool) -> dict:
-    """Convert an MCP tool listing to the Hermes registry schema format.
+    """Convert an MCP tool listing to the OpenComputer registry schema format.
 
     Args:
         server_name: The logical server name for prefixing.
@@ -3883,9 +3883,9 @@ def get_mcp_status() -> List[dict]:
 def probe_mcp_server_tools() -> Dict[str, List[tuple]]:
     """Temporarily connect to configured MCP servers and list their tools.
 
-    Designed for ``hermes tools`` interactive configuration — connects to each
+    Designed for ``oc tools`` interactive configuration — connects to each
     enabled server, grabs tool names and descriptions, then disconnects.
-    Does NOT register tools in the Hermes registry.
+    Does NOT register tools in the OpenComputer registry.
 
     Returns:
         Dict mapping server name to list of (tool_name, description) tuples.

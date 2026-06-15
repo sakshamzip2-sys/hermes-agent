@@ -558,7 +558,7 @@ class TestCatalogDiagnostics:
 
     def test_picker_surfaces_future_manifest_warning(self, catalog_dir, capsys, monkeypatch):
         """The text-dump path should print a warning line for future-manifest
-        entries so users running headless or after `hermes setup` know to update."""
+        entries so users running headless or after `oc setup` know to update."""
         body = _basic_manifest()
         body["manifest_version"] = 999
         _write_manifest(catalog_dir, "futuristic", body)
@@ -571,7 +571,7 @@ class TestCatalogDiagnostics:
         show_catalog()
         out = capsys.readouterr().out
         assert "futuristic" in out
-        assert "requires a newer Hermes" in out
+        assert "requires a newer OpenComputer" in out
 
 
 # ---------------------------------------------------------------------------

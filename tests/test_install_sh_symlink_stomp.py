@@ -46,7 +46,7 @@ def test_setup_path_shim_block_removes_old_link_before_writing() -> None:
     rm_idx = block.find('rm -f "$command_link_dir/hermes"')
     cat_idx = block.find('cat > "$command_link_dir/hermes" <<EOF')
     assert rm_idx != -1, (
-        "setup_path() must `rm -f` $command_link_dir/hermes before the "
+        "setup_path() must `rm -f` $command_link_dir/oc before the "
         "`cat >` heredoc, otherwise an existing symlink (left by older "
         "installs) will be followed and the pip entry point overwritten. "
         "See #21454."
@@ -63,8 +63,8 @@ def test_re_running_setup_path_block_preserves_pip_entry_point(tmp_path: Path) -
     Layout mirrors a real install:
 
         tmp/
-          venv/bin/hermes        <- pip entry point (the one we must preserve)
-          local_bin/hermes       <- symlink → ../venv/bin/hermes  (old install)
+          venv/bin/oc        <- pip entry point (the one we must preserve)
+          local_bin/oc       <- symlink → ../venv/bin/oc  (old install)
 
     Then we run the exact shim-write block from setup_path() with
     ``HERMES_BIN`` and ``command_link_dir`` pointed at this fixture. The fix
@@ -104,14 +104,14 @@ def test_re_running_setup_path_block_preserves_pip_entry_point(tmp_path: Path) -
     # The pip entry point must still be the original pip script — not a
     # re-written self-recursing bash shim.
     assert pip_entry.read_text() == pip_marker, (
-        "venv/bin/hermes was overwritten by setup_path() — symlink-stomp "
+        "venv/bin/oc was overwritten by setup_path() — symlink-stomp "
         "regression (#21454)."
     )
 
     # The shim path itself must now be a regular file holding the launcher.
     assert shim_path.exists()
     assert not shim_path.is_symlink(), (
-        "command_link_dir/hermes must be replaced with a regular file, not "
+        "command_link_dir/oc must be replaced with a regular file, not "
         "left as a symlink — otherwise the next install will stomp again."
     )
     shim_text = shim_path.read_text()

@@ -1330,7 +1330,7 @@ def handle_max_iterations(agent, messages: list, api_call_count: int) -> str:
             # hand-builds messages and calls chat.completions.create() directly,
             # bypassing the transport — so mirror that sanitization here:
             # tool_name (SQLite FTS bookkeeping), the codex_* reasoning carriers,
-            # and every Hermes-internal underscore-prefixed scaffolding key.
+            # and every OpenComputer-internal underscore-prefixed scaffolding key.
             for schema_foreign in ("tool_name", "codex_reasoning_items", "codex_message_items"):
                 api_msg.pop(schema_foreign, None)
             for internal_key in [k for k in api_msg if isinstance(k, str) and k.startswith("_")]:
@@ -1386,7 +1386,30 @@ def handle_max_iterations(agent, messages: list, api_call_count: int) -> str:
             agent._resolve_lmstudio_summary_reasoning_effort()
             if _is_lmstudio_summary else None
         )
-        if not _is_lmstudio_summary and agent._supports_reasoning_extra_body():
+        # OpenComputer router: like LM Studio, it honours the OpenAI-style
+        # top-level ``reasoning_effort`` and ignores the OpenRouter-style
+        # ``extra_body.reasoning`` object, so route the summary call the same
+        # way ChatCompletionsTransport does for the custom profile.
+        _is_oc_router_summary = (
+            "tryopencomputer.com" in (agent._base_url_lower or "")
+            and agent._supports_reasoning_extra_body()
+        )
+        _oc_reasoning_effort: str | None = None
+        if (
+            _is_oc_router_summary
+            and isinstance(agent.reasoning_config, dict)
+            and agent.reasoning_config.get("enabled", True) is not False
+        ):
+            _eff = (agent.reasoning_config.get("effort") or "medium").strip().lower()
+            _oc_reasoning_effort = {
+                "minimal": "low", "low": "low", "medium": "medium",
+                "high": "high", "xhigh": "high",
+            }.get(_eff, "medium")
+        if (
+            not _is_lmstudio_summary
+            and not _is_oc_router_summary
+            and agent._supports_reasoning_extra_body()
+        ):
             if agent.reasoning_config is not None:
                 summary_extra_body["reasoning"] = agent.reasoning_config
             else:
@@ -1416,6 +1439,12 @@ def handle_max_iterations(agent, messages: list, api_call_count: int) -> str:
                 summary_kwargs.update(agent._max_tokens_param(agent.max_tokens))
             if _lm_reasoning_effort is not None:
                 summary_kwargs["reasoning_effort"] = _lm_reasoning_effort
+            if _oc_reasoning_effort is not None:
+                summary_kwargs["reasoning_effort"] = _oc_reasoning_effort
+                # Claude requires temperature == 1 when thinking is enabled.
+                _sm = (agent.model or "").lower()
+                if any(p in _sm for p in ("claude", "opus", "sonnet", "haiku")):
+                    summary_kwargs["temperature"] = 1
 
             # Include provider routing preferences
             provider_preferences = {}

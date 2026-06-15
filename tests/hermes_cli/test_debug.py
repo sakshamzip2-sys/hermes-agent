@@ -1,4 +1,4 @@
-"""Tests for ``hermes debug`` CLI command and debug utilities."""
+"""Tests for ``oc debug`` CLI command and debug utilities."""
 
 import os
 import urllib.error
@@ -838,7 +838,7 @@ class TestRunDebug:
         run_debug(args)
 
         out = capsys.readouterr().out
-        assert "hermes debug" in out
+        assert "oc debug" in out
         assert "share" in out
         assert "delete" in out
 
@@ -918,7 +918,7 @@ class TestScheduleAutoDelete:
 
     The new implementation is stateless: it records pending deletions to
     ``~/.hermes/pastes/pending.json`` and lets ``_sweep_expired_pastes``
-    handle the DELETE requests synchronously on the next ``hermes debug``
+    handle the DELETE requests synchronously on the next ``oc debug``
     invocation.
     """
 
@@ -1283,7 +1283,7 @@ class TestShareIncludesAutoDelete:
 class TestBuildDebugShare:
     """The shared core that returns structured paste URLs (not printed text).
 
-    Backs both ``hermes debug share`` (CLI) and ``POST /api/ops/debug-share``
+    Backs both ``oc debug share`` (CLI) and ``POST /api/ops/debug-share``
     (dashboard). The dashboard renders ``urls`` as real, copyable links, so the
     contract here is the return value, not stdout.
     """

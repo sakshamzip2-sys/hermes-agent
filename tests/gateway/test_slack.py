@@ -2872,13 +2872,13 @@ class TestSlashCommands:
 
     # ------------------------------------------------------------------
     # Native slash commands — /btw, /stop, /model, ... dispatched directly
-    # instead of as /hermes subcommands. This is the Discord/Telegram parity
+    # instead of as /oc subcommands. This is the Discord/Telegram parity
     # fix: the slash name itself becomes the command.
     # ------------------------------------------------------------------
 
     @pytest.mark.asyncio
     async def test_native_btw_slash(self, adapter):
-        """/btw with args must dispatch to /background, not /hermes btw."""
+        """/btw with args must dispatch to /background, not /oc btw."""
         command = {
             "command": "/btw",
             "text": "fix the failing test",
@@ -2918,9 +2918,9 @@ class TestSlashCommands:
 
     @pytest.mark.asyncio
     async def test_legacy_hermes_prefix_still_works(self, adapter):
-        """Backward compat: /hermes btw foo must still route to /btw foo.
+        """Backward compat: /oc btw foo must still route to /btw foo.
 
-        Old workspace manifests only declared /hermes as the single slash.
+        Old workspace manifests only declared /oc as the single slash.
         After users refresh their manifest they get /btw natively, but the
         legacy form must keep working during the transition.
         """
@@ -2936,7 +2936,7 @@ class TestSlashCommands:
 
     @pytest.mark.asyncio
     async def test_legacy_hermes_freeform_question(self, adapter):
-        """/hermes <free-form text> must stay as the raw text (non-command)."""
+        """/oc <free-form text> must stay as the raw text (non-command)."""
         command = {
             "command": "/hermes",
             "text": "what's the weather today?",
@@ -3647,7 +3647,7 @@ class TestSlashEphemeralAck:
 
     @pytest.mark.asyncio
     async def test_legacy_hermes_slash_stashes_context(self, adapter):
-        """Legacy /hermes <subcommand> also stashes context."""
+        """Legacy /oc <subcommand> also stashes context."""
         command = {
             "command": "/hermes",
             "text": "help",
@@ -3662,7 +3662,7 @@ class TestSlashEphemeralAck:
 
     @pytest.mark.asyncio
     async def test_freeform_hermes_question_does_not_stash_context(self, adapter):
-        """Free-form /hermes <question> must NOT route agent reply ephemeral."""
+        """Free-form /oc <question> must NOT route agent reply ephemeral."""
         command = {
             "command": "/hermes",
             "text": "what's the weather",

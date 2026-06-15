@@ -12,7 +12,7 @@ the existing module-level functions in hermes_cli.gateway and
 hermes_cli.gateway_windows directly. This protocol is a thin facade
 used by new code that needs to be backend-agnostic — specifically the
 profile create/delete hooks (Phase 4) and the s6 dispatch path in
-``hermes gateway start/stop/restart`` when running inside a container.
+``oc gateway start/stop/restart`` when running inside a container.
 """
 from __future__ import annotations
 
@@ -95,7 +95,7 @@ def detect_service_manager() -> ServiceManagerKind:
     This function does NOT replace ``supports_systemd_services()`` —
     host call sites continue to use that. It exists for new backend-
     agnostic code (profile create/delete hooks, the s6 dispatch path
-    in ``hermes gateway start/stop/restart``).
+    in ``oc gateway start/stop/restart``).
     """
     # Imports deferred so importing this module doesn't drag in the
     # whole gateway dependency graph for callers that only need the
@@ -126,7 +126,7 @@ def _s6_running() -> bool:
     — only works as root: for any other UID, the symlink at
     ``/proc/1/exe`` is unreadable and ``resolve()`` silently returns the
     path unchanged, so the resolved name is the literal ``"exe"`` and
-    detection always fails. Since every Hermes runtime call inside the
+    detection always fails. Since every OpenComputer runtime call inside the
     container drops to hermes via ``s6-setuidgid``, that silent failure
     made the entire service-manager runtime-registration path inert in
     production (PR #30136 review).
@@ -158,7 +158,7 @@ def _s6_running() -> bool:
 # in ``hermes_cli.gateway`` (systemd/launchd) and ``hermes_cli.gateway_windows``
 # (Windows Scheduled Tasks). The protocol's ``name`` parameter is currently
 # unused for host backends — they operate on whichever profile is currently
-# active (set via the ``hermes -p <profile>`` flag before the call). This
+# active (set via the ``oc -p <profile>`` flag before the call). This
 # matches existing host-side semantics; the parameter shape is designed
 # for s6 where each profile maps to a distinct service directory.
 # ---------------------------------------------------------------------------
@@ -312,7 +312,7 @@ def get_service_manager() -> ServiceManager:
 # ---------------------------------------------------------------------------
 # S6ServiceManager (container-only)
 #
-# Per-profile gateways are registered dynamically when `hermes profile create`
+# Per-profile gateways are registered dynamically when `oc profile create`
 # runs inside the container (Phase 4). Static services (main-hermes, dashboard)
 # live in /etc/s6-overlay/s6-rc.d/ and are NOT managed by this class — they're
 # part of the image, not runtime-created.
@@ -359,7 +359,7 @@ def _seed_supervise_skeleton(svc_dir: Path) -> None:
     ``0700``. It also ``mkfifo``s ``<svc>/supervise/control`` with mode
     ``0600``. Because s6-supervise runs as PID 1's effective UID (root)
     these dirs end up root-owned mode 0700, and an unprivileged client
-    (the ``hermes`` user — UID 10000 — running every Hermes runtime
+    (the ``hermes`` user — UID 10000 — running every OpenComputer runtime
     operation via ``s6-setuidgid``) gets ``EACCES`` on any ``s6-svc``,
     ``s6-svstat``, or ``s6-svwait`` invocation against the slot.
 
@@ -495,7 +495,7 @@ class S6Error(RuntimeError):
 class GatewayNotRegisteredError(S6Error):
     """Raised when a lifecycle method targets a slot that doesn't exist.
 
-    Most commonly: ``hermes -p typo gateway start`` when no profile
+    Most commonly: ``oc -p typo gateway start`` when no profile
     ``typo`` exists. Carries the unprefixed profile name (not the
     full ``gateway-<profile>`` service-dir name) so callers can phrase
     a user-facing message like "no such gateway 'typo'".
@@ -505,7 +505,7 @@ class GatewayNotRegisteredError(S6Error):
         self.profile = profile
         super().__init__(
             f"no such gateway {profile!r}: register it with "
-            f"`hermes profile create {profile}` first, or pass "
+            f"`oc profile create {profile}` first, or pass "
             "an existing profile name via `-p <name>`",
             service=f"gateway-{profile}",
         )
@@ -571,10 +571,10 @@ class S6ServiceManager:
              unprivileged gateway process.
           3. Activates the bundled venv.
           4. Drops to the hermes user and exec's
-             ``hermes -p <profile> gateway run`` (or just ``hermes
+             ``oc -p <profile> gateway run`` (or just ``hermes
              gateway run`` for the default profile — see below).
 
-        Special case: ``profile == "default"`` emits ``hermes gateway
+        Special case: ``profile == "default"`` emits ``oc gateway
         run`` with **no** ``-p`` flag. This is the sentinel for "the
         root HERMES_HOME profile" (the implicit profile that exists at
         the top of $HERMES_HOME, not under profiles/). It must be
@@ -615,9 +615,9 @@ class S6ServiceManager:
         # guard.
         lines.append("export HERMES_S6_SUPERVISED_CHILD=1")
         if profile == "default":
-            gateway_cmd = "hermes gateway run"
+            gateway_cmd = "oc gateway run"
         else:
-            gateway_cmd = f"hermes -p {shlex.quote(profile)} gateway run"
+            gateway_cmd = f"oc -p {shlex.quote(profile)} gateway run"
         # Skip the drop when already non-root (setgroups() lacks CAP_SETGID →
         # s6 boot-loop).
         lines.append(f'[ "$(id -u)" = 0 ] || exec {gateway_cmd}')
@@ -651,7 +651,7 @@ class S6ServiceManager:
              banner output and other plain stdout writes.)
           2. ``T <log_dir>`` — also write a timestamped copy to the
              rotated log directory (``current`` + archived ``@*.s``
-             files). This is what ``hermes logs`` reads and what
+             files). This is what ``oc logs`` reads and what
              persists across container restarts via the volume mount.
 
         ``T`` is non-sticky: it only prefixes lines for the next
@@ -769,7 +769,7 @@ class S6ServiceManager:
         BEFORE sending the down command, so the gateway's shutdown
         handler recognises this SIGTERM as an operator-initiated stop
         and persists ``gateway_state=stopped`` (respecting the explicit
-        intent). Without the marker, an intentional ``hermes gateway
+        intent). Without the marker, an intentional ``oc gateway
         stop`` is indistinguishable from the container/s6 SIGTERM sent on
         ``docker restart``; the latter must NOT persist ``stopped`` or
         container_boot refuses to auto-start on the next boot (#42675).

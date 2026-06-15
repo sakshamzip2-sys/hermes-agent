@@ -62,7 +62,7 @@ def _guard_agent_created_enabled() -> bool:
     Off by default because the agent can already execute the same code
     paths via terminal() with no gate, so the scan adds friction without
     meaningful security.  Users who want belt-and-suspenders can turn it
-    on via `hermes config set skills.guard_agent_created true`.
+    on via `oc config set skills.guard_agent_created true`.
     """
     try:
         from hermes_cli.config import load_config
@@ -152,7 +152,7 @@ def _pinned_guard(name: str) -> Optional[str]:
             return (
                 f"Skill '{name}' is pinned and cannot be deleted by "
                 f"skill_manage. Ask the user to run "
-                f"`hermes curator unpin {name}` if they want to delete it. "
+                f"`oc curator unpin {name}` if they want to delete it. "
                 f"Patches and edits are allowed on pinned skills; only "
                 f"deletion is blocked."
             )
@@ -296,7 +296,7 @@ def _find_skill(name: str) -> Optional[Dict[str, Any]]:
 
 
 def _find_skill_in_other_profiles(name: str) -> List[Tuple[str, Path]]:
-    """Look for ``name`` under SKILL.md across OTHER Hermes profiles.
+    """Look for ``name`` under SKILL.md across OTHER OpenComputer profiles.
 
     Returns a list of ``(profile_name, skill_dir)`` pairs. Used to make
     the "Skill X not found" error explain when the user is editing the
@@ -379,7 +379,7 @@ def _skill_not_found_error(name: str, suffix: str = "") -> str:
             base += (
                 f" A skill by that name exists in profile "
                 f"'{other_profile}' ({other_path}). To edit a skill in "
-                f"another profile, switch profiles (`hermes -p "
+                f"another profile, switch profiles (`oc -p "
                 f"{other_profile}`) or operate via explicit file tools "
                 f"with ``cross_profile=True``."
             )
@@ -387,7 +387,7 @@ def _skill_not_found_error(name: str, suffix: str = "") -> str:
             names = ", ".join(f"'{p}'" for p, _ in others)
             base += (
                 f" Skills by that name exist in other profiles: {names}. "
-                f"Switch profiles (`hermes -p <name>`) to edit there, or "
+                f"Switch profiles (`oc -p <name>`) to edit there, or "
                 f"operate via explicit file tools with ``cross_profile=True``."
             )
     else:
@@ -1016,7 +1016,7 @@ SKILL_MANAGE_SCHEMA = {
         "Good skills: trigger conditions, numbered steps with exact commands, "
         "pitfalls section, verification steps. Use skill_view() to see format examples.\n\n"
         "Pinned skills are protected from deletion only — skill_manage(action='delete') "
-        "will refuse with a message pointing the user to `hermes curator unpin <name>`. "
+        "will refuse with a message pointing the user to `oc curator unpin <name>`. "
         "Patches and edits go through on pinned skills so you can still improve them as "
         "pitfalls come up; pin only guards against irrecoverable loss."
     ),

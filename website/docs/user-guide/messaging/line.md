@@ -1,16 +1,16 @@
 ---
 sidebar_position: 17
 title: "LINE"
-description: "Set up Hermes Agent as a LINE Messaging API bot"
+description: "Set up OpenComputer as a LINE Messaging API bot"
 ---
 
 # LINE Setup
 
-Run Hermes Agent as a [LINE](https://line.me/) bot via the official LINE Messaging API. The adapter lives as a bundled platform plugin under `plugins/platforms/line/` — no core edits, just enable it like any other platform.
+Run OpenComputer as a [LINE](https://line.me/) bot via the official LINE Messaging API. The adapter lives as a bundled platform plugin under `plugins/platforms/line/` — no core edits, just enable it like any other platform.
 
 LINE is the dominant messaging app in Japan, Taiwan, and Thailand. If your users live there, this is how they reach you.
 
-> Run `hermes gateway setup` and pick **LINE** for a guided walk-through.
+> Run `opencomputer gateway setup` and pick **LINE** for a guided walk-through.
 
 ## How the bot responds
 
@@ -46,16 +46,16 @@ cloudflared tunnel --url http://localhost:8646
 ngrok http 8646
 
 # devtunnel
-devtunnel create hermes-line --allow-anonymous
-devtunnel port create hermes-line -p 8646 --protocol https
-devtunnel host hermes-line
+devtunnel create opencomputer-line --allow-anonymous
+devtunnel port create opencomputer-line -p 8646 --protocol https
+devtunnel host opencomputer-line
 ```
 
 Copy the `https://...` URL — you'll set it as the webhook URL below. **Leave the tunnel running** while testing. For production, set up a fixed Cloudflare named tunnel so the webhook URL doesn't change on restart.
 
 ---
 
-## Step 3: Configure Hermes
+## Step 3: Configure OpenComputer
 
 Add to `~/.hermes/.env`:
 
@@ -100,7 +100,7 @@ Back in the LINE console:
 ## Step 5: Run the gateway
 
 ```bash
-hermes gateway
+opencomputer gateway
 ```
 
 The agent log shows:
@@ -188,7 +188,7 @@ Cron jobs with `deliver: line` route to `LINE_HOME_CHANNEL`. The adapter ships a
 
 **Postback button never appears.** Either the LLM responded faster than `LINE_SLOW_RESPONSE_THRESHOLD`, or another bubble (tool-progress, streaming) consumed the reply token first. See the suppression block under "Slow LLM responses".
 
-**"already in use by another profile".** The same channel access token is bound to another running Hermes profile. Stop the other gateway or use a separate channel.
+**"already in use by another profile".** The same channel access token is bound to another running OpenComputer profile. Stop the other gateway or use a separate channel.
 
 ---
 

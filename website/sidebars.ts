@@ -18,7 +18,7 @@ const sidebars: SidebarsConfig = {
     },
     {
       type: 'category',
-      label: 'Using Hermes',
+      label: 'Using OpenComputer',
       collapsed: true,
       items: [
         'user-guide/cli',

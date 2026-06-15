@@ -1,4 +1,4 @@
-"""``hermes gateway`` and ``hermes proxy`` subcommand parsers.
+"""``oc gateway`` and ``oc proxy`` subcommand parsers.
 
 Extracted verbatim from ``hermes_cli/main.py:main()`` (god-file Phase 2).
 Both parsers are built together because they shared one inline block (the
@@ -188,7 +188,7 @@ def build_gateway_parser(subparsers, *, cmd_gateway: Callable, cmd_proxy: Callab
         "migrate-legacy",
         help="Remove legacy hermes.service units from pre-rename installs",
         description=(
-            "Stop, disable, and remove legacy Hermes gateway unit files "
+            "Stop, disable, and remove legacy OpenComputer gateway unit files "
             "(e.g. hermes.service) left over from older installs. Profile "
             "units (hermes-gateway-<profile>.service) and unrelated "
             "third-party services are never touched."
@@ -232,7 +232,7 @@ def build_gateway_parser(subparsers, *, cmd_gateway: Callable, cmd_proxy: Callab
     proxy_start.add_argument(
         "--provider",
         default="nous",
-        help="Upstream provider: nous or xai (default: nous). See `hermes proxy providers`.",
+        help="Upstream provider: nous or xai (default: nous). See `oc proxy providers`.",
     )
     proxy_start.add_argument(
         "--host",

@@ -1,8 +1,8 @@
 """
-Unified self-relaunch for Hermes CLI.
+Unified self-relaunch for OpenComputer CLI.
 
 Preserves critical flags (--tui, --dev, --profile, --model, etc.) across
-process replacement so that ``hermes sessions browse`` or post-setup relaunch
+process replacement so that ``oc sessions browse`` or post-setup relaunch
 doesn't silently drop the user's UI mode or other preferences.
 
 Also works when ``hermes`` is not on PATH (e.g. ``nix run`` or ``python -m``).
@@ -175,7 +175,7 @@ def relaunch(
     The Windows-correct pattern is: spawn the child with ``subprocess.run``
     (which routes through ``cmd.exe`` via ``shell=False`` + PATHEXT resolution),
     wait for it to exit, then propagate its exit code via ``sys.exit``.
-    That's functionally equivalent — the user sees "hermes exited, then
+    That's functionally equivalent — the user sees "oc exited, then
     new hermes started" — just with two PIDs in play instead of one.
     """
     new_argv = build_relaunch_argv(

@@ -14,7 +14,7 @@ description: "通过 AgentMail 为 Agent 提供专属电子邮件收件箱"
 
 | | |
 |---|---|
-| 来源 | 可选 — 使用 `hermes skills install official/email/agentmail` 安装 |
+| 来源 | 可选 — 使用 `opencomputer skills install official/email/agentmail` 安装 |
 | 路径 | `optional-skills/email/agentmail` |
 | 版本 | `1.0.0` |
 | 平台 | linux, macos, windows |
@@ -23,7 +23,7 @@ description: "通过 AgentMail 为 Agent 提供专属电子邮件收件箱"
 ## 参考：完整 SKILL.md
 
 :::info
-以下是 Hermes 在触发此 skill 时加载的完整 skill 定义。这是 skill 激活时 Agent 所看到的指令内容。
+以下是 OpenComputer 在触发此 skill 时加载的完整 skill 定义。这是 skill 激活时 Agent 所看到的指令内容。
 :::
 
 # AgentMail — Agent 专属电子邮件收件箱
@@ -62,9 +62,9 @@ mcp_servers:
       AGENTMAIL_API_KEY: "am_your_key_here"
 ```
 
-### 3. 重启 Hermes
+### 3. 重启 OpenComputer
 ```bash
-hermes
+opencomputer
 ```
 所有 11 个 AgentMail 工具现已自动可用。
 
@@ -117,7 +117,7 @@ hermes
 
 **Agent 对人类的外发联系：**
 ```
-1. create_inbox (username: "hermes-outreach")
+1. create_inbox (username: "opencomputer-outreach")
 2. send_message (to: user@example.com, subject: "Hello", text: "...")
 3. list_threads 检查回复
 ```
@@ -132,7 +132,7 @@ hermes
 ## 验证
 配置完成后，使用以下命令测试：
 ```
-hermes --toolsets mcp -q "Create an AgentMail inbox called test-agent and tell me its email address"
+opencomputer --toolsets mcp -q "Create an AgentMail inbox called test-agent and tell me its email address"
 ```
 应返回新收件箱的地址。
 

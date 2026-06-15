@@ -52,7 +52,7 @@ class TestHandleUpdateCommand:
         monkeypatch.setenv("HERMES_MANAGED", "homebrew")
 
         # Guard: prevent any accidental fall-through from spawning a real
-        # `hermes update --gateway` against the CI checkout. The managed-install
+        # `oc update --gateway` against the CI checkout. The managed-install
         # guard should return before Popen is ever reached, but mock it as
         # belt-and-suspenders so a premature return doesn't corrupt the repo.
         with patch("subprocess.Popen") as mock_popen:
@@ -126,7 +126,7 @@ class TestHandleUpdateCommand:
             result = await runner._handle_update_command(event)
 
         assert "Could not locate" in result
-        assert "hermes update" in result
+        assert "oc update" in result
 
     @pytest.mark.asyncio
     async def test_fallback_to_sys_executable(self, tmp_path):
@@ -153,7 +153,7 @@ class TestHandleUpdateCommand:
              patch("subprocess.Popen", mock_popen):
             result = await runner._handle_update_command(event)
 
-        assert "Starting Hermes update" in result
+        assert "Starting OpenComputer update" in result
         call_args = mock_popen.call_args[0][0]
         # The update_cmd uses sys.executable -m hermes_cli.main
         joined = " ".join(call_args) if isinstance(call_args, list) else call_args
@@ -282,7 +282,7 @@ class TestHandleUpdateCommand:
         assert call_args[0] == "/usr/bin/setsid"
         assert call_args[1] == "bash"
         assert ".update_exit_code" in call_args[-1]
-        assert "Starting Hermes update" in result
+        assert "Starting OpenComputer update" in result
 
     @pytest.mark.asyncio
     async def test_fallback_when_no_setsid(self, tmp_path):
@@ -322,7 +322,7 @@ class TestHandleUpdateCommand:
         # start_new_session=True should be in kwargs
         call_kwargs = mock_popen.call_args[1]
         assert call_kwargs.get("start_new_session") is True
-        assert "Starting Hermes update" in result
+        assert "Starting OpenComputer update" in result
 
     @pytest.mark.asyncio
     async def test_popen_failure_cleans_up(self, tmp_path):
@@ -452,7 +452,7 @@ class TestUpdateCommandPlatformGate:
 
         # The gate must NOT have rejected us — anything other than the
         # ``platform_not_messaging`` rejection string is acceptable here.
-        # Later steps may legitimately return success ("Starting Hermes
+        # Later steps may legitimately return success ("Starting OpenComputer
         # update…") or fail for environment reasons.
         assert "only available from messaging platforms" not in result
 

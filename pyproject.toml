@@ -270,6 +270,15 @@ all = [
 ]
 
 [project.scripts]
+# Primary command: oc
+oc = "hermes_cli.main:main"
+oc-agent = "run_agent:main"
+oc-acp = "acp_adapter.entry:main"
+# Long-form aliases
+opencomputer = "hermes_cli.main:main"
+opencomputer-agent = "run_agent:main"
+opencomputer-acp = "acp_adapter.entry:main"
+# Backwards-compatible aliases (kept so existing installs/scripts keep working)
 hermes = "hermes_cli.main:main"
 hermes-agent = "run_agent:main"
 hermes-acp = "acp_adapter.entry:main"

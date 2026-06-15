@@ -1,7 +1,7 @@
 """
 Status command for hermes CLI.
 
-Shows the status of all Hermes Agent components.
+Shows the status of all OpenComputer components.
 """
 
 import os
@@ -33,7 +33,7 @@ def redact_key(key: str) -> str:
     """Redact an API key for display.
 
     Thin wrapper over :func:`agent.redact.mask_secret`. Preserves the
-    "(not set)" placeholder in dim color to match ``hermes config``'s
+    "(not set)" placeholder in dim color to match ``oc config``'s
     output (previously this variant was missing the DIM color —
     consolidated via PR that also introduced ``mask_secret``).
     """
@@ -90,13 +90,13 @@ from hermes_constants import is_termux as _is_termux
 
 
 def show_status(args):
-    """Show status of all Hermes Agent components."""
+    """Show status of all OpenComputer components."""
     show_all = getattr(args, 'all', False)
     deep = getattr(args, 'deep', False)
 
     print()
     print(color("┌─────────────────────────────────────────────────────────┐", Colors.CYAN))
-    print(color("│                 ⚕ Hermes Agent Status                  │", Colors.CYAN))
+    print(color("│                 ⚕ OpenComputer Status                  │", Colors.CYAN))
     print(color("└─────────────────────────────────────────────────────────┘", Colors.CYAN))
 
     # =========================================================================
@@ -581,6 +581,6 @@ def show_status(args):
 
     print()
     print(color("─" * 60, Colors.DIM))
-    print(color("  Run 'hermes doctor' for detailed diagnostics", Colors.DIM))
-    print(color("  Run 'hermes setup' to configure", Colors.DIM))
+    print(color("  Run 'oc doctor' for detailed diagnostics", Colors.DIM))
+    print(color("  Run 'oc setup' to configure", Colors.DIM))
     print()

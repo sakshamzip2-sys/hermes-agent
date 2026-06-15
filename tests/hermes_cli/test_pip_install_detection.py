@@ -56,7 +56,7 @@ def test_container_without_stamp_is_not_docker(tmp_path):
     ``test_stamp_file_takes_precedence``; the published image -> ``docker``),
     so neither hits this path. An unsupported manual install dropped into a
     container has no stamp and was wrongly classified as the published Docker
-    image, so ``hermes update`` refused to run. With a ``.git`` checkout it
+    image, so ``oc update`` refused to run. With a ``.git`` checkout it
     must resolve to ``git``.
     """
     (tmp_path / ".git").mkdir()

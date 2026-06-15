@@ -193,8 +193,8 @@ def test_gateway_cmd_script_uses_pythonw_without_replace_or_start_churn(monkeypa
     monkeypatch.setattr(gateway_windows, "_derive_venv_pythonw", lambda exe: exe.replace("python.exe", "pythonw.exe"))
 
     content = gateway_windows._build_gateway_cmd_script(
-        r"C:\\Hermes\\hermes-agent\\venv\\Scripts\\python.exe",
-        r"C:\\Hermes\\hermes-agent",
+        r"C:\\OpenComputer\\hermes-agent\\venv\\Scripts\\python.exe",
+        r"C:\\OpenComputer\\hermes-agent",
         r"C:\\HermesHome\\profiles\\alice",
         "--profile alice",
     )
@@ -221,7 +221,7 @@ def test_elevated_gateway_command_uses_pythonw_hidden_console(monkeypatch):
     monkeypatch.setattr(gateway_windows, "_assert_windows", lambda: None)
     monkeypatch.setattr(gateway_windows, "_current_profile_cli_args", lambda: ["--profile", "alice"])
     monkeypatch.setattr(gateway_windows, "_derive_venv_pythonw", lambda exe: exe.replace("python.exe", "pythonw.exe"))
-    monkeypatch.setattr(gateway_windows.sys, "executable", r"C:\Hermes\venv\Scripts\python.exe")
+    monkeypatch.setattr(gateway_windows.sys, "executable", r"C:\OpenComputer\venv\Scripts\python.exe")
     monkeypatch.setattr(gateway_windows.ctypes, "windll", FakeWindll(), raising=False)
 
     assert gateway_windows._launch_elevated_gateway_command("install", ["--start-now", "--elevated-handoff"])
@@ -354,7 +354,7 @@ def test_install_access_denied_launches_elevated_install_before_startup_fallback
     out = capsys.readouterr().out
     assert "administrator approval" in out
     assert "UAC is Windows' admin approval prompt" in out
-    assert "Launched elevated Hermes gateway install prompt" in out
+    assert "Launched elevated OpenComputer gateway install prompt" in out
 
 
 def test_install_prompts_start_choices_before_uac(monkeypatch, tmp_path, capsys):
@@ -459,7 +459,7 @@ def test_install_startup_fallback_does_not_auto_spawn_when_gateway_stopped(monke
     assert ("next_steps", None) in calls
     out = capsys.readouterr().out
     assert "gateway not started now" in out
-    assert "hermes --profile alice gateway start" in out
+    assert "oc --profile alice gateway start" in out
 
 
 def test_install_access_denied_declined_elevation_uses_startup_fallback(monkeypatch, tmp_path, capsys):
@@ -529,7 +529,7 @@ def test_uninstall_access_denied_prompts_before_elevating(monkeypatch, tmp_path,
     out = capsys.readouterr().out
     assert "uninstall needs administrator approval" in out
     assert "UAC is Windows' admin approval prompt" in out
-    assert "Launched elevated Hermes gateway uninstall prompt" in out
+    assert "Launched elevated OpenComputer gateway uninstall prompt" in out
 
 
 def test_uninstall_access_denied_declined_keeps_task_and_cleans_files(monkeypatch, tmp_path, capsys):
@@ -572,7 +572,7 @@ def test_uninstall_access_denied_declined_keeps_task_and_cleans_files(monkeypatc
 #
 # Background: on Windows, asyncio.add_signal_handler raises NotImplementedError,
 # so the gateway's SIGTERM handler (which drains in-flight agents and writes
-# resume_pending=True) never fires when `hermes gateway stop` kills the
+# resume_pending=True) never fires when `oc gateway stop` kills the
 # process. The fix: stop() writes the planned_stop_marker first, waits for
 # the gateway's marker-watcher thread to drain + exit cleanly, then escalates
 # to taskkill if drain times out.
@@ -669,7 +669,7 @@ def test_stop_escalates_to_force_kill_when_drain_times_out(monkeypatch):
 
     Drain timeout = gateway is stuck or unresponsive. Without the
     taskkill /T /F escalation, the gateway stays alive and the next
-    `hermes gateway start` fails with "another instance is running".
+    `oc gateway start` fails with "another instance is running".
     """
     pid = 77777
     events = []

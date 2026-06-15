@@ -1,6 +1,6 @@
 """
 SQLite-backed fact store with entity resolution and trust scoring.
-Single-user Hermes memory store plugin.
+Single-user OpenComputer memory store plugin.
 """
 
 import re

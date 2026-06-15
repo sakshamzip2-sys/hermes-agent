@@ -116,7 +116,7 @@ describe('checkBackendUpdates', () => {
       behind: 2,
       update_available: true,
       can_apply: true,
-      update_command: 'hermes update',
+      update_command: 'oc update',
       message: null,
       commits: [{ sha: 'abc1234', summary: 'feat: x', author: 'a', at: 1 }]
     })
@@ -172,7 +172,7 @@ describe('applyBackendUpdate recovery', () => {
   it('waits for the backend to return after the restart drops the connection, then clears the overlay', async () => {
     updateHermesSpy.mockResolvedValue({ ok: true, name: 'update', pid: 1 })
     getActionStatusSpy.mockRejectedValue(new Error('ECONNREFUSED'))
-    checkHermesUpdateSpy.mockResolvedValue({ install_method: 'git', current_version: '0.16.0', behind: 0, update_available: false, can_apply: true, update_command: 'hermes update', message: null })
+    checkHermesUpdateSpy.mockResolvedValue({ install_method: 'git', current_version: '0.16.0', behind: 0, update_available: false, can_apply: true, update_command: 'oc update', message: null })
 
     const promise = applyBackendUpdate()
     await vi.advanceTimersByTimeAsync(5000)

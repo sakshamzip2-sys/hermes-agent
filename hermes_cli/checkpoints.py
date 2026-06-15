@@ -1,4 +1,4 @@
-"""`hermes checkpoints` CLI subcommand.
+"""`oc checkpoints` CLI subcommand.
 
 Gives users direct visibility and control over the filesystem checkpoint
 store at ``~/.hermes/checkpoints/``.  Actions:
@@ -195,8 +195,8 @@ def cmd_clear_legacy(args: argparse.Namespace) -> int:
 
 
 def register_cli(parser: argparse.ArgumentParser) -> None:
-    """Wire subcommands onto the ``hermes checkpoints`` parser."""
-    parser.set_defaults(func=cmd_status)  # bare `hermes checkpoints` → status
+    """Wire subcommands onto the ``oc checkpoints`` parser."""
+    parser.set_defaults(func=cmd_status)  # bare `oc checkpoints` → status
     subs = parser.add_subparsers(dest="checkpoints_command", metavar="COMMAND")
 
     p_status = subs.add_parser(

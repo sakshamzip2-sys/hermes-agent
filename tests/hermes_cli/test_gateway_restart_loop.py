@@ -25,12 +25,12 @@ class TestGatewayLifecyclePattern:
     """Verify the regex catches gateway lifecycle commands."""
 
     @pytest.mark.parametrize("text", [
-        "hermes gateway restart",
-        "hermes gateway stop",
-        "hermes gateway start",
-        "hermes  gateway  restart",         # double spaces
+        "oc gateway restart",
+        "oc gateway stop",
+        "oc gateway start",
+        "oc  gateway  restart",         # double spaces
         "Hermez Gateway Restart".lower().replace("z", "s"),  # case handled
-        "HERMES GATEWAY RESTART",           # uppercase
+        "OPENCOMPUTER GATEWAY RESTART",           # uppercase
     ])
     def test_hermes_gateway_commands(self, text):
         assert _contains_gateway_lifecycle_command(text), f"Should match: {text!r}"
@@ -55,9 +55,9 @@ class TestGatewayLifecyclePattern:
 
     @pytest.mark.parametrize("text", [
         "restart the server application",
-        "hermes cron list",
-        "hermes update",
-        "hermes config set model claude",
+        "oc cron list",
+        "oc update",
+        "oc config set model claude",
         "echo 'just a normal cron job'",
         "run the backup script",
         "gateway is running fine",

@@ -7,7 +7,7 @@ import { ArrowRight } from 'lucide-react'
  * Welcome screen.
  *
  * Mirrors the desktop's chat intro (apps/desktop/src/components/chat/intro.tsx):
- *   - HERMES AGENT wordmark rendered in Collapse Bold, uppercase, tracked
+ *   - OPENCOMPUTER wordmark rendered in Collapse Bold, uppercase, tracked
  *   - mix-blend-plus-lighter so the type "glows" on the canvas
  *   - fit-text utility so the wordmark sizes itself to the column
  *
@@ -31,9 +31,9 @@ export default function Welcome() {
           }
         >
           <span>
-            <span>HERMES AGENT</span>
+            <span>OPENCOMPUTER</span>
           </span>
-          <span aria-hidden="true">HERMES AGENT</span>
+          <span aria-hidden="true">OPENCOMPUTER</span>
         </p>
 
         <p className="m-0 text-center text-base leading-normal tracking-tight text-muted-foreground">
@@ -47,7 +47,7 @@ export default function Welcome() {
         size="lg"
         className="group inline-flex items-center gap-2 px-6"
       >
-        Install Hermes
+        Install OpenComputer
         <ArrowRight
           size={18}
           className="transition-transform group-hover:translate-x-0.5"

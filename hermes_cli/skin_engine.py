@@ -1,4 +1,4 @@
-"""Hermes CLI skin/theme engine.
+"""OpenComputer CLI skin/theme engine.
 
 A data-driven skin system that lets users customize the CLI's visual appearance.
 Skins are defined as YAML files in ~/.hermes/skins/ or as built-in presets.
@@ -65,10 +65,10 @@ All fields are optional. Missing values inherit from the ``default`` skin.
 
     # Branding: text strings used throughout the CLI
     branding:
-      agent_name: "Hermes Agent"          # Banner title, status display
+      agent_name: "OpenComputer"          # Banner title, status display
       welcome: "Welcome message"          # Shown at CLI startup
       goodbye: "Goodbye! ⚕"              # Shown on exit
-      response_label: " ⚕ Hermes "       # Response box header label
+      response_label: " ⚕ OpenComputer "       # Response box header label
       prompt_symbol: "❯"                 # Input prompt symbol (bare token; renderers add trailing space)
       help_header: "(^_^)? Commands"      # /help header text
 
@@ -90,7 +90,7 @@ USAGE
 
     skin = get_active_skin()
     print(skin.colors["banner_title"])    # "#FFD700"
-    print(skin.get_branding("agent_name"))  # "Hermes Agent"
+    print(skin.get_branding("agent_name"))  # "OpenComputer"
 
     set_active_skin("ares")               # Switch to built-in ares skin
     set_active_skin("mytheme")            # Switch to user skin from ~/.hermes/skins/
@@ -98,7 +98,7 @@ USAGE
 BUILT-IN SKINS
 ==============
 
-- ``default`` — Classic Hermes gold/kawaii (the current look)
+- ``default`` — Classic OpenComputer gold/kawaii (the current look)
 - ``ares``    — Crimson/bronze war-god theme with custom spinner wings
 - ``mono``    — Clean grayscale monochrome
 - ``slate``   — Cool blue developer-focused theme
@@ -164,33 +164,36 @@ class SkinConfig:
 _BUILTIN_SKINS: Dict[str, Dict[str, Any]] = {
     "default": {
         "name": "default",
-        "description": "Classic Hermes — gold and kawaii",
+        "description": "Classic OpenComputer — pink and kawaii",
         "colors": {
-            "banner_border": "#CD7F32",
-            "banner_title": "#FFD700",
-            "banner_accent": "#FFBF00",
-            "banner_dim": "#B8860B",
-            "banner_text": "#FFF8DC",
-            "ui_accent": "#FFBF00",
-            "ui_label": "#DAA520",
+            "banner_border": "#C71585",
+            "banner_title": "#FF5FAF",
+            "banner_accent": "#FF2E97",
+            "banner_dim": "#9E1060",
+            "banner_text": "#FFD6EC",
+            "ui_accent": "#FF2E97",
+            "ui_label": "#FF5FAF",
             "ui_ok": "#4caf50",
             "ui_error": "#ef5350",
-            "ui_warn": "#ffa726",
-            "prompt": "#FFF8DC",
-            "input_rule": "#CD7F32",
-            "response_border": "#FFD700",
+            "ui_warn": "#FF4FA0",
+            "prompt": "#FFD6EC",
+            "input_rule": "#C71585",
+            "response_border": "#FF5FAF",
             "status_bar_bg": "#1a1a2e",
-            "session_label": "#DAA520",
+            "status_bar_strong": "#FF5FAF",
+            "status_bar_warn": "#FF4FA0",
+            "status_bar_bad": "#FF1493",
+            "session_label": "#FF5FAF",
             "session_border": "#8B8682",
         },
         "spinner": {
             # Empty = use hardcoded defaults in display.py
         },
         "branding": {
-            "agent_name": "Hermes Agent",
-            "welcome": "Welcome to Hermes Agent! Type your message or /help for commands.",
+            "agent_name": "OpenComputer",
+            "welcome": "Welcome to OpenComputer! Type your message or /help for commands.",
             "goodbye": "Goodbye! ⚕",
-            "response_label": " ⚕ Hermes ",
+            "response_label": " ⚕ OpenComputer ",
             "prompt_symbol": "❯",
             "help_header": "(^_^)? Available Commands",
         },
@@ -298,10 +301,10 @@ _BUILTIN_SKINS: Dict[str, Dict[str, Any]] = {
         },
         "spinner": {},
         "branding": {
-            "agent_name": "Hermes Agent",
-            "welcome": "Welcome to Hermes Agent! Type your message or /help for commands.",
+            "agent_name": "OpenComputer",
+            "welcome": "Welcome to OpenComputer! Type your message or /help for commands.",
             "goodbye": "Goodbye! ⚕",
-            "response_label": " ⚕ Hermes ",
+            "response_label": " ⚕ OpenComputer ",
             "prompt_symbol": "❯",
             "help_header": "[?] Available Commands",
         },
@@ -337,10 +340,10 @@ _BUILTIN_SKINS: Dict[str, Dict[str, Any]] = {
         },
         "spinner": {},
         "branding": {
-            "agent_name": "Hermes Agent",
-            "welcome": "Welcome to Hermes Agent! Type your message or /help for commands.",
+            "agent_name": "OpenComputer",
+            "welcome": "Welcome to OpenComputer! Type your message or /help for commands.",
             "goodbye": "Goodbye! ⚕",
-            "response_label": " ⚕ Hermes ",
+            "response_label": " ⚕ OpenComputer ",
             "prompt_symbol": "❯",
             "help_header": "(^_^)? Available Commands",
         },
@@ -374,10 +377,10 @@ _BUILTIN_SKINS: Dict[str, Dict[str, Any]] = {
         },
         "spinner": {},
         "branding": {
-            "agent_name": "Hermes Agent",
-            "welcome": "Welcome to Hermes Agent! Type your message or /help for commands.",
+            "agent_name": "OpenComputer",
+            "welcome": "Welcome to OpenComputer! Type your message or /help for commands.",
             "goodbye": "Goodbye! ⚕",
-            "response_label": " ⚕ Hermes ",
+            "response_label": " ⚕ OpenComputer ",
             "prompt_symbol": "❯",
             "help_header": "[?] Available Commands",
         },
@@ -411,10 +414,10 @@ _BUILTIN_SKINS: Dict[str, Dict[str, Any]] = {
         },
         "spinner": {},
         "branding": {
-            "agent_name": "Hermes Agent",
-            "welcome": "Welcome to Hermes Agent! Type your message or /help for commands.",
+            "agent_name": "OpenComputer",
+            "welcome": "Welcome to OpenComputer! Type your message or /help for commands.",
             "goodbye": "Goodbye! \u2695",
-            "response_label": " \u2695 Hermes ",
+            "response_label": " \u2695 OpenComputer ",
             "prompt_symbol": "\u276f",
             "help_header": "(^_^)? Available Commands",
         },

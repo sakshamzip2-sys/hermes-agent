@@ -44,7 +44,7 @@ function waitForDashboardPort(child, timeoutMs = 45_000) {
 
     function onExit(code, signal) {
       cleanup()
-      reject(new Error(`Hermes backend: exited before port announcement (${signal || code})`))
+      reject(new Error(`OpenComputer backend: exited before port announcement (${signal || code})`))
     }
 
     function onError(err) {
@@ -54,7 +54,7 @@ function waitForDashboardPort(child, timeoutMs = 45_000) {
 
     const timer = setTimeout(() => {
       cleanup()
-      reject(new Error(`Timed out waiting for Hermes backend port announcement (${timeoutMs}ms)`))
+      reject(new Error(`Timed out waiting for OpenComputer backend port announcement (${timeoutMs}ms)`))
     }, timeoutMs)
 
     child.stdout.on('data', onData)

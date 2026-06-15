@@ -299,7 +299,7 @@ class TestSlackNativeSlashes:
 
     def test_hermes_catchall_is_first(self):
         """``/hermes`` must be reserved as the first slot so the legacy
-        ``/hermes <subcommand>`` form keeps working after we add new
+        ``/oc <subcommand>`` form keeps working after we add new
         commands and hit the 50-slash cap."""
         slashes = slack_native_slashes()
         assert slashes[0][0] == "hermes"
@@ -329,7 +329,7 @@ class TestSlackNativeSlashes:
     def test_excludes_slack_reserved_commands(self):
         """Slack built-in commands (e.g. /status, /me, /join) cannot be
         registered by apps and must be excluded from the manifest.
-        Users can still reach them via /hermes <command>."""
+        Users can still reach them via /oc <command>."""
         names = {n for n, _d, _h in slack_native_slashes()}
         for reserved in _SLACK_RESERVED_COMMANDS:
             assert reserved not in names, (
@@ -346,7 +346,7 @@ class TestSlackNativeSlashes:
         explicitly pinned ``_SLACK_PRIORITY_ALIASES`` are guaranteed slots;
         every other alias (e.g. ``reset``) may be clamped once the registry
         fills the cap — canonical commands win the contest, and clamped
-        aliases stay reachable via ``/hermes <alias>``.
+        aliases stay reachable via ``/oc <alias>``.
         """
         slashes = slack_native_slashes()
         names = {n for n, _d, _h in slashes}
@@ -379,7 +379,7 @@ class TestSlackNativeSlashes:
         slack_norm = {_norm(n) for n in slack_names}
         tg_norm = {_norm(n) for n in tg_names}
         reserved_norm = {_norm(n) for n in _SLACK_RESERVED_COMMANDS}
-        # Commands deliberately routed through /hermes <command> on Slack only
+        # Commands deliberately routed through /oc <command> on Slack only
         # (Slack's 50-slash cap) are expected to be absent from native slashes.
         via_hermes_norm = {_norm(n) for n in _SLACK_VIA_HERMES_ONLY}
         missing = (tg_norm - slack_norm) - reserved_norm - via_hermes_norm
@@ -389,7 +389,7 @@ class TestSlackNativeSlashes:
 
 
 class TestSlackAppManifest:
-    """Generated Slack app manifest (used by `hermes slack manifest`)."""
+    """Generated Slack app manifest (used by `oc slack manifest`)."""
 
     def test_returns_dict(self):
         m = slack_app_manifest()
@@ -409,7 +409,7 @@ class TestSlackAppManifest:
 
     def test_btw_is_in_manifest(self):
         """Regression: /btw must be a native Slack slash, not just a
-        /hermes subcommand."""
+        /oc subcommand."""
         m = slack_app_manifest()
         commands = [c["command"] for c in m["features"]["slash_commands"]]
         assert "/btw" in commands
@@ -1900,7 +1900,7 @@ class TestPluginCommandEnumeration:
         assert "background_job" not in names
 
     def test_plugin_command_appears_in_slack_subcommand_map(self, monkeypatch):
-        """/hermes metricas must route through the Slack subcommand map."""
+        """/oc metricas must route through the Slack subcommand map."""
         self._patch_plugin_commands(monkeypatch, {
             "metricas": {
                 "handler": lambda _a: "ok",

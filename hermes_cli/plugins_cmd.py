@@ -1,4 +1,4 @@
-"""``hermes plugins`` CLI subcommand — install, update, remove, and list plugins.
+"""``oc plugins`` CLI subcommand — install, update, remove, and list plugins.
 
 Plugins are installed from Git repositories into ``~/.hermes/plugins/``.
 Supports full URLs and ``owner/repo`` shorthand (resolves to GitHub).
@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 def _resolve_git_executable() -> Optional[str]:
     """Resolve a git binary for subprocess use when ``PATH`` may be minimal.
 
-    Matches other Hermes subprocess resolution: :func:`shutil.which` first,
+    Matches other OpenComputer subprocess resolution: :func:`shutil.which` first,
     then common Git for Windows install paths and POSIX defaults.
     """
     found = shutil.which("git")
@@ -491,14 +491,14 @@ def _install_plugin_core(identifier: str, *, force: bool) -> tuple[Path, dict, s
                 raise PluginOperationError(
                     f"Plugin '{plugin_name}' requires manifest_version {mv}, "
                     f"but this installer only supports up to {_SUPPORTED_MANIFEST_VERSION}. "
-                    f"Run {recommended_update_command()} to update Hermes.",
+                    f"Run {recommended_update_command()} to update OpenComputer.",
                 ) from None
 
         if target.exists():
             if not force:
                 raise PluginOperationError(
                     f"Plugin '{plugin_name}' already exists. Use force reinstall "
-                    f"or run `hermes plugins update {plugin_name}`.",
+                    f"or run `oc plugins update {plugin_name}`.",
                 )
             shutil.rmtree(target)
 
@@ -564,7 +564,7 @@ def cmd_install(
     ).exists():
         console.print(
             f"[yellow]Warning:[/yellow] {installed_name} doesn't contain plugin.yaml "
-            f"or __init__.py. It may not be a valid Hermes plugin.",
+            f"or __init__.py. It may not be a valid OpenComputer plugin.",
         )
 
     _prompt_plugin_env_vars(installed_manifest, console)
@@ -597,7 +597,7 @@ def cmd_install(
     else:
         console.print(
             f"[dim]Plugin installed but not enabled. "
-            f"Run `hermes plugins enable {installed_name}` to activate.[/dim]",
+            f"Run `oc plugins enable {installed_name}` to activate.[/dim]",
         )
 
     console.print("[dim]Restart the gateway for the plugin to take effect:[/dim]")
@@ -723,7 +723,7 @@ def _resolve_plugin_key(name: str) -> Optional[str]:
     returns the canonical key the loader gates on (``manifest.key`` or, for a
     flat plugin, the bare name). Returns ``None`` when no plugin matches.
 
-    This is the single normalization point so ``hermes plugins enable`` /
+    This is the single normalization point so ``oc plugins enable`` /
     ``disable`` write the same key that ``PluginManager`` matches against —
     nested category plugins (e.g. ``observability/nemo_relay``) included.
     """
@@ -908,7 +908,7 @@ def _plugin_status(name: str, enabled: set, disabled: set, key: str = "") -> str
 
 
 def _filter_plugin_entries(entries: list, args: Any, enabled: set, disabled: set) -> list:
-    """Apply ``hermes plugins list`` CLI filters."""
+    """Apply ``oc plugins list`` CLI filters."""
     filtered = entries
     if getattr(args, "no_bundled", False) or getattr(args, "user", False):
         filtered = [entry for entry in filtered if entry[3] != "bundled"]
@@ -1004,7 +1004,7 @@ def _discover_context_engines() -> list[tuple[str, str]]:
     """Return [(name, description), ...] for available context engines.
 
     Includes repo-shipped engines from ``plugins/context_engine/`` AND
-    plugin-registered engines (third-party engines installed as Hermes
+    plugin-registered engines (third-party engines installed as OpenComputer
     plugins via ``ctx.register_context_engine``). Repo-shipped descriptions
     win when a plugin-registered engine collides on name.
     """

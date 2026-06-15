@@ -500,7 +500,7 @@ class TestCookiePathRespectsPrefix:
         cookies = r.headers.get_list("set-cookie")
         pkce = next(c for c in cookies if "hermes_session_pkce" in c)
         # Browser only sends cookie back if the request path is under
-        # the cookie's Path attribute, so we need /hermes here. Bare
+        # the cookie's Path attribute, so we need /oc here. Bare
         # /-rooted cookies would still be sent but would also be sent
         # to /billing/... etc.
         assert "Path=/hermes" in pkce, (
@@ -619,7 +619,7 @@ class TestCookiePathRespectsPrefix:
         state = r1.headers["location"].split("state=")[1]
 
         # Round-trip the cookie by hand because TestClient's jar won't
-        # automatically send a Path=/hermes cookie to a /auth/callback
+        # automatically send a Path=/oc cookie to a /auth/callback
         # request path.
         r2 = gated_app_proxied.get(
             f"/auth/callback?code=stub_code&state={state}",

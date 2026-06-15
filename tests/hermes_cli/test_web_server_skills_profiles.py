@@ -157,7 +157,7 @@ class TestProfileScopedHubActions:
     def test_hub_install_spawns_with_profile_flag(
         self, client, isolated_profiles, monkeypatch
     ):
-        """Hub installs must go through a fresh ``hermes -p <profile>``
+        """Hub installs must go through a fresh ``oc -p <profile>``
         subprocess — the in-process scope can't reach skills_hub's
         import-time SKILLS_DIR binding."""
         import hermes_cli.web_server as web_server

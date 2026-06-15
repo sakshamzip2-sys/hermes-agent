@@ -1,17 +1,17 @@
 ---
-name: hermes-agent-skill-authoring
+name: opencomputer-skill-authoring
 description: "Author in-repo SKILL.md: frontmatter, validator, structure."
 version: 1.0.0
-author: Hermes Agent
+author: OpenComputer
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
-  hermes:
+  opencomputer:
     tags: [skills, authoring, hermes-agent, conventions, skill-md]
     related_skills: [plan, requesting-code-review]
 ---
 
-# Authoring Hermes-Agent Skills (in-repo)
+# Authoring OpenComputer-Agent Skills (in-repo)
 
 ## Overview
 
@@ -44,10 +44,10 @@ Peer-matched shape used by every skill under `skills/software-development/`:
 name: my-skill-name               # lowercase, hyphens, ≤64 chars (MAX_NAME_LENGTH)
 description: Use when <trigger>. <one-line behavior>.
 version: 1.0.0
-author: Hermes Agent
+author: OpenComputer
 license: MIT
 metadata:
-  hermes:
+  opencomputer:
     tags: [short, descriptive, tags]
     related_skills: [other-skill, another-skill]
 ---
@@ -78,7 +78,7 @@ One or two paragraphs: what and why.
 ## <Topic sections specific to the skill>
 - Quick-reference tables are common
 - Code blocks with exact commands
-- Hermes-specific recipes (tests via scripts/run_tests.sh, ui-tui paths, etc.)
+- OpenComputer-specific recipes (tests via scripts/run_tests.sh, ui-tui paths, etc.)
 
 ## Common Pitfalls
 Numbered list of mistakes and their fixes.

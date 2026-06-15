@@ -1,4 +1,4 @@
-"""Tests for ``hermes gui`` desktop launcher wiring."""
+"""Tests for ``oc gui`` desktop launcher wiring."""
 
 from __future__ import annotations
 
@@ -40,9 +40,9 @@ def _make_packaged_executable(root: Path, monkeypatch, platform: str = "darwin")
     monkeypatch.setattr(cli_main.sys, "platform", platform)
     desktop_dir = root / "apps" / "desktop"
     if platform == "darwin":
-        exe = desktop_dir / "release" / "mac-arm64" / "Hermes.app" / "Contents" / "MacOS" / "Hermes"
+        exe = desktop_dir / "release" / "mac-arm64" / "OpenComputer.app" / "Contents" / "MacOS" / "OpenComputer"
     elif platform == "win32":
-        exe = desktop_dir / "release" / "win-unpacked" / "Hermes.exe"
+        exe = desktop_dir / "release" / "win-unpacked" / "OpenComputer.exe"
     else:
         exe = desktop_dir / "release" / "linux-unpacked" / "hermes"
     exe.parent.mkdir(parents=True)
@@ -588,9 +588,9 @@ def test_stop_desktop_build_lock_terminates_only_release_procs(tmp_path, monkeyp
     desktop_dir = tmp_path / "apps" / "desktop"
     release = desktop_dir / "release" / "win-unpacked"
     release.mkdir(parents=True)
-    locker_exe = release / "Hermes.exe"
+    locker_exe = release / "OpenComputer.exe"
     locker_exe.write_text("", encoding="utf-8")
-    other_exe = tmp_path / "elsewhere" / "Hermes.exe"
+    other_exe = tmp_path / "elsewhere" / "OpenComputer.exe"
     other_exe.parent.mkdir(parents=True)
     other_exe.write_text("", encoding="utf-8")
 

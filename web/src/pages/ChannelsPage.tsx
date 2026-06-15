@@ -562,7 +562,7 @@ function TelegramOnboardingPanel({
     setDetectedOwnerId(null);
     setNewAllowedId("");
     try {
-      const res = await api.startTelegramOnboarding({ bot_name: "Hermes Agent" });
+      const res = await api.startTelegramOnboarding({ bot_name: "OpenComputer" });
       const dataUrl = await QRCode.toDataURL(res.qr_payload, {
         errorCorrectionLevel: "M",
         margin: 1,
@@ -599,7 +599,7 @@ function TelegramOnboardingPanel({
     setNewAllowedId("");
   };
 
-  // restart_started only means the `hermes gateway restart` child spawned —
+  // restart_started only means the `oc gateway restart` child spawned —
   // not that the restart will succeed (e.g. systemd linger missing, service
   // manager failure). Poll the action status briefly and surface a non-zero
   // exit via the manual-restart banner. Note: in no-service installs the

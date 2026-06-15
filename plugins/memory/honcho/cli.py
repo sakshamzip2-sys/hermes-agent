@@ -163,7 +163,7 @@ def cmd_disable(args) -> None:
 def cmd_sync(args) -> None:
     """Sync Honcho config to all existing profiles.
 
-    Scans all Hermes profiles and creates host blocks for any that don't
+    Scans all OpenComputer profiles and creates host blocks for any that don't
     have one yet. Inherits settings from the default host block.
     """
     try:
@@ -175,7 +175,7 @@ def cmd_sync(args) -> None:
 
     cfg = _read_config()
     if not cfg:
-        print("  No Honcho config found. Run 'hermes honcho setup' first.\n")
+        print("  No Honcho config found. Run 'oc honcho setup' first.\n")
         return
 
     hosts = cfg.get("hosts", {})
@@ -183,7 +183,7 @@ def cmd_sync(args) -> None:
     has_key = bool(cfg.get("apiKey") or os.environ.get("HONCHO_API_KEY"))
 
     if not default_block and not has_key:
-        print("  Honcho not configured on default profile. Run 'hermes honcho setup' first.\n")
+        print("  Honcho not configured on default profile. Run 'oc honcho setup' first.\n")
         return
 
     created = 0
@@ -209,7 +209,7 @@ def cmd_sync(args) -> None:
 def sync_honcho_profiles_quiet() -> int:
     """Sync Honcho host blocks for all profiles. Returns count of newly created blocks.
 
-    Called from `hermes update` -- no output, no exceptions.
+    Called from `oc update` -- no output, no exceptions.
     """
     try:
         from hermes_cli.profiles import list_profiles
@@ -239,7 +239,7 @@ _profile_override: str | None = None
 
 
 def _host_key() -> str:
-    """Return the active Honcho host key, derived from the current Hermes profile."""
+    """Return the active Honcho host key, derived from the current OpenComputer profile."""
     if _profile_override:
         if _profile_override in {"default", "custom"}:
             return HOST
@@ -434,7 +434,7 @@ def cmd_setup(args) -> None:
     write_path = _local_config_path()
     read_path = _config_path()
     print("\nHoncho memory setup\n" + "─" * 40)
-    print("  Honcho gives Hermes persistent cross-session memory.")
+    print("  Honcho gives OpenComputer persistent cross-session memory.")
     print(f"  Config: {write_path}")
     if read_path != write_path and read_path.exists():
         print(f"  (seeding from existing config at {read_path})")
@@ -526,7 +526,7 @@ def cmd_setup(args) -> None:
 
         if not cfg.get("apiKey"):
             print("\n  No API key configured. Get yours at https://app.honcho.dev")
-            print("  Run 'hermes honcho setup' again once you have a key.\n")
+            print("  Run 'oc honcho setup' again once you have a key.\n")
             return
 
     # --- 3. Identity ---
@@ -632,7 +632,7 @@ def cmd_setup(args) -> None:
         # cascade continue unmodified.
         if _new_prefix and not (prefix_from_root and _new_prefix == current_prefix):
             hermes_host["runtimePeerPrefix"] = _new_prefix
-        print("  Multi-user mode: each runtime ID → own peer. Use 'hermes honcho status' to inspect.")
+        print("  Multi-user mode: each runtime ID → own peer. Use 'oc honcho status' to inspect.")
     elif new_shape == "hybrid":
         # Hybrid encodes operator intent at the host level: collect existing
         # entries (host or root) so the wizard never silently drops a known
@@ -821,7 +821,7 @@ def cmd_setup(args) -> None:
 
 
 def _active_profile_name() -> str:
-    """Return the active Hermes profile name (respects --target-profile override)."""
+    """Return the active OpenComputer profile name (respects --target-profile override)."""
     if _profile_override:
         return _profile_override
     try:
@@ -888,11 +888,11 @@ def cmd_status(args) -> None:
                 cfg = {"apiKey": _env_cfg.api_key, "enabled": _env_cfg.enabled}
             else:
                 print(f"  No Honcho config found at {active_path}")
-                print("  Run 'hermes honcho setup' to configure.\n")
+                print("  Run 'oc honcho setup' to configure.\n")
                 return
         except Exception:
             print(f"  No Honcho config found at {active_path}")
-            print("  Run 'hermes honcho setup' to configure.\n")
+            print("  Run 'oc honcho setup' to configure.\n")
             return
 
     try:
@@ -1103,7 +1103,7 @@ def cmd_peer(args) -> None:
         print(f"  User peer:   {user}")
         print("    Your identity in Honcho. Messages you send build this peer's card.")
         print(f"  AI peer:     {ai}")
-        print("    Hermes' identity in Honcho. Seed with 'hermes honcho identity <file>'.")
+        print("    OpenComputer' identity in Honcho. Seed with 'oc honcho identity <file>'.")
         print("    Dialectic calls ask this peer questions to warm session context.")
         print()
         print(f"  Dialectic reasoning:  {lvl}  ({', '.join(REASONING_LEVELS)})")
@@ -1225,7 +1225,7 @@ def cmd_tokens(args) -> None:
         print("    the user and session, injected directly into the system prompt.")
         print()
         print(f"  Dialectic   {d_chars} chars, reasoning: {d_level}")
-        print("    AI-to-AI inference. Hermes asks Honcho's AI peer a question")
+        print("    AI-to-AI inference. OpenComputer asks Honcho's AI peer a question")
         print("    (e.g. \"what were we working on?\") and Honcho runs its own model")
         print("    to synthesize an answer. Used for first-turn session continuity.")
         print("    Level controls how much reasoning Honcho spends on the answer.")
@@ -1253,7 +1253,7 @@ def cmd_identity(args) -> None:
     """Seed AI peer identity or show both peer representations."""
     cfg = _read_config()
     if not _resolve_api_key(cfg):
-        print("  No API key configured. Run 'hermes honcho setup' first.\n")
+        print("  No API key configured. Run 'oc honcho setup' first.\n")
         return
 
     file_path = getattr(args, "file", None)
@@ -1290,7 +1290,7 @@ def cmd_identity(args) -> None:
             print(ai_rep["card"])
         else:
             print("  No representation built yet.")
-            print("  Run 'hermes honcho identity <file>' to seed one.")
+            print("  Run 'oc honcho identity <file>' to seed one.")
         print()
         return
 
@@ -1324,7 +1324,7 @@ def cmd_identity(args) -> None:
 
 
 def cmd_migrate(args) -> None:
-    """Step-by-step migration guide: OpenClaw native memory → Hermes + Honcho."""
+    """Step-by-step migration guide: OpenClaw native memory → OpenComputer + Honcho."""
     from pathlib import Path
 
     # ── Detect OpenClaw native memory files ──────────────────────────────────
@@ -1352,7 +1352,7 @@ def cmd_migrate(args) -> None:
     cfg = _read_config()
     has_key = bool(_resolve_api_key(cfg))
 
-    print("\nHoncho migration: OpenClaw native memory → Hermes\n" + "─" * 50)
+    print("\nHoncho migration: OpenClaw native memory → OpenComputer\n" + "─" * 50)
     print()
     print("  OpenClaw's native memory stores context in local markdown files")
     print("  (USER.md, MEMORY.md, SOUL.md, ...) and injects them via QMD search.")
@@ -1369,21 +1369,21 @@ def cmd_migrate(args) -> None:
         print(f"  Honcho API key already configured: {masked}")
         print("  Skip to Step 2.")
     else:
-        print("  Honcho is a cloud memory service that gives Hermes persistent memory")
+        print("  Honcho is a cloud memory service that gives OpenComputer persistent memory")
         print("  across sessions. You need an API key to use it.")
         print()
         print("  1. Get your API key at https://app.honcho.dev")
         print("  2. Run:  hermes honcho setup")
         print("     Paste the key when prompted.")
         print()
-        answer = _prompt("  Run 'hermes honcho setup' now?", default="y")
+        answer = _prompt("  Run 'oc honcho setup' now?", default="y")
         if answer.lower() in {"y", "yes"}:
             cmd_setup(args)
             cfg = _read_config()
             has_key = bool(cfg.get("apiKey", ""))
         else:
             print()
-            print("  Run 'hermes honcho setup' when ready, then re-run this walkthrough.")
+            print("  Run 'oc honcho setup' when ready, then re-run this walkthrough.")
 
     # ── Step 2: Detected files ────────────────────────────────────────────────
     print()
@@ -1416,7 +1416,7 @@ def cmd_migrate(args) -> None:
         print()
         print("  These are picked up automatically the first time you run 'hermes'")
         print("  with Honcho configured and no prior session history.")
-        print("  (Hermes calls migrate_memory_files() on first session init.)")
+        print("  (OpenComputer calls migrate_memory_files() on first session init.)")
         print()
         print("  If you want to migrate them now without starting a session:")
         for f in user_files:
@@ -1451,7 +1451,7 @@ def cmd_migrate(args) -> None:
                 except Exception as e:
                     print(f"  Failed: {e}")
         else:
-            print("  Run 'hermes honcho setup' first, then re-run this step.")
+            print("  Run 'oc honcho setup' first, then re-run this step.")
     else:
         print("  No user memory files detected. Nothing to migrate here.")
 
@@ -1463,7 +1463,7 @@ def cmd_migrate(args) -> None:
     print("  agent's character, capabilities, and behavioral rules. In OpenClaw")
     print("  these are injected via file search at prompt-build time.")
     print()
-    print("  In Hermes, they are seeded once into Honcho's AI peer through the")
+    print("  In OpenComputer, they are seeded once into Honcho's AI peer through the")
     print("  observation pipeline. Honcho builds a representation from them and")
     print("  from every subsequent assistant message (observe_me=True). Over time")
     print("  the representation reflects actual behavior, not just declaration.")
@@ -1497,7 +1497,7 @@ def cmd_migrate(args) -> None:
                 except Exception as e:
                     print(f"  Failed: {e}")
         else:
-            print("  Run 'hermes honcho setup' first, then seed manually:")
+            print("  Run 'oc honcho setup' first, then seed manually:")
             for f in agent_files:
                 print(f"    hermes honcho identity {f}")
     else:
@@ -1510,17 +1510,17 @@ def cmd_migrate(args) -> None:
     print()
     print("  Storage")
     print("    OpenClaw: markdown files on disk, searched via QMD at prompt-build time.")
-    print("    Hermes:   cloud-backed Honcho peers. Files can stay on disk as source")
+    print("    OpenComputer:   cloud-backed Honcho peers. Files can stay on disk as source")
     print("              of truth; Honcho holds the live representation.")
     print()
     print("  Context injection")
     print("    OpenClaw: file excerpts injected synchronously before each LLM call.")
-    print("    Hermes:   Honcho context fetched async at turn end, injected next turn.")
+    print("    OpenComputer:   Honcho context fetched async at turn end, injected next turn.")
     print("              First turn has no Honcho context; subsequent turns are loaded.")
     print()
     print("  Memory growth")
     print("    OpenClaw: you edit files manually to update memory.")
-    print("    Hermes:   Honcho observes every message and updates representations")
+    print("    OpenComputer:   Honcho observes every message and updates representations")
     print("              automatically. Files become the seed, not the live store.")
     print()
     print("  Honcho tools (available to the agent during conversation)")
@@ -1532,7 +1532,7 @@ def cmd_migrate(args) -> None:
     print()
     print("  Session naming")
     print("    OpenClaw: no persistent session concept — files are global.")
-    print("    Hermes:   per-session by default — each run gets its own session")
+    print("    OpenComputer:   per-session by default — each run gets its own session")
     print("              Map a custom name:  hermes honcho map <session-name>")
 
     # ── Step 6: Next steps ────────────────────────────────────────────────────
@@ -1561,7 +1561,7 @@ def honcho_command(args) -> None:
     if sub == "setup":
         # Redirect to memory setup — honcho setup goes through the unified path
         print("\n  Honcho is configured via the memory provider system.")
-        print("  Running 'hermes memory setup'...\n")
+        print("  Running 'oc memory setup'...\n")
         from hermes_cli.memory_setup import cmd_setup_provider
         cmd_setup_provider("honcho")
         return
@@ -1599,10 +1599,10 @@ def honcho_command(args) -> None:
 
 
 def register_cli(subparser) -> None:
-    """Build the ``hermes honcho`` argparse subcommand tree.
+    """Build the ``oc honcho`` argparse subcommand tree.
 
     Called by the plugin CLI registration system during argparse setup.
-    The *subparser* is the parser for ``hermes honcho``.
+    The *subparser* is the parser for ``oc honcho``.
     """
 
     subparser.add_argument(
@@ -1689,7 +1689,7 @@ def register_cli(subparser) -> None:
 
     subs.add_parser(
         "migrate",
-        help="Step-by-step migration guide from openclaw-honcho to Hermes Honcho",
+        help="Step-by-step migration guide from openclaw-honcho to OpenComputer Honcho",
     )
     subs.add_parser("enable", help="Enable Honcho for the active profile")
     subs.add_parser("disable", help="Disable Honcho for the active profile")

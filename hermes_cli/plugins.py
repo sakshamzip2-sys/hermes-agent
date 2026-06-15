@@ -1,5 +1,5 @@
 """
-Hermes Plugin System
+OpenComputer Plugin System
 ====================
 
 Discovers, loads, and manages plugins from four sources:
@@ -96,7 +96,7 @@ def _install_plugin_debug_handler(force: bool = False) -> None:
     """When HERMES_PLUGINS_DEBUG is on, tee plugin logs to stderr at DEBUG.
 
     Idempotent: only attaches the handler once per process unless ``force``
-    is passed. Does not touch the root logger or other Hermes loggers.
+    is passed. Does not touch the root logger or other OpenComputer loggers.
     """
     global _DEBUG_HANDLER_INSTALLED, _PLUGINS_DEBUG
     if force:
@@ -262,7 +262,7 @@ class PluginManifest:
     #              (untrusted code).
     kind: str = "standalone"
     # Registry key — path-derived, used by ``plugins.enabled``/``disabled``
-    # lookups and by ``hermes plugins list``. For a flat plugin at
+    # lookups and by ``oc plugins list``. For a flat plugin at
     # ``plugins/disk-cleanup/`` the key is ``disk-cleanup``; for a nested
     # category plugin at ``plugins/image_gen/openai/`` the key is
     # ``image_gen/openai``. When empty, falls back to ``name``.
@@ -395,7 +395,7 @@ class PluginContext:
         handler_fn: Callable | None = None,
         description: str = "",
     ) -> None:
-        """Register a CLI subcommand (e.g. ``hermes honcho ...``).
+        """Register a CLI subcommand (e.g. ``oc honcho ...``).
 
         The *setup_fn* receives an argparse subparser and should add any
         arguments/sub-subparsers.  If *handler_fn* is provided it is set
@@ -424,7 +424,7 @@ class PluginContext:
         The handler signature is ``fn(raw_args: str) -> str | None``.
         It may also be an async callable — the gateway dispatch handles both.
 
-        Unlike ``register_cli_command()`` (which creates ``hermes <subcommand>``
+        Unlike ``register_cli_command()`` (which creates ``oc <subcommand>``
         terminal commands), this registers in-session slash commands that users
         invoke during a conversation.
 
@@ -830,7 +830,7 @@ class PluginContext:
     ) -> None:
         """Register a Slack Block Kit action handler from a plugin.
 
-        Hermes' Slack adapter wires registered handlers into its
+        OpenComputer' Slack adapter wires registered handlers into its
         ``slack_bolt.AsyncApp`` at connect time. The callback is invoked
         when a user clicks a button (or interacts with another Block Kit
         action element) whose ``action_id`` matches.
@@ -901,7 +901,7 @@ class PluginContext:
         Plugins use this to declare their own auxiliary tasks without touching
         core files. After registration, the task:
 
-          - Appears in the ``hermes model → Configure auxiliary models`` picker
+          - Appears in the ``oc model → Configure auxiliary models`` picker
           - Has its provider/model/base_url/api_key bridged from config.yaml to
             ``AUXILIARY_<KEY_UPPER>_*`` env vars at gateway startup
           - Gets default routing fields (provider="auto", model="", etc.) merged
@@ -1265,7 +1265,7 @@ class PluginManager:
             # enforced by the tool wrapper.
             #
             # Bundled platform plugins (gateway adapters like IRC) auto-load
-            # for the same reason: every platform Hermes ships must be
+            # for the same reason: every platform OpenComputer ships must be
             # available out of the box without the user having to opt in.
             if manifest.source == "bundled" and manifest.kind in {"backend", "platform"}:
                 self._load_plugin(manifest)
@@ -1282,7 +1282,7 @@ class PluginManager:
             if not is_enabled:
                 loaded = LoadedPlugin(manifest=manifest, enabled=False)
                 loaded.error = (
-                    "not enabled in config (run `hermes plugins enable {}` to activate)"
+                    "not enabled in config (run `oc plugins enable {}` to activate)"
                     .format(lookup_key)
                 )
                 self._plugins[lookup_key] = loaded
@@ -1538,7 +1538,7 @@ class PluginManager:
                 # plugins, which mis-credited a plugin that registered a hook /
                 # middleware / tool name an earlier plugin had already used:
                 # the shared name was attributed to the first plugin only, so
-                # later plugins under-reported in `hermes plugins list`.
+                # later plugins under-reported in `oc plugins list`.
                 _tools_before = set(self._plugin_tool_names)
                 _hook_counts_before = {
                     h: len(cbs) for h, cbs in self._hooks.items()
@@ -1996,7 +1996,7 @@ def get_plugin_auxiliary_tasks() -> List[Dict[str, Any]]:
 def get_plugin_toolsets() -> List[tuple]:
     """Return plugin toolsets as ``(key, label, description)`` tuples.
 
-    Used by the ``hermes tools`` TUI so plugin-provided toolsets appear
+    Used by the ``oc tools`` TUI so plugin-provided toolsets appear
     alongside the built-in ones and can be toggled on/off per platform.
     """
     manager = get_plugin_manager()

@@ -345,7 +345,7 @@ def _force_deps_missing(monkeypatch):
 class TestInstallDeps:
     """Tests for install_deps() interpreter/installer selection.
 
-    Regression coverage for the Hermes Docker image, whose venv is built with
+    Regression coverage for the OpenComputer Docker image, whose venv is built with
     `uv sync` and ships without pip — `sys.executable -m pip install` fails
     with `No module named pip`, so install_deps() must fall back to uv.
     """

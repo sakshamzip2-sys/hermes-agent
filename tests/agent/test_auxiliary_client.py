@@ -299,7 +299,7 @@ class TestResolveXaiOAuthForAux:
     def test_uses_pool_backed_credentials_without_singleton(self, tmp_path, monkeypatch):
         """Auxiliary xAI OAuth must see pool-only credentials.
 
-        ``hermes auth status`` already reports these as logged in; compression
+        ``oc auth status`` already reports these as logged in; compression
         should not fall through to "no auxiliary provider configured" just
         because the singleton auth-store entry is absent.
         """
@@ -498,7 +498,7 @@ class TestResolveProviderClientUniversalModelFallback:
 
     Aux tasks (title generation, vision, session search, etc.) routinely
     reach this function without an explicit model — the user's main
-    provider was picked via ``hermes model``, no per-task override is
+    provider was picked via ``oc model``, no per-task override is
     set, and the expectation is "just use my main model for side tasks
     too."  The resolver fills in ``model`` from a 3-step universal
     fallback before any provider branch runs:
@@ -3494,7 +3494,7 @@ class TestNvidiaBillingHeaders:
         assert model == "nvidia/test-model"
         call_kwargs = mock_openai.call_args[1]
         headers = call_kwargs["default_headers"]
-        assert headers["X-BILLING-INVOKE-ORIGIN"] == "HermesAgent"
+        assert headers["X-BILLING-INVOKE-ORIGIN"] == "OpenComputer"
 
     def test_resolve_provider_client_local_nim_skips_billing_origin_header(self, monkeypatch):
         monkeypatch.setenv("NVIDIA_API_KEY", "nvidia-key")

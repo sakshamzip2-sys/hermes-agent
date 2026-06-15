@@ -1,7 +1,7 @@
 """
-Unified tool configuration for Hermes Agent.
+Unified tool configuration for OpenComputer.
 
-`hermes tools` and `hermes setup tools` both enter this module.
+`oc tools` and `oc setup tools` both enter this module.
 Select a platform → toggle toolsets on/off → for newly enabled tools
 that need API keys, run through provider-aware configuration.
 
@@ -103,13 +103,13 @@ def gui_toolset_label(label: str) -> str:
 # but the setup checklist won't pre-select them for first-time users.
 #
 # Video gen is off by default — it's a niche, paid, slow feature. Users
-# who want it opt in via `hermes tools` → Video Generation, which walks
+# who want it opt in via `oc tools` → Video Generation, which walks
 # them through provider + model selection.
 #
 # X search is off by default for users without xAI credentials, but
 # auto-enables when SuperGrok OAuth tokens are stored OR XAI_API_KEY is
 # set — mirroring the HASS_TOKEN → homeassistant auto-enable below. The
-# `hermes tools` → X (Twitter) Search setup walks users through credential
+# `oc tools` → X (Twitter) Search setup walks users through credential
 # setup. The tool's check_fn means the schema still won't appear to the
 # model if the credential later goes missing or expires.
 _DEFAULT_OFF_TOOLSETS = {"moa", "homeassistant", "spotify", "discord", "discord_admin", "video", "video_gen", "x_search"}
@@ -140,7 +140,7 @@ def _xai_credentials_present() -> bool:
         pass
     return bool(str(os.environ.get("XAI_API_KEY") or "").strip())
 
-# Platform-scoped toolsets: only appear in the `hermes tools` checklist for
+# Platform-scoped toolsets: only appear in the `oc tools` checklist for
 # these platforms, and only resolve/save for these platforms.  A toolset
 # absent from this map is available on every platform (current behaviour).
 #
@@ -170,7 +170,7 @@ def _get_effective_configurable_toolsets():
     already appears in ``CONFIGURABLE_TOOLSETS`` is skipped — bundled
     plugins (e.g. ``plugins/spotify``) share their toolset key with the
     built-in entry, and we want the built-in label/description to win.
-    Without the dedupe, ``hermes tools`` → "reconfigure existing" would
+    Without the dedupe, ``oc tools`` → "reconfigure existing" would
     list the same toolset twice.
     """
     result = list(CONFIGURABLE_TOOLSETS)
@@ -199,7 +199,7 @@ def _get_plugin_toolset_keys() -> set:
 
 
 def _checklist_toolset_keys(platform: str) -> Set[str]:
-    """Return the toolset keys the ``hermes tools`` checklist actually offers
+    """Return the toolset keys the ``oc tools`` checklist actually offers
     for ``platform``.
 
     This mirrors exactly what ``_prompt_toolset_checklist`` renders:
@@ -211,7 +211,7 @@ def _checklist_toolset_keys(platform: str) -> Set[str]:
     time — ``kanban`` and other check_fn-gated toolsets, recovered platform
     composites, MCP server names — are NOT in this set because the checklist
     never shows them. Use this to scope the added/removed diff the UI prints,
-    so ``hermes tools`` never claims to add or remove a toolset the user was
+    so ``oc tools`` never claims to add or remove a toolset the user was
     never given a checkbox for. The underlying config is unaffected — those
     entries are preserved by ``_save_platform_tools`` regardless.
     """
@@ -411,7 +411,7 @@ TOOL_CATEGORIES = {
         "name": "X (Twitter) Search",
         "setup_title": "Select xAI Credential Source",
         "setup_note": (
-            "Hermes routes X searches through xAI's built-in x_search "
+            "OpenComputer routes X searches through xAI's built-in x_search "
             "Responses tool. Both credential sources hit the same "
             "https://api.x.ai/v1/responses endpoint — pick whichever you "
             "already have. SuperGrok OAuth is preferred when both are set "
@@ -707,8 +707,8 @@ def install_cua_driver(upgrade: bool = False) -> bool:
       installed, install otherwise. Used by the toolset enable flow where
       we don't want to surprise the user with a network fetch.
     * ``upgrade=True`` — always re-run the installer (or call ``cua-driver
-      update`` if the binary supports it). Used by ``hermes update`` and
-      by ``hermes computer-use install --upgrade``.
+      update`` if the binary supports it). Used by ``oc update`` and
+      by ``oc computer-use install --upgrade``.
 
     Returns True iff cua-driver is installed (or successfully refreshed)
     when the function returns. macOS-only — silently returns False on
@@ -720,7 +720,7 @@ def install_cua_driver(upgrade: bool = False) -> bool:
 
     if _plat.system() != "Darwin":
         if upgrade:
-            # Silent on non-macOS — `hermes update` calls this for every
+            # Silent on non-macOS — `oc update` calls this for every
             # user; only macOS users with cua-driver care.
             return False
         _print_warning("    Computer Use (cua-driver) is macOS-only; skipping.")
@@ -817,7 +817,7 @@ def _run_cua_driver_installer(label: str = "Installing", verbose: bool = True) -
                 _print_info("    IMPORTANT — grant macOS permissions now:")
                 _print_info("      System Settings > Privacy & Security > Accessibility")
                 _print_info("      System Settings > Privacy & Security > Screen Recording")
-                _print_info("    Both must allow the terminal / Hermes process.")
+                _print_info("    Both must allow the terminal / OpenComputer process.")
             return True
         _print_warning(f"    cua-driver {label.lower()} did not complete. Re-run manually:")
         _print_info(f"      {install_cmd}")
@@ -1046,7 +1046,7 @@ def _run_post_setup(post_setup_key: str):
         _print_info("    Pair with an extract provider if you also need web_extract.")
 
     elif post_setup_key == "spotify":
-        # Run the full `hermes auth spotify` flow — if the user has no
+        # Run the full `oc auth spotify` flow — if the user has no
         # client_id yet, this drops them into the interactive wizard
         # (opens the Spotify dashboard, prompts for client_id, persists
         # to ~/.hermes/.env), then continues straight into PKCE. If they
@@ -1067,7 +1067,7 @@ def _run_post_setup(post_setup_key: str):
             _print_success("    Spotify authenticated")
         except SystemExit as exc:
             # User aborted the wizard, or OAuth failed — don't fail the
-            # toolset enable; they can retry with `hermes auth spotify`.
+            # toolset enable; they can retry with `oc auth spotify`.
             _print_warning(f"    Spotify login did not complete: {exc}")
             _print_info("    Run later: hermes auth spotify")
         except Exception as exc:
@@ -1101,7 +1101,7 @@ def _run_post_setup(post_setup_key: str):
         except Exception as exc:
             _print_warning(f"    Could not enable plugin automatically: {exc}")
             _print_info("    Run manually: hermes plugins enable observability/langfuse")
-        _print_info("    Restart Hermes for tracing to take effect.")
+        _print_info("    Restart OpenComputer for tracing to take effect.")
         _print_info("    Verify: hermes plugins list")
 
     elif post_setup_key == "xai_grok":
@@ -1145,7 +1145,7 @@ def _run_post_setup(post_setup_key: str):
             choices=[
                 "Sign in with xAI Grok OAuth (SuperGrok / Premium+) — browser login",
                 "Paste an xAI API key (console.x.ai)",
-                "Skip — configure later via `hermes auth add xai-oauth`",
+                "Skip — configure later via `oc auth add xai-oauth`",
             ],
             default=0,
         )
@@ -1177,7 +1177,7 @@ def valid_post_setup_keys() -> Set[str]:
 
     Collected from ``TOOL_CATEGORIES`` plus the plugin-registered web /
     image-gen / video-gen / browser providers (which can also carry a
-    ``post_setup``). This is the allowlist the ``hermes tools post-setup``
+    ``post_setup``). This is the allowlist the ``oc tools post-setup``
     command and the dashboard post-setup endpoint validate against, so a
     caller can't drive ``_run_post_setup`` with an arbitrary key.
     """
@@ -1205,7 +1205,7 @@ def valid_post_setup_keys() -> Set[str]:
 
 
 def run_post_setup_command(args) -> int:
-    """``hermes tools post-setup <key>`` — non-interactive post-setup runner.
+    """``oc tools post-setup <key>`` — non-interactive post-setup runner.
 
     Runs the install/bootstrap hook a provider declares (npm install for
     browser/Camofox, pip install for kittentts/piper/ddgs, cua-driver fetch,
@@ -1380,7 +1380,7 @@ def _get_platform_tools(
         # NOT include, so the subset loop never picks it up. Inject it
         # directly here, mirroring the HASS_TOKEN → ``homeassistant`` rule
         # below: once you have working creds, you don't have to also click
-        # through ``hermes tools`` to flip the toolset on. Only fires when
+        # through ``oc tools`` to flip the toolset on. Only fires when
         # the user has not yet saved an explicit toolset list — once they
         # do, the saved list is authoritative.
         x_search_auto_enabled = (
@@ -1418,7 +1418,7 @@ def _get_platform_tools(
     # feishu_drive).  These are part of the platform's default composite but
     # absent from CONFIGURABLE_TOOLSETS, so they can't appear in the TUI
     # checklist or in a user-saved config.  Must run in BOTH branches —
-    # otherwise saving via `hermes tools` (which flips has_explicit_config
+    # otherwise saving via `oc tools` (which flips has_explicit_config
     # to True) silently drops them.
     _plat_info = PLATFORMS.get(platform)
     _default_ts = _plat_info["default_toolset"] if _plat_info else f"hermes-{platform}"
@@ -1452,9 +1452,9 @@ def _get_platform_tools(
 
     # Plugin toolsets: enabled by default unless explicitly disabled, or
     # unless the toolset is in _DEFAULT_OFF_TOOLSETS (e.g. spotify —
-    # shipped as a bundled plugin but user must opt in via `hermes tools`
+    # shipped as a bundled plugin but user must opt in via `oc tools`
     # so we don't ship 7 Spotify tool schemas to users who don't use it).
-    # A plugin toolset is "known" for a platform once `hermes tools`
+    # A plugin toolset is "known" for a platform once `oc tools`
     # has been saved for that platform (tracked via known_plugin_toolsets).
     # Unknown plugins default to enabled; known-but-absent = disabled.
     if plugin_ts_keys:
@@ -1577,7 +1577,7 @@ def _save_platform_tools(config: dict, platform: str, enabled_toolset_keys: Set[
         entry for entry in existing_toolsets
         if entry not in configurable_keys and entry not in platform_default_keys
     }
-    # Opening `hermes tools` is the user's opt-in to reconfigure tools, so treat
+    # Opening `oc tools` is the user's opt-in to reconfigure tools, so treat
     # saving from the picker as consent to clear the "no_mcp" sentinel. The
     # picker has no checkbox for no_mcp, so without this users who once set it
     # by hand could never re-enable MCP servers through the UI.
@@ -2132,7 +2132,7 @@ _POST_SETUP_INSTALLED: dict = {
     # is already satisfied. Used by `_toolset_needs_configuration_prompt`
     # to force the provider-setup flow when a no-key provider still needs
     # a binary/dependency install (otherwise an already-configured user
-    # who toggles the toolset on via `hermes tools` gets a silent no-op
+    # who toggles the toolset on via `oc tools` gets a silent no-op
     # because the gate sees "no env vars to ask about" and skips the
     # provider-setup flow that would have run the post_setup hook).
     #
@@ -2847,7 +2847,7 @@ def _configure_provider(
     # _visible_providers), but only *activate* once the user has paid Nous
     # Portal access. Selecting one runs an inline Portal login when needed —
     # auth + entitlement only, no inference-provider switch and no bulk
-    # "enable all tools" prompt (that lives in `hermes model`).
+    # "enable all tools" prompt (that lives in `oc model`).
     if managed_feature:
         from hermes_cli.nous_subscription import (
             MANAGED_FEATURE_COVERAGE_CATEGORY,
@@ -3379,7 +3379,7 @@ def _reconfigure_simple_requirements(ts_key: str):
 # ─── Main Entry Point ─────────────────────────────────────────────────────────
 
 def tools_command(args=None, first_install: bool = False, config: dict = None):
-    """Entry point for `hermes tools` and `hermes setup tools`.
+    """Entry point for `oc tools` and `oc setup tools`.
 
     Args:
         first_install: When True (set by the setup wizard on fresh installs),
@@ -3414,7 +3414,7 @@ def tools_command(args=None, first_install: bool = False, config: dict = None):
                 print(color("    (none enabled)", Colors.DIM))
         print()
         return
-    print(color("⚕ Hermes Tool Configuration", Colors.CYAN, Colors.BOLD))
+    print(color("⚕ OpenComputer Tool Configuration", Colors.CYAN, Colors.BOLD))
     print(color("  Enable or disable tools per platform.", Colors.DIM))
     print(color("  Tools that need API keys will be configured when enabled.", Colors.DIM))
     print(color("  Guide: https://hermes-agent.nousresearch.com/docs/user-guide/features/tools", Colors.DIM))

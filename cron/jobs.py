@@ -293,13 +293,13 @@ def parse_schedule(schedule: str) -> Dict[str, Any]:
 
 
 def _ensure_aware(dt: datetime) -> datetime:
-    """Return a timezone-aware datetime in Hermes configured timezone.
+    """Return a timezone-aware datetime in OpenComputer configured timezone.
 
     Backward compatibility:
     - Older stored timestamps may be naive.
     - Naive values are interpreted as *system-local wall time* (the timezone
       `datetime.now()` used when they were created), then converted to the
-      configured Hermes timezone.
+      configured OpenComputer timezone.
 
     This preserves relative ordering for legacy naive timestamps across
     timezone changes and avoids false not-due results.

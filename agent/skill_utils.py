@@ -218,7 +218,7 @@ def _detect_environment(env: str) -> bool:
         except Exception:
             result = False
     elif env == "s6":
-        # The Hermes Docker image runs s6-overlay as PID 1 (/init). s6 plants
+        # The OpenComputer Docker image runs s6-overlay as PID 1 (/init). s6 plants
         # its runtime scaffolding under /run/s6 and ships its admin tree under
         # /package/admin/s6-overlay. Either marker means we're inside an
         # s6-supervised container.
@@ -632,7 +632,7 @@ def extract_skill_description(frontmatter: Dict[str, Any]) -> str:
 def iter_skill_index_files(skills_dir: Path, filename: str):
     """Walk skills_dir yielding sorted paths matching *filename*.
 
-    Excludes Hermes metadata, VCS, virtualenv/dependency, and cache
+    Excludes OpenComputer metadata, VCS, virtualenv/dependency, and cache
     directories so dependencies cannot register nested skills.
     """
     matches = []

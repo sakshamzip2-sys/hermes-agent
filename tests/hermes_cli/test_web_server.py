@@ -140,7 +140,7 @@ class TestReloadEnv:
         os.environ.pop("TEST_RELOAD_VAR", None)
 
     def test_removes_deleted_known_vars(self, tmp_path):
-        """reload_env() removes known Hermes vars not present in .env."""
+        """reload_env() removes known OpenComputer vars not present in .env."""
         env_file = tmp_path / ".env"
         env_file.write_text("")  # empty .env
         # Pick a known key from OPTIONAL_ENV_VARS
@@ -152,7 +152,7 @@ class TestReloadEnv:
             assert count >= 1
 
     def test_does_not_remove_unknown_vars(self, tmp_path):
-        """reload_env() preserves non-Hermes env vars even when absent from .env."""
+        """reload_env() preserves non-OpenComputer env vars even when absent from .env."""
         env_file = tmp_path / ".env"
         env_file.write_text("")
         with patch.dict(reload_env.__globals__, {"get_env_path": lambda: env_file}):
@@ -1134,7 +1134,7 @@ class TestWebServerEndpoints:
 
     def test_model_set_maps_unknown_vendor_to_aggregator(self, monkeypatch):
         """A bare vendor name from analytics rows (no billing_provider) is not
-        a Hermes provider — keep the user's aggregator instead of writing a
+        a OpenComputer provider — keep the user's aggregator instead of writing a
         provider that can never resolve credentials."""
         monkeypatch.setattr(
             "hermes_cli.model_cost_guard.expensive_model_warning",
@@ -1181,7 +1181,7 @@ class TestWebServerEndpoints:
 
     def test_ops_import_passes_force_flag(self, tmp_path, monkeypatch):
         """force=True must append --force so the spawned non-interactive
-        `hermes import` doesn't auto-abort at the overwrite prompt."""
+        `oc import` doesn't auto-abort at the overwrite prompt."""
         import hermes_cli.web_server as ws
 
         archive = tmp_path / "backup.zip"
@@ -1405,7 +1405,7 @@ class TestWebServerEndpoints:
         payload = ws._telegram_onboarding_request_sync(
             "POST",
             "/v1/telegram/pairings",
-            body={"bot_name": "Hermes Agent"},
+            body={"bot_name": "OpenComputer"},
             bearer_token="poll-secret",
         )
 
@@ -1413,7 +1413,7 @@ class TestWebServerEndpoints:
         method, url, kwargs = calls["request"]
         assert method == "POST"
         assert url == "https://worker.example/v1/telegram/pairings"
-        assert kwargs["json"] == {"bot_name": "Hermes Agent"}
+        assert kwargs["json"] == {"bot_name": "OpenComputer"}
         assert kwargs["headers"]["Accept"] == "application/json"
         assert kwargs["headers"]["Authorization"] == "Bearer poll-secret"
         assert kwargs["headers"]["Content-Type"] == "application/json"
@@ -1430,7 +1430,7 @@ class TestWebServerEndpoints:
             ws._telegram_onboarding_request_sync(
                 "POST",
                 "/v1/telegram/pairings",
-                body={"bot_name": "Hermes Agent"},
+                body={"bot_name": "OpenComputer"},
             )
 
         assert exc.value.status_code == 502
@@ -1462,7 +1462,7 @@ class TestWebServerEndpoints:
 
         resp = self.client.post(
             "/api/messaging/telegram/onboarding/start",
-            json={"bot_name": "Hosted Hermes"},
+            json={"bot_name": "Hosted OpenComputer"},
         )
 
         assert resp.status_code == 200
@@ -1473,7 +1473,7 @@ class TestWebServerEndpoints:
             (
                 "POST",
                 "/v1/telegram/pairings",
-                {"bot_name": "Hosted Hermes"},
+                {"bot_name": "Hosted OpenComputer"},
                 None,
             )
         ]
@@ -1615,7 +1615,7 @@ class TestWebServerEndpoints:
         self, monkeypatch
     ):
         """A live in-flight gateway restart is reused instead of spawning a
-        second racing ``hermes gateway restart`` child (e.g. when a stale
+        second racing ``oc gateway restart`` child (e.g. when a stale
         cached frontend also fires its own restart call)."""
         import hermes_cli.web_server as ws
 
@@ -1962,7 +1962,7 @@ class TestWebServerEndpoints:
         """A custom endpoint that requires auth must persist model.api_key (where
         the runtime reads it) AND register a named custom_providers entry so the
         endpoint reappears as a ready row in the picker — matching the
-        ``hermes model`` custom flow. Regression for the desktop loop where a
+        ``oc model`` custom flow. Regression for the desktop loop where a
         keyed custom endpoint could never be configured from the GUI."""
         from hermes_cli.config import load_config
 
@@ -2121,7 +2121,7 @@ class TestWebServerEndpoints:
 
     def test_recommended_default_nous_honors_free_tier(self, monkeypatch):
         """For a free-tier Nous user, the recommended default must be a free
-        model (mirroring `hermes model`), not the first curated paid entry."""
+        model (mirroring `oc model`), not the first curated paid entry."""
         import hermes_cli.models as models_mod
 
         monkeypatch.setattr(models_mod, "get_curated_nous_model_ids", lambda: ["paid/expensive", "free/cheap"])
@@ -2541,7 +2541,7 @@ class TestNewEndpoints:
         resp = self.client.get("/api/profiles/default/setup-command")
 
         assert resp.status_code == 200
-        assert resp.json()["command"] == "hermes setup"
+        assert resp.json()["command"] == "oc setup"
 
     def test_profiles_create_creates_wrapper_alias_when_safe(self, monkeypatch, tmp_path):
         import hermes_cli.profiles as profiles_mod
@@ -4552,7 +4552,7 @@ class TestDashboardPluginManifestExtensions:
 # /api/pty WebSocket — terminal bridge for the dashboard "Chat" tab.
 #
 # These tests drive the endpoint with a tiny fake command (typically ``cat``
-# or ``sh -c 'printf …'``) instead of the real ``hermes --tui`` binary.  The
+# or ``sh -c 'printf …'``) instead of the real ``oc --tui`` binary.  The
 # endpoint resolves its argv through ``_resolve_chat_argv``, so tests
 # monkeypatch that hook.
 # ---------------------------------------------------------------------------

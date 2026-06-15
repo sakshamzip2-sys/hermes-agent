@@ -38,7 +38,7 @@ def _make_profile(
     p.mkdir(parents=True)
     if config:
         # SOUL.md is what the reconciler keys on — it's always seeded by
-        # `hermes profile create`. See container_boot._render_run_script.
+        # `oc profile create`. See container_boot._render_run_script.
         (p / "SOUL.md").write_text("# fake profile\n")
     if state is not None:
         (p / "gateway_state.json").write_text(json.dumps({
@@ -330,7 +330,7 @@ def test_missing_profiles_root_still_registers_default_slot(
     reconciliation should still register a gateway-default slot for
     the root profile and return without raising. Previously this
     returned an empty list; the default slot is now always present
-    so `hermes gateway start` (no -p) has somewhere to land."""
+    so `oc gateway start` (no -p) has somewhere to land."""
     scandir = tmp_path / "run-service"; scandir.mkdir()
     actions = reconcile_profile_gateways(
         hermes_home=tmp_path, scandir=scandir, dry_run=False,
@@ -455,7 +455,7 @@ def test_default_slot_always_registered_on_empty_home(tmp_path: Path) -> None:
 def test_default_slot_run_script_omits_profile_flag(tmp_path: Path) -> None:
     """The default slot's run script must NOT pass `-p default` —
     that would resolve to $HERMES_HOME/profiles/default/ instead of
-    the root profile. It must call `hermes gateway run` directly."""
+    the root profile. It must call `oc gateway run` directly."""
     scandir = tmp_path / "run-service"; scandir.mkdir()
 
     reconcile_profile_gateways(
@@ -463,7 +463,7 @@ def test_default_slot_run_script_omits_profile_flag(tmp_path: Path) -> None:
     )
 
     run = (scandir / "gateway-default" / "run").read_text()
-    assert "hermes gateway run" in run
+    assert "oc gateway run" in run
     assert "-p default" not in run
     assert "-p 'default'" not in run
 

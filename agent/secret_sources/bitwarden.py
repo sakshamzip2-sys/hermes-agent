@@ -1,13 +1,13 @@
 """Bitwarden Secrets Manager (`bws` CLI) integration.
 
-Hermes pulls API keys from Bitwarden Secrets Manager at process startup
+OpenComputer pulls API keys from Bitwarden Secrets Manager at process startup
 so they don't have to live in plaintext in ``~/.hermes/.env``.
 
 Design summary
 --------------
 
 * The ``bws`` binary is auto-installed into ``<hermes_home>/bin/bws`` on
-  first use.  Hermes pins one version (``_BWS_VERSION``) and downloads
+  first use.  OpenComputer pins one version (``_BWS_VERSION``) and downloads
   the matching asset from the official GitHub Releases page, verifying
   the SHA-256 against the release's published checksum file.
 * The access token is stored in ``~/.hermes/.env`` as
@@ -18,7 +18,7 @@ Design summary
   --output json`` call.  We cache the result in-process for
   ``cache_ttl_seconds`` so back-to-back ``hermes`` invocations don't
   hammer the API.
-* Failures NEVER block Hermes startup.  Missing binary, no network,
+* Failures NEVER block OpenComputer startup.  Missing binary, no network,
   expired token, etc. all emit a one-line warning and continue with
   whatever credentials ``.env`` already had.
 
@@ -72,7 +72,7 @@ _BWS_RUN_TIMEOUT = 30
 _CacheKey = Tuple[str, str, str]  # (access_token_fingerprint, project_id, server_url)
 _CACHE: Dict[_CacheKey, "_CachedFetch"] = {}
 
-# Disk-persisted cache so back-to-back CLI invocations (e.g. `hermes chat -q ...`
+# Disk-persisted cache so back-to-back CLI invocations (e.g. `oc chat -q ...`
 # called from scripts, cron, the gateway forking new agents) don't each pay the
 # ~380ms `bws secret list` tax. The in-process _CACHE above only saves repeated
 # fetches WITHIN one process; this saves repeated fetches ACROSS processes.
@@ -207,7 +207,7 @@ class FetchResult:
 
 
 def _hermes_bin_dir() -> Path:
-    """Where Hermes stores its managed binaries.  Profile-aware."""
+    """Where OpenComputer stores its managed binaries.  Profile-aware."""
     from hermes_constants import get_hermes_home
 
     return get_hermes_home() / "bin"
@@ -292,7 +292,7 @@ def install_bws(*, force: bool = False) -> Path:
 
     Returns the path to the installed executable.  Raises on any
     failure (network, checksum, extraction) — callers in the auto-install
-    path catch these; the user-facing ``hermes secrets bitwarden setup``
+    path catch these; the user-facing ``oc secrets bitwarden setup``
     surface lets them propagate so the wizard can show a clear error.
     """
     bin_dir = _hermes_bin_dir()
@@ -492,7 +492,7 @@ def fetch_bitwarden_secrets(
             "bws binary not available — auto-install failed and `bws` is "
             "not on PATH.  Install manually from "
             "https://github.com/bitwarden/sdk-sm/releases or re-run "
-            "`hermes secrets bitwarden setup`."
+            "`oc secrets bitwarden setup`."
         )
 
     secrets, warnings = _run_bws_list(bws, access_token, project_id, server_url)
@@ -621,14 +621,14 @@ def apply_bitwarden_secrets(
     if not access_token:
         result.error = (
             f"secrets.bitwarden.enabled is true but {access_token_env} is "
-            "not set.  Run `hermes secrets bitwarden setup`."
+            "not set.  Run `oc secrets bitwarden setup`."
         )
         return result
 
     if not project_id:
         result.error = (
             "secrets.bitwarden.project_id is empty.  "
-            "Run `hermes secrets bitwarden setup`."
+            "Run `oc secrets bitwarden setup`."
         )
         return result
 
@@ -637,7 +637,7 @@ def apply_bitwarden_secrets(
     if binary is None:
         result.error = (
             "bws binary not available and auto-install is disabled.  "
-            "Run `hermes secrets bitwarden setup` to install."
+            "Run `oc secrets bitwarden setup` to install."
         )
         return result
 

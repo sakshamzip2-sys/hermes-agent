@@ -31,7 +31,7 @@ logger = logging.getLogger(__name__)
 # ANSI building blocks for conversation display
 # =========================================================================
 
-_GOLD = "\033[1;38;2;255;215;0m"  # True-color #FFD700 bold
+_GOLD = "\033[1;38;2;255;215;0m"  # True-color #FF5FAF bold
 _BOLD = "\033[1m"
 _DIM = "\033[2m"
 _RST = "\033[0m"
@@ -61,28 +61,29 @@ def _skin_color(key: str, fallback: str) -> str:
 
 from hermes_cli import __version__ as VERSION, __release_date__ as RELEASE_DATE
 
-HERMES_AGENT_LOGO = """[bold #FFD700]██╗  ██╗███████╗██████╗ ███╗   ███╗███████╗███████╗       █████╗  ██████╗ ███████╗███╗   ██╗████████╗[/]
-[bold #FFD700]██║  ██║██╔════╝██╔══██╗████╗ ████║██╔════╝██╔════╝      ██╔══██╗██╔════╝ ██╔════╝████╗  ██║╚══██╔══╝[/]
-[#FFBF00]███████║█████╗  ██████╔╝██╔████╔██║█████╗  ███████╗█████╗███████║██║  ███╗█████╗  ██╔██╗ ██║   ██║[/]
-[#FFBF00]██╔══██║██╔══╝  ██╔══██╗██║╚██╔╝██║██╔══╝  ╚════██║╚════╝██╔══██║██║   ██║██╔══╝  ██║╚██╗██║   ██║[/]
-[#CD7F32]██║  ██║███████╗██║  ██║██║ ╚═╝ ██║███████╗███████║      ██║  ██║╚██████╔╝███████╗██║ ╚████║   ██║[/]
-[#CD7F32]╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝╚═╝     ╚═╝╚══════╝╚══════╝      ╚═╝  ╚═╝ ╚═════╝ ╚══════╝╚═╝  ╚═══╝   ╚═╝[/]"""
+HERMES_AGENT_LOGO = """[bold #FF5FAF] ██████╗ ██████╗ ███████╗███╗   ██╗ ██████╗ ██████╗ ███╗   ███╗██████╗ ██╗   ██╗████████╗███████╗██████╗[/]
+[bold #FF5FAF]██╔═══██╗██╔══██╗██╔════╝████╗  ██║██╔════╝██╔═══██╗████╗ ████║██╔══██╗██║   ██║╚══██╔══╝██╔════╝██╔══██╗[/]
+[#FF2E97]██║   ██║██████╔╝█████╗  ██╔██╗ ██║██║     ██║   ██║██╔████╔██║██████╔╝██║   ██║   ██║   █████╗  ██████╔╝[/]
+[#FF2E97]██║   ██║██╔═══╝ ██╔══╝  ██║╚██╗██║██║     ██║   ██║██║╚██╔╝██║██╔═══╝ ██║   ██║   ██║   ██╔══╝  ██╔══██╗[/]
+[#C71585]╚██████╔╝██║     ███████╗██║ ╚████║╚██████╗╚██████╔╝██║ ╚═╝ ██║██║     ╚██████╔╝   ██║   ███████╗██║  ██║[/]
+[#C71585] ╚═════╝ ╚═╝     ╚══════╝╚═╝  ╚═══╝ ╚═════╝ ╚═════╝ ╚═╝     ╚═╝╚═╝      ╚═════╝    ╚═╝   ╚══════╝╚═╝  ╚═╝[/]"""
 
-HERMES_CADUCEUS = """[#CD7F32]⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⣀⡀⠀⣀⣀⠀⢀⣀⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀[/]
-[#CD7F32]⠀⠀⠀⠀⠀⠀⢀⣠⣴⣾⣿⣿⣇⠸⣿⣿⠇⣸⣿⣿⣷⣦⣄⡀⠀⠀⠀⠀⠀⠀[/]
-[#FFBF00]⠀⢀⣠⣴⣶⠿⠋⣩⡿⣿⡿⠻⣿⡇⢠⡄⢸⣿⠟⢿⣿⢿⣍⠙⠿⣶⣦⣄⡀⠀[/]
-[#FFBF00]⠀⠀⠉⠉⠁⠶⠟⠋⠀⠉⠀⢀⣈⣁⡈⢁⣈⣁⡀⠀⠉⠀⠙⠻⠶⠈⠉⠉⠀⠀[/]
-[#FFD700]⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣴⣿⡿⠛⢁⡈⠛⢿⣿⣦⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀[/]
-[#FFD700]⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠿⣿⣦⣤⣈⠁⢠⣴⣿⠿⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀[/]
-[#FFBF00]⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⠉⠻⢿⣿⣦⡉⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀[/]
-[#FFBF00]⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠘⢷⣦⣈⠛⠃⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀[/]
-[#CD7F32]⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢠⣴⠦⠈⠙⠿⣦⡄⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀[/]
-[#CD7F32]⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠸⣿⣤⡈⠁⢤⣿⠇⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀[/]
-[#B8860B]⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠉⠛⠷⠄⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀[/]
-[#B8860B]⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⣀⠑⢶⣄⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀[/]
-[#B8860B]⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣿⠁⢰⡆⠈⡿⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀[/]
-[#B8860B]⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⠳⠈⣡⠞⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀[/]
-[#B8860B]⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀[/]"""
+HERMES_CADUCEUS = """[#C2185B]          ⢀⣀⣠⣤⡄  ⢠⣤⣄⣀⡀[/]
+[#C2185B]       ⢀⣤⣠⣿⣿⡿⠋    ⠙⢿⣿⣿⣄⣤⡀[/]
+[#E91E78]      ⠰⣿⣿⣿⣿⠁        ⠈⣿⣿⣿⣿⠆[/]
+[#E91E78]    ⣴⣿⣶⣿⡿⠿⠃          ⠘⠿⢿⣿⣶⣿⣦[/]
+[#E91E78]   ⠸⣿⣿⣿⣿⣷⠄            ⠠⣾⣿⣿⣿⣿⠇[/]
+[#FF3D8A]  ⣴⣦⣨⣿⡿⠿⠟              ⠻⠿⢿⣿⣅⣴⣦[/]
+[#FF3D8A] ⢰⣿⣿⣿⣿⣷⣶⡄              ⢠⣶⣾⣿⣿⣿⣿⡆[/]
+[#FF3D8A] ⠈⠛⠿⣿⣿⡿⠿⠃              ⠘⠿⢿⣿⣿⠿⠛⠁[/]
+[#FF3D8A] ⢸⣿⣶⣿⣿⣶⣶⣦              ⣴⣶⣶⣿⣿⣶⣿⡇[/]
+[#FF3D8A] ⠸⣿⣿⣿⣿⣿⣿⠟              ⠻⣿⣿⣿⣿⣿⣿⠇[/]
+[#E91E78]  ⢈⣉⣉⣿⣿⣤⣴⣿⣦          ⣴⣿⣦⣤⣿⣿⣉⣉⡁[/]
+[#E91E78]  ⠹⣿⣿⣿⣿⣿⣿⣿⡿⢀⣤⡀    ⢀⣤⡀⢿⣿⣿⣿⣿⣿⣿⣿⠏[/]
+[#E91E78]   ⠹⣿⣿⡿⢿⣿⣏⣴⣿⣿⣿    ⣿⣿⣿⣦⣹⣿⡿⢿⣿⣿⠏[/]
+[#C2185B]     ⢠⣴⣾⣿⣿⣿⣿⡿⠃    ⠘⢿⣿⣿⣿⣿⣷⣦⡄[/]
+[#C2185B]      ⠙⢿⣿⠿⠛⠻⣷⣤⡀  ⢀⣤⣾⠟⠛⠿⣿⡿⠋[/]
+[#8E1A4F]             ⠙⠁  ⠈⠋[/]"""
 
 
 
@@ -264,7 +265,7 @@ def check_via_pypi() -> Optional[int]:
 
 
 def check_for_updates() -> Optional[int]:
-    """Check whether a Hermes update is available.
+    """Check whether a OpenComputer update is available.
 
     Two paths: if ``HERMES_REVISION`` is set (nix builds embed it), compare
     it to upstream main via ``git ls-remote``. Otherwise look for a local
@@ -284,7 +285,7 @@ def check_for_updates() -> Optional[int]:
     # fall through to `check_via_pypi()`, whose PyPI-version mismatch flag (1)
     # then gets rendered by the CLI banner and the TUI badge as a phantom
     # "1 commit behind" — even though no git repo or commit math is involved,
-    # and `hermes update` correctly refuses to run in-place inside the
+    # and `oc update` correctly refuses to run in-place inside the
     # container anyway. The dashboard's REST `/api/hermes/update/check`
     # endpoint already short-circuits docker the same way (web_server.py);
     # mirror that here so the banner/TUI surfaces agree. Returning None makes
@@ -340,7 +341,7 @@ def check_for_updates() -> Optional[int]:
 
 
 def _resolve_repo_dir() -> Optional[Path]:
-    """Return the active Hermes git checkout, or None if this isn't a git install.
+    """Return the active OpenComputer git checkout, or None if this isn't a git install.
 
     Prefers the running code's location over the profile-scoped path
     because ``$HERMES_HOME/hermes-agent/`` may be a stale copy carried
@@ -435,7 +436,7 @@ def get_latest_release_tag(repo_dir: Optional[Path] = None) -> Optional[tuple]:
     """Return ``(tag, release_url)`` for the latest git tag, or None.
 
     Local-only — runs ``git describe --tags --abbrev=0`` against the
-    Hermes checkout. Cached per-process. Release URL always points at the
+    OpenComputer checkout. Cached per-process. Release URL always points at the
     canonical NousResearch/hermes-agent repo (forks don't get a link).
     """
     global _latest_release_cache
@@ -475,7 +476,7 @@ def get_latest_release_tag(repo_dir: Optional[Path] = None) -> Optional[tuple]:
 
 def format_banner_version_label() -> str:
     """Return the version label shown in the startup banner title."""
-    base = f"Hermes Agent v{VERSION} ({RELEASE_DATE})"
+    base = f"OpenComputer v{VERSION} ({RELEASE_DATE})"
     state = get_git_banner_state()
     if not state:
         return base
@@ -594,8 +595,8 @@ def build_welcome_banner(console: "Console", model: str, cwd: str,
     layout_table.add_column("right", justify="left")
 
     # Resolve skin colors once for the entire banner
-    accent = _skin_color("banner_accent", "#FFBF00")
-    dim = _skin_color("banner_dim", "#B8860B")
+    accent = _skin_color("banner_accent", "#FF2E97")
+    dim = _skin_color("banner_dim", "#9E1060")
     text = _skin_color("banner_text", "#FFF8DC")
     session_color = _skin_color("session_border", "#8B8682")
 
@@ -614,7 +615,7 @@ def build_welcome_banner(console: "Console", model: str, cwd: str,
     if len(model_short) > 28:
         model_short = model_short[:25] + "..."
     ctx_str = f" [dim {dim}]·[/] [dim {dim}]{_format_context_length(context_length)} context[/]" if context_length else ""
-    left_lines.append(f"[{accent}]{model_short}[/]{ctx_str} [dim {dim}]·[/] [dim {dim}]Nous Research[/]")
+    left_lines.append(f"[{accent}]{model_short}[/]{ctx_str} [dim {dim}]·[/] [dim {dim}]anthropic[/]")
 
     if os.getenv("HERMES_YOLO_MODE"):
         left_lines.append(f"[bold red]⚠ YOLO mode[/] [dim {dim}]— all approval prompts bypassed[/]")
@@ -651,7 +652,7 @@ def build_welcome_banner(console: "Console", model: str, cwd: str,
             if name in disabled_tools:
                 colored_names.append(f"[red]{name}[/]")
             elif name in lazy_tools:
-                colored_names.append(f"[yellow]{name}[/]")
+                colored_names.append(f"[#FF2E97]{name}[/]")
             else:
                 colored_names.append(f"[{text}]{name}[/]")
 
@@ -672,7 +673,7 @@ def build_welcome_banner(console: "Console", model: str, cwd: str,
                 elif name in disabled_tools:
                     colored_names.append(f"[red]{name}[/]")
                 elif name in lazy_tools:
-                    colored_names.append(f"[yellow]{name}[/]")
+                    colored_names.append(f"[#FF2E97]{name}[/]")
                 else:
                     colored_names.append(f"[{text}]{name}[/]")
             tools_str = ", ".join(colored_names)
@@ -707,7 +708,7 @@ def build_welcome_banner(console: "Console", model: str, cwd: str,
             elif status == "connecting":
                 right_lines.append(
                     f"[dim {dim}]{srv['name']}[/] [dim]({srv['transport']})[/] "
-                    f"[yellow]— connecting[/]"
+                    f"[#FF2E97]— connecting[/]"
                 )
             elif status == "configured":
                 right_lines.append(
@@ -758,14 +759,13 @@ def build_welcome_banner(console: "Console", model: str, cwd: str,
             )
     except Exception:
         pass
-    # Show active profile name when not 'default'
+    # Always show the active profile name so you always know which profile you're on
     try:
         from hermes_cli.profiles import get_active_profile_name
-        _profile_name = get_active_profile_name()
-        if _profile_name and _profile_name != "default":
-            right_lines.append(f"[bold {accent}]Profile:[/] [{text}]{_profile_name}[/]")
+        _profile_name = get_active_profile_name() or "default"
     except Exception:
-        pass  # Never break the banner over a profiles.py bug
+        _profile_name = "default"  # Never break the banner over a profiles.py bug
+    right_lines.append(f"[bold {accent}]Profile:[/] [{text}]{_profile_name}[/]")
 
     right_lines.append(f"[dim {dim}]{' · '.join(summary_parts)}[/]")
 
@@ -777,17 +777,17 @@ def build_welcome_banner(console: "Console", model: str, cwd: str,
             if behind > 0:
                 commits_word = "commit" if behind == 1 else "commits"
                 right_lines.append(
-                    f"[bold yellow]⚠ {behind} {commits_word} behind[/]"
-                    f"[dim yellow] — run [bold]{recommended_update_command()}[/bold] to update[/]"
+                    f"[bold #FF5FAF]⚠ {behind} {commits_word} behind[/]"
+                    f"[dim #FF2E97] — run [bold]{recommended_update_command()}[/bold] to update[/]"
                 )
             else:
                 # UPDATE_AVAILABLE_NO_COUNT: nix-built hermes; we know an update
                 # exists but not by how much, and we don't know how the user
                 # installed it (nix run, profile, system flake, home-manager).
                 managed_cmd = get_managed_update_command()
-                line = "[bold yellow]⚠ update available[/]"
+                line = "[bold #FF5FAF]⚠ update available[/]"
                 if managed_cmd:
-                    line += f"[dim yellow] — run [bold]{managed_cmd}[/bold][/]"
+                    line += f"[dim #FF2E97] — run [bold]{managed_cmd}[/bold][/]"
                 right_lines.append(line)
     except Exception:
         pass  # Never break the banner over an update check
@@ -800,8 +800,8 @@ def build_welcome_banner(console: "Console", model: str, cwd: str,
         from hermes_cli.config import detect_install_method
         if detect_install_method() == "pip":
             right_lines.append(
-                "[bold yellow]⚠ pip install not officially supported[/]"
-                "[dim yellow] — exists for reasons other than user install; "
+                "[bold #FF5FAF]⚠ pip install not officially supported[/]"
+                "[dim #FF2E97] — exists for reasons other than user install; "
                 "expect instability and an inability to support issues[/]"
             )
     except Exception:
@@ -810,15 +810,13 @@ def build_welcome_banner(console: "Console", model: str, cwd: str,
     right_content = "\n".join(right_lines)
     layout_table.add_row(left_content, right_content)
 
-    title_color = _skin_color("banner_title", "#FFD700")
-    border_color = _skin_color("banner_border", "#CD7F32")
+    title_color = _skin_color("banner_title", "#FF5FAF")
+    border_color = _skin_color("banner_border", "#C71585")
     version_label = format_banner_version_label()
-    release_info = get_latest_release_tag()
-    if release_info:
-        _tag, _url = release_info
-        title_markup = f"[bold {title_color}][link={_url}]{version_label}[/link][/]"
-    else:
-        title_markup = f"[bold {title_color}]{version_label}[/]"
+    # No OSC-8 hyperlink on the title: some terminals recolor hyperlinked text
+    # (e.g. yellow), overriding the pink skin color. Plain bold pink renders
+    # consistently across terminals.
+    title_markup = f"[bold {title_color}]{version_label}[/]"
     outer_panel = Panel(
         layout_table,
         title=title_markup,

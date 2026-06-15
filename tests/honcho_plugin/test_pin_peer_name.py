@@ -1,6 +1,6 @@
 """Tests for the ``pinPeerName`` / ``pinUserPeer`` config flag.
 
-Under a gateway (Telegram, Discord, Slack, ...) Hermes passes the
+Under a gateway (Telegram, Discord, Slack, ...) OpenComputer passes the
 platform-native user ID as ``runtime_user_peer_name`` into
 ``HonchoSessionManager``.  By default that ID wins over any configured
 ``peer_name`` so multi-user bots scope memory per user.
@@ -536,7 +536,7 @@ class TestPeerResolutionOrder:
 
 
 class TestCrossPlatformMemoryUnification:
-    """The same physical user talking to Hermes via Telegram AND Discord
+    """The same physical user talking to OpenComputer via Telegram AND Discord
     lands on ONE peer when ``pinPeerName`` is opted in.
     """
 
@@ -818,10 +818,10 @@ class TestPinTransition:
 
 
 class TestProfilePeerUniqueness:
-    """Each Hermes profile can pin to its own unique peerName.
+    """Each OpenComputer profile can pin to its own unique peerName.
 
     Profile cloning copies host blocks, but operators routinely diverge them
-    afterwards (e.g. `hermes -p partner` pinned to a different person's peer).
+    afterwards (e.g. `oc -p partner` pinned to a different person's peer).
     The resolver must honor host-level ``peerName`` so two profiles in the
     same workspace stay scoped to different Honcho peers.
     """

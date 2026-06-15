@@ -1,1 +1,1 @@
-# Hermes plugins package
+# OpenComputer plugins package
