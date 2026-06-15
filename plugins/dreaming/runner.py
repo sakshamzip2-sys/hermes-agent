@@ -1,0 +1,242 @@
+"""Orchestration: turn recent sessions into MEMORY.md promotions.
+
+``run_dream_cycle`` is the single entry point. It is safe to call from a session
+hook (it never raises into the caller) and from the CLI. The opportunistic
+trigger debounces on ``min_interval_hours`` so a dream cycle runs at most that
+often regardless of how many sessions start.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import logging
+import threading
+import time
+from pathlib import Path
+from typing import Optional
+
+from . import candidates as candmod
+from . import llm, memory_io
+from .config import DreamingPluginConfig, load_dreaming_config
+from .engine import DreamCandidate, DreamingPipeline, DreamRunSummary
+from .store import DreamStore
+
+logger = logging.getLogger("hermes.plugins.dreaming.runner")
+
+# How far back to look on the very first run (no last_run_ts yet), in seconds.
+_FIRST_RUN_LOOKBACK = 30 * 24 * 60 * 60  # 30 days
+
+_run_lock = threading.Lock()
+
+
+def _store_path() -> Path:
+    try:
+        from hermes_constants import get_hermes_home
+
+        return get_hermes_home() / "dreaming" / "dreaming.db"
+    except Exception:  # noqa: BLE001
+        import os
+
+        base = os.environ.get("HERMES_HOME")
+        root = Path(base) if base else Path.home() / ".hermes"
+        return root / "dreaming" / "dreaming.db"
+
+
+def _candidate_id(session_event_id: str, fact: str) -> str:
+    return hashlib.sha256(f"{session_event_id}|{fact}".encode()).hexdigest()[:16]
+
+
+async def run_dream_cycle(
+    *,
+    force: bool = False,
+    config: Optional[DreamingPluginConfig] = None,
+    db_path: Optional[Path] = None,
+    store: Optional[DreamStore] = None,
+) -> DreamRunSummary:
+    """Run one consolidation pass. Returns the summary (empty on skip/error).
+
+    Args:
+        force: bypass the enabled flag and the debounce interval (manual run).
+        config/db_path/store: injectable for tests; resolved from the live
+            profile otherwise.
+    """
+    cfg = config or load_dreaming_config()
+    if not cfg.enabled and not force:
+        logger.debug("dreaming: disabled; skipping")
+        return DreamRunSummary()
+
+    sdb = db_path or candmod.default_state_db_path()
+    if sdb is None:
+        logger.debug("dreaming: no state.db resolvable; skipping")
+        return DreamRunSummary()
+
+    st = store or DreamStore(_store_path())
+
+    now = time.time()
+    last_run = st.last_run_ts()
+    if not force and last_run and (now - last_run) < cfg.min_interval_seconds:
+        logger.debug("dreaming: within debounce window; skipping")
+        return DreamRunSummary()
+
+    since = last_run if last_run else (now - _FIRST_RUN_LOOKBACK)
+
+    # Marker-stripped MEMORY.md entries are the diversity-gate corpus, so the
+    # "(dreamed DATE)" prefix tokens don't dilute the similarity comparison.
+    existing_facts = memory_io.read_memory_facts()
+
+    # --- Pass 1: re-score the DREAMS.md holding pen ------------------------
+    # A fact held earlier (low recall / low score) gets another chance as recall
+    # accumulates over time. Promoted ones leave DREAMS.md; still-weak ones stay.
+    rescore = await _rescore_dreams(cfg, sdb, existing_facts)
+    if rescore.promoted or rescore.updated:
+        existing_facts = memory_io.read_memory_facts()  # refresh after promotions
+
+    # --- Pass 2: new sessions since the last run ---------------------------
+    digests = candmod.build_session_digests(
+        sdb, since_ts=since, limit=cfg.candidate_fetch_limit
+    )
+
+    # A durable fact often recurs across sessions, so identical extracted facts
+    # collapse to one candidate (the v1 clustering pre-gate analog) — preventing
+    # duplicate promotions and redundant scoring calls. The candidate id keys on
+    # the normalised fact text so the idempotency ledger also catches the same
+    # fact in a later run.
+    cand_facts: list[DreamCandidate] = []
+    fact_by_id: dict[str, str] = {}
+    seen_facts: set[str] = set()
+    for dg in digests:
+        try:
+            facts = await llm.extract_facts(dg.text)
+        except llm.RateLimitedError:
+            logger.warning("dreaming: rate-limited during extraction; stopping early")
+            break
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("dreaming: extraction failed for a session: %s", exc)
+            continue
+        for fact in facts:
+            norm = " ".join(fact.lower().split())
+            if not norm or norm in seen_facts:
+                continue
+            seen_facts.add(norm)
+            cid = _candidate_id(norm, fact)
+            fact_by_id[cid] = fact
+            cand_facts.append(
+                DreamCandidate(
+                    event_id=cid,
+                    raw_text=fact,
+                    timestamp_ns=int(dg.last_ts * 1e9),
+                    metadata={"session_id": dg.session_id},
+                )
+            )
+
+    session_summary = DreamRunSummary()
+    if cand_facts:
+        pipeline = _build_pipeline(cfg, sdb, fact_by_id, hold_fn=memory_io.hold)
+        already = st.processed_ids()
+        session_summary = await pipeline.run_once(
+            cand_facts,
+            existing_memories=existing_facts,
+            already_processed_event_ids=already,
+        )
+        # Mark every evaluated session candidate processed so sessions aren't
+        # re-extracted. Held facts now live in DREAMS.md and are re-promoted via
+        # the Pass-1 re-score (above), not by re-scanning the session.
+        evaluated_ids = [c.event_id for c in cand_facts if c.event_id not in already]
+        st.mark_processed(evaluated_ids)
+
+    st.set_last_run_ts(now)
+    combined = _merge_summaries(rescore, session_summary)
+    st.record_run(combined.counts())
+
+    counts = combined.counts()
+    if counts["promoted"] or counts["updated"] or counts["held"]:
+        logger.info(
+            "dreaming: promoted=%d updated=%d held=%d dropped=%d (evaluated=%d)",
+            counts["promoted"], counts["updated"], counts["held"],
+            counts["dropped"], counts["evaluated"],
+        )
+    return combined
+
+
+def _build_recall_fn(sdb: Path, fact_by_id: dict[str, str]):
+    def recall_count_fn(event_id: str) -> int:
+        fact = fact_by_id.get(event_id, "")
+        return candmod.count_sessions_matching(sdb, candmod.salient_terms(fact))
+
+    return recall_count_fn
+
+
+def _build_pipeline(cfg, sdb: Path, fact_by_id: dict[str, str], *, hold_fn) -> DreamingPipeline:
+    return DreamingPipeline(
+        cfg.engine,
+        score_fn=llm.score_fact,
+        recall_count_fn=_build_recall_fn(sdb, fact_by_id),
+        promote_fn=memory_io.promote,
+        hold_fn=hold_fn,
+        embed_fn=llm.lexical_embed,
+        decision_fn=llm.decide_supersede,
+        replace_fn=memory_io.replace,
+    )
+
+
+def _merge_summaries(a: DreamRunSummary, b: DreamRunSummary) -> DreamRunSummary:
+    return DreamRunSummary(
+        promoted=a.promoted + b.promoted,
+        held=a.held + b.held,
+        dropped=a.dropped + b.dropped,
+        updated=a.updated + b.updated,
+        skipped_already_processed=a.skipped_already_processed + b.skipped_already_processed,
+        total_evaluated=a.total_evaluated + b.total_evaluated,
+        rate_limited=a.rate_limited or b.rate_limited,
+    )
+
+
+async def _rescore_dreams(cfg, sdb: Path, existing_facts: list[str]) -> DreamRunSummary:
+    """Re-evaluate DREAMS.md held facts; promote any that now pass; rewrite the pen."""
+    dreams_facts = memory_io.read_dreams_facts()
+    if not dreams_facts:
+        return DreamRunSummary()
+
+    cand: list[DreamCandidate] = []
+    fact_by_id: dict[str, str] = {}
+    seen: set[str] = set()
+    for f in dreams_facts:
+        norm = " ".join(f.lower().split())
+        if not norm or norm in seen:
+            continue
+        seen.add(norm)
+        cid = _candidate_id(norm, f)
+        fact_by_id[cid] = f
+        cand.append(DreamCandidate(event_id=cid, raw_text=f))
+
+    # hold_fn is a no-op here: these facts already live in DREAMS.md and we
+    # rewrite the file from `remaining` afterwards (avoids duplicate appends).
+    pipeline = _build_pipeline(cfg, sdb, fact_by_id, hold_fn=lambda *_args: None)
+    summary = await pipeline.run_once(cand, existing_memories=existing_facts)
+
+    gone = {r.candidate.raw_text for r in (*summary.promoted, *summary.updated, *summary.dropped)}
+    remaining = [f for f in dreams_facts if f not in gone]
+    memory_io.write_dreams_facts(remaining, cfg.engine.dreams_md_max_bytes)
+    return summary
+
+
+def maybe_run_in_background(*, force: bool = False) -> None:
+    """Fire-and-forget a dream cycle on a daemon thread. Never blocks the caller.
+
+    Used by the ``on_session_start`` hook: dreaming must never delay a user's
+    turn, so it runs in its own thread with its own event loop.
+    """
+    def _worker() -> None:
+        if not _run_lock.acquire(blocking=False):
+            return  # a cycle is already running; skip this trigger
+        try:
+            import asyncio
+
+            asyncio.run(run_dream_cycle(force=force))
+        except Exception as exc:  # noqa: BLE001 — background; never surface
+            logger.debug("dreaming: background cycle error: %s", exc)
+        finally:
+            _run_lock.release()
+
+    t = threading.Thread(target=_worker, name="dreaming-cycle", daemon=True)
+    t.start()

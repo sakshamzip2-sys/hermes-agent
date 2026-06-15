@@ -1,0 +1,7 @@
+name: proactivity
+version: 1.0.0
+description: "Track events the user attends and surface warm in-context check-ins afterward (ported from OpenComputer v1; default-OFF, consent-gated)."
+author: "OpenComputer v1 (original), ported to v2"
+kind: standalone
+hooks:
+  - pre_llm_call

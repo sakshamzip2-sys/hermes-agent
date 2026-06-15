@@ -1,0 +1,8 @@
+name: dreaming
+version: 1.0.0
+description: "Consolidate recent sessions into long-term MEMORY.md via a three-gate pipeline (ported from OpenComputer v1)."
+author: "OpenComputer v1 (original), ported to v2"
+kind: standalone
+hooks:
+  - on_session_start
+  - on_session_end
