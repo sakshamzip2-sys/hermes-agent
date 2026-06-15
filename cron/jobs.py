@@ -312,25 +312,28 @@ def parse_schedule(schedule: str) -> Dict[str, Any]:
     if schedule_lower.startswith("every "):
         duration_str = schedule[6:].strip()
         minutes = parse_duration(duration_str)
+        if minutes <= 0:
+            raise ValueError(
+                f"Interval must be positive (got {minutes}m). Use e.g. 'every 30m', 'every 2h'."
+            )
         return {
             "kind": "interval",
             "minutes": minutes,
             "display": f"every {minutes}m"
         }
     
-    # Check for cron expression (5 or 6 space-separated fields)
-    # Cron fields: minute hour day month weekday [year]
+    # Cron expression: 5-6 space-separated fields, OR an @-nickname (@daily,
+    # @hourly, @weekly, @monthly, @yearly, @midnight, ...). Validation is
+    # delegated to croniter — the authority — instead of a digit/'*'-only regex,
+    # which wrongly rejected named fields ('0 9 * * MON', '0 0 1 JAN *') and
+    # @-nicknames that croniter fully supports.
     parts = schedule.split()
-    if len(parts) >= 5 and all(
-        re.match(r'^[\d\*\-,/]+$', p) for p in parts[:5]
-    ):
+    is_nickname = len(parts) == 1 and schedule.startswith("@")
+    if is_nickname or len(parts) in (5, 6):
         if not HAS_CRONITER:
             raise ValueError("Cron expressions require 'croniter' package. Install with: pip install croniter")
-        # Validate cron expression
-        try:
-            croniter(schedule)
-        except Exception as e:
-            raise ValueError(f"Invalid cron expression '{schedule}': {e}")
+        if not croniter.is_valid(schedule):
+            raise ValueError(f"Invalid cron expression '{schedule}'.")
         return {
             "kind": "cron",
             "expr": schedule,

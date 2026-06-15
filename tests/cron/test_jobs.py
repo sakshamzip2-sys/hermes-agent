@@ -110,6 +110,33 @@ class TestParseSchedule:
         with pytest.raises(ValueError):
             parse_schedule("99 99 99 99 99")
 
+    def test_named_cron_fields_accepted(self):
+        # Regression: named weekdays/months are valid croniter syntax and must
+        # not be rejected by an overly-strict digit/'*'-only regex.
+        pytest.importorskip("croniter")
+        for expr in ("0 9 * * MON", "0 0 1 JAN *", "0 9 * * mon-fri"):
+            result = parse_schedule(expr)
+            assert result["kind"] == "cron", expr
+            assert result["expr"] == expr
+
+    def test_cron_nicknames_accepted(self):
+        # @daily / @hourly etc. are single-token croniter nicknames.
+        pytest.importorskip("croniter")
+        for nick in ("@daily", "@hourly", "@weekly", "@monthly"):
+            result = parse_schedule(nick)
+            assert result["kind"] == "cron", nick
+            assert result["expr"] == nick
+
+    def test_unknown_nickname_raises(self):
+        pytest.importorskip("croniter")
+        with pytest.raises(ValueError):
+            parse_schedule("@bogus")
+
+    def test_zero_interval_raises(self):
+        # 'every 0m' would schedule a tight immediate loop — reject it.
+        with pytest.raises(ValueError):
+            parse_schedule("every 0m")
+
 
 # =========================================================================
 # compute_next_run
