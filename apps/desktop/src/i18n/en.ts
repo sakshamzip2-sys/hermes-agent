@@ -131,6 +131,18 @@ export const en: Translations = {
       transcriptionUnavailable: 'Voice transcription is not available yet.',
       tryRecordingAgain: 'Try recording again.',
       unavailable: 'Voice unavailable'
+    },
+    native: {
+      approvalTitle: 'Approval needed',
+      approveAction: 'Approve',
+      rejectAction: 'Reject',
+      inputTitle: 'Input needed',
+      inputBody: 'OpenComputer is waiting for your response.',
+      turnDoneTitle: 'OpenComputer finished',
+      turnDoneBody: 'The response is ready.',
+      turnErrorTitle: 'Turn failed',
+      backgroundDoneTitle: 'Background task finished',
+      backgroundFailedTitle: 'Background task failed'
     }
   },
 
@@ -263,7 +275,46 @@ export const en: Translations = {
       keysSettings: 'Settings',
       mcp: 'MCP',
       archivedChats: 'Archived Chats',
-      about: 'About'
+      about: 'About',
+      notifications: 'Notifications'
+    },
+    notifications: {
+      title: 'Notifications',
+      intro:
+        'Native desktop notifications, separate from in-app toasts. These are device-local — each computer keeps its own settings.',
+      enableAll: 'Enable notifications',
+      enableAllDesc: 'Master switch. Turn this off to silence every notification below.',
+      focusedHint: 'Completion alerts only fire while OpenComputer is in the background.',
+      kinds: {
+        approval: {
+          label: 'Approval needed',
+          description: 'A command is waiting for you to approve or reject it.'
+        },
+        input: {
+          label: 'Input needed',
+          description: 'OpenComputer asked a question or needs a password or secret.'
+        },
+        turnDone: {
+          label: 'Response ready',
+          description: 'A turn finished while OpenComputer was in the background.'
+        },
+        turnError: {
+          label: 'Turn failed',
+          description: 'A turn ended with an error.'
+        },
+        backgroundDone: {
+          label: 'Background task finished',
+          description: 'A backgrounded terminal command completed.'
+        }
+      },
+      test: 'Send test notification',
+      testTitle: 'OpenComputer',
+      testBody: 'Notifications are working.',
+      testSent: 'Test sent. If nothing appears, check your OS notification permissions and Focus/Do Not Disturb.',
+      testUnsupported: 'This system does not support native notifications.',
+      completionSoundTitle: 'Completion Sound',
+      completionSoundDesc: 'Plays when an agent turn finishes. Pick a preset and preview it here.',
+      completionSoundPreview: 'Preview'
     },
     sections: {
       model: 'Model',
@@ -513,6 +564,12 @@ export const en: Translations = {
       collapse: 'Collapse',
       connectAnother: 'Connect another provider',
       otherProviders: 'Other providers',
+      removeConfirm: provider => `Remove ${provider}?`,
+      removeExternal: (provider, command) => `${provider} is managed outside OpenComputer. Remove it with ${command}.`,
+      removeKeyManaged: provider => `${provider} is configured from an API key. Remove it from API Keys.`,
+      removedTitle: 'Account removed',
+      removedMessage: provider => `${provider} was removed.`,
+      failedRemove: provider => `Could not remove ${provider}`,
       noProviderKeys: 'No provider API keys available.',
       loading: 'Loading providers...'
     },
@@ -643,6 +700,7 @@ export const en: Translations = {
     back: 'Back',
     searchPlaceholder: 'Search sessions, views, and actions',
     goTo: 'Go to',
+    goToSession: 'Go to session',
     commandCenter: 'Command Center',
     appearance: 'Appearance',
     settings: 'Settings',
@@ -902,6 +960,9 @@ export const en: Translations = {
     deleting: 'Deleting...',
     createDesc: 'Profiles are independent OpenComputer environments: separate config, skills, and SOUL.md.',
     nameLabel: 'Name',
+    cloneFrom: 'Clone from',
+    cloneFromNone: 'None (blank)',
+    cloneFromDesc: 'Copies config, skills, and SOUL.md from the selected source profile.',
     cloneFromDefault: 'Clone from default',
     cloneFromDefaultDesc: 'Copy config, skills, and SOUL.md from your default profile.',
     invalidName: hint => `Invalid name. ${hint}`,
@@ -1210,6 +1271,8 @@ export const en: Translations = {
     queueSendNext: 'Next',
     queueSend: 'Send',
     queueDelete: 'Delete',
+    queueStuckTitle: 'Queued message not sent',
+    queueStuckBody: 'A queued turn kept failing to send. It is still in the queue — try sending it again.',
     previewUnavailable: 'Preview unavailable',
     previewLabel: label => `Preview ${label}`,
     couldNotPreview: label => `Could not preview ${label}`,
@@ -1333,7 +1396,7 @@ export const en: Translations = {
     installTo: 'Will install to',
     retryAfterRun: 'I’ve run it -- retry',
     failedTitle: 'Installation failed',
-    settingUpTitle: 'Setting up OpenComputer',
+    settingUpTitle: 'Setting up OpenComputer Agent',
     finishingTitle: 'Finishing up',
     failedDesc:
       'One of the install steps failed. On Windows, this can happen if another OpenComputer CLI or desktop instance is running. Stop any running OpenComputer instances, then retry. Check the details below or the desktop log for the full transcript.',
@@ -1356,7 +1419,7 @@ export const en: Translations = {
   },
 
   onboarding: {
-    headerTitle: "Let's get you setup with OpenComputer",
+    headerTitle: "Let's get you setup with OpenComputer Agent",
     headerDesc: 'Connect a model provider to start chatting. Most options take one click.',
     preparingInstall: 'OpenComputer is finishing install. This usually takes under a minute on first run.',
     starting: 'Starting OpenComputer…',
@@ -1653,6 +1716,7 @@ export const en: Translations = {
   assistant: {
     thread: {
       loadingSession: 'Loading session',
+      showEarlier: 'Show earlier messages',
       loadingResponse: 'OpenComputer is loading a response',
       thinking: 'Thinking',
       today: time => `Today, ${time}`,
@@ -1683,9 +1747,11 @@ export const en: Translations = {
       gatewayDisconnected: 'OpenComputer gateway is not connected',
       sendFailed: 'Could not send approval response',
       run: 'Run',
+      command: 'Command',
       moreOptions: 'More approval options',
       allowSession: 'Allow this session',
       alwaysAllowMenu: 'Always allow…',
+      jumpToApproval: 'Approval needed',
       reject: 'Reject',
       alwaysTitle: 'Always allow this command?',
       alwaysDescription: pattern =>

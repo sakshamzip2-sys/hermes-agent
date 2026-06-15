@@ -5,7 +5,7 @@ A small SQLite database under ``$HERMES_HOME/dreaming/dreaming.db`` holding:
 - ``processed`` — event-id idempotency ledger so a fact is never evaluated twice.
 - ``meta``      — key/value scalars (last-run timestamp, etc.).
 - ``audit``     — one row per dreaming pass with the outcome counts, for
-                  ``hermes dream status`` and post-hoc debugging.
+                  ``oc dream status`` and post-hoc debugging.
 
 Kept deliberately tiny and dependency-free (stdlib ``sqlite3`` only) so it works
 identically in CLI and gateway processes.

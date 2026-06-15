@@ -15,7 +15,7 @@ feedback ("stop reminding me so much" → tighten; "you never check in" → loos
 
 Carried verbatim from v1 (a documented owner invariant): **proactive surfacing is
 default-OFF**. Installing the plugin does nothing until `proactivity.enabled: true`
-(or `hermes proactivity enable`). Surfacing is **in-context only** — delivered through
+(or `opencomputer proactivity enable`). Surfacing is **in-context only** — delivered through
 the `pre_llm_call` hook while the user is already chatting. There is **no out-of-band
 push** in this port, so the user is never messaged unprompted. The gate further
 guarantees:
@@ -36,7 +36,7 @@ guarantees:
 | `surface.py` | Per-turn: capture reply → apply feedback → gate → inject one check-in |
 | `writeback.py` | Closed check-in reply → `MEMORY.md` (two-hats: user words only) |
 | `config.py` | `proactivity:` block loader (`enabled` defaults to **False**) |
-| `cli.py` | `hermes proactivity {status,track,enable,disable}` |
+| `cli.py` | `opencomputer proactivity {status,track,enable,disable}` |
 | `__init__.py` | `register(ctx)` — `pre_llm_call` hook + `/track` + `/proactivity` |
 
 ## How v2 differs from v1 (deferred scope)
@@ -56,10 +56,10 @@ Deferred because they depend on v2 infrastructure that differs or is absent:
 ## Usage
 
 ```
-hermes proactivity enable                 # opt in (consent gate)
-hermes proactivity track "infra meetup"   # an event that just ended
+opencomputer proactivity enable                 # opt in (consent gate)
+opencomputer proactivity track "infra meetup"   # an event that just ended
 /track dentist in 2h                       # an upcoming event (in-session)
-hermes proactivity status
+opencomputer proactivity status
 ```
 
 ## Config

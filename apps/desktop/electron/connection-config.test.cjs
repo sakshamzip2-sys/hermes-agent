@@ -69,7 +69,7 @@ test('profileRemoteOverride ignores local or url-less profile entries', () => {
 test('profileRemoteOverride returns the per-profile remote with defaulted auth mode', () => {
   const config = {
     profiles: {
-      coder: { mode: 'remote', url: '  https://coder.example.com/hermes  ', token: { value: 'sek' } }
+      coder: { mode: 'remote', url: '  https://coder.example.com/oc  ', token: { value: 'sek' } }
     }
   }
   assert.deepEqual(profileRemoteOverride(config, 'coder'), {

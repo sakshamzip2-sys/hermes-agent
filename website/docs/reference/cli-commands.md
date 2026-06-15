@@ -73,7 +73,7 @@ opencomputer [global-options] <command> [subcommand/options]
 | `opencomputer memory` | Configure external memory provider. Plugin-specific subcommands (e.g. `opencomputer honcho`) register automatically when their provider is active. |
 | `opencomputer acp` | Run OpenComputer as an ACP server for editor integration. |
 | `opencomputer mcp` | Manage MCP server configurations and run OpenComputer as an MCP server. |
-| `opencomputer plugins` | Manage OpenComputer plugins (install, enable, disable, remove). |
+| `opencomputer plugins` | Manage OpenComputer Agent plugins (install, enable, disable, remove). |
 | `opencomputer portal` | Nous Portal status, subscription link, and Tool Gateway routing. See [Tool Gateway](../user-guide/features/tool-gateway.md). |
 | `opencomputer tools` | Configure enabled tools per platform. |
 | `opencomputer computer-use` | Install or check the cua-driver backend (macOS Computer Use). |
@@ -112,6 +112,7 @@ Common options:
 | `--pass-session-id` | Pass the session ID into the system prompt. |
 | `--ignore-user-config` | Ignore `~/.hermes/config.yaml` and use built-in defaults. Credentials in `.env` are still loaded. Useful for isolated CI runs, reproducible bug reports, and third-party integrations. |
 | `--ignore-rules` | Skip auto-injection of `AGENTS.md`, `SOUL.md`, `.cursorrules`, persistent memory, and preloaded skills. Combine with `--ignore-user-config` for a fully isolated run. |
+| `--safe-mode` | Troubleshooting mode: disable ALL customizations — user config, rules/memory injection, plugins, and MCP servers (implies `--ignore-user-config` and `--ignore-rules`). Use to isolate whether a problem comes from your setup or from OpenComputer itself. |
 | `--source <tag>` | Session source tag for filtering (default: `cli`). Use `tool` for third-party integrations that should not appear in user session lists. |
 | `--max-turns <N>` | Maximum tool-calling iterations per conversation turn (default: 90, or `agent.max_turns` in config). |
 
@@ -125,6 +126,7 @@ opencomputer chat --toolsets web,terminal,skills
 opencomputer chat --quiet -q "Return only JSON"
 opencomputer chat --worktree -q "Review this repo and open a PR"
 opencomputer chat --ignore-user-config --ignore-rules -q "Repro without my personal setup"
+opencomputer chat --safe-mode -q "Is this bug mine or OpenComputer'?"
 ```
 
 ### `opencomputer -z <prompt>` — scripted one-shot
@@ -1394,7 +1396,7 @@ Manage profiles — multiple isolated OpenComputer instances, each with its own 
 |------------|-------------|
 | `list` | List all profiles. |
 | `use <name>` | Set a sticky default profile. |
-| `create <name> [--clone] [--clone-all] [--clone-from <source>] [--no-alias]` | Create a new profile. `--clone` copies config, `.env`, and `SOUL.md` from the active profile. `--clone-all` copies all state. `--clone-from` specifies a source profile. |
+| `create <name> [--clone] [--clone-all] [--clone-from <source>] [--no-alias]` | Create a new profile. `--clone` copies config, `.env`, `SOUL.md`, and skills from the active profile. `--clone-all` copies all state. `--clone-from` specifies a source profile and implies config clone unless paired with `--clone-all`. |
 | `delete <name> [-y]` | Delete a profile. |
 | `show <name>` | Show profile details (home directory, config, etc.). |
 | `alias <name> [--remove] [--name NAME]` | Manage wrapper scripts for quick profile access. |

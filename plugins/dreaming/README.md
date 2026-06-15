@@ -22,7 +22,7 @@ high-similarity contradiction can *supersede* a stale entry in place.
 | `store.py` | SQLite idempotency ledger + last-run + audit |
 | `config.py` | Loads `dreaming:` block from config.yaml (v1-matching defaults) |
 | `runner.py` | Orchestration: DREAMS re-score pass + new-session pass |
-| `cli.py` | `hermes dream {status,run,dreams}` |
+| `cli.py` | `opencomputer dream {status,run,dreams}` |
 | `__init__.py` | `register(ctx)` — aux task, session hooks, slash + CLI commands |
 
 ## How v2 differs from v1 (intentional adaptations)
@@ -36,7 +36,7 @@ high-similarity contradiction can *supersede* a stale entry in place.
 - **Diversity embedder.** Defaults to a zero-dependency lexical (term-frequency cosine)
   embedder — catches near-verbatim duplicates without a network embeddings backend.
 - **Trigger.** v1 ran on a 60s system tick; v2 runs opportunistically on session-boundary
-  hooks (debounced) + manual `/dream` / `hermes dream run`.
+  hooks (debounced) + manual `/dream` / `opencomputer dream run`.
 
 ## Deferred vs v1 (known scope gaps, not bugs)
 

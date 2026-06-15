@@ -1,6 +1,6 @@
 # Photon iMessage platform plugin
 
-This plugin connects OpenComputer to iMessage (and other Spectrum
+This plugin connects OpenComputer Agent to iMessage (and other Spectrum
 interfaces) through [Photon][photon] — a managed service that handles
 iMessage line allocation, delivery, and abuse-prevention so users don't
 have to run their own Mac relay.
@@ -46,14 +46,14 @@ talks to it over loopback.
 opencomputer photon setup --phone +15551234567
 
 # Start the gateway
-opencomputer gateway start --platform photon
+opencomputer gateway start
 ```
 
 `opencomputer photon setup` does, in order:
 
 1. **Device login** (RFC 8628, `client_id=photon-cli`) — opens
    `https://app.photon.codes/` for approval and stores the bearer token.
-2. **Find or create** the `OpenComputer` project on the Photon dashboard.
+2. **Find or create** the `OpenComputer Agent` project on the Photon dashboard.
 3. **Enable Spectrum**, read the project's `spectrumProjectId`, rotate the
    project secret, and persist both.
 4. **Register your phone number** as a Spectrum user (idempotent — skipped if
@@ -92,7 +92,7 @@ Management metadata lives in `~/.hermes/auth.json` under `credential_pool`:
         "dashboard_project_id": "<dashboard id>",
         "spectrum_project_id": "<spectrumProjectId>",
         "project_secret": "<projectSecret>",
-        "name": "OpenComputer"
+        "name": "OpenComputer Agent"
       }
     ]
   }

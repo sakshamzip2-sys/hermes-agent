@@ -65,7 +65,7 @@ def test_handle_track_creates_event(tmp_path, monkeypatch):
     monkeypatch.setattr(proactivity, "_home_dir", lambda: tmp_path / "proactivity")
     out = proactivity._handle_track("book club in 3h")
     assert "book club" in out
-    store = proactivity._store()
+    store = proactivity._event_store()
     events = store.all_events()
     assert len(events) == 1
     assert events[0].title == "book club"

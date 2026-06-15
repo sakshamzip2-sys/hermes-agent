@@ -1,4 +1,4 @@
-"""``hermes proactivity`` terminal subcommand.
+"""``oc proactivity`` terminal subcommand.
 
 Subcommands:
   status            show config + tracked events
@@ -21,6 +21,13 @@ def setup(subparser: argparse.ArgumentParser) -> None:
     p_track.add_argument("title", nargs="+", help="event title")
     p_track.add_argument("--in", dest="in_dur", default="", help="upcoming, e.g. 2h, 30m, 1d")
     p_track.set_defaults(func=_cmd_track)
+
+    p_run = sub.add_parser("run", help="poll all sources + deliver push/digest (background cycle)")
+    p_run.add_argument("--digest", action="store_true", help="also deliver the held digest now")
+    p_run.set_defaults(func=_cmd_run)
+
+    p_commit = sub.add_parser("commitments", help="show commitments tracked from conversations")
+    p_commit.set_defaults(func=_cmd_commitments)
 
     p_en = sub.add_parser("enable", help="enable proactive check-ins (consent)")
     p_en.set_defaults(func=_cmd_enable)
@@ -49,6 +56,28 @@ def _cmd_track(args: argparse.Namespace) -> int:
     in_dur = getattr(args, "in_dur", "")
     raw = f"{title} in {in_dur}" if in_dur else title
     print(_handle_track(raw))
+    return 0
+
+
+def _cmd_run(args: argparse.Namespace) -> int:
+    from . import run_background_cycle
+
+    summary = run_background_cycle(deliver_digest=bool(getattr(args, "digest", False)))
+    if summary.get("enabled") is False:
+        print("Proactivity is disabled (proactivity.enabled: false). Nothing to do.")
+        return 0
+    print(
+        f"Proactivity cycle: polled {summary.get('polled', 0)} new, "
+        f"pushed {summary.get('pushed', 0)}, digested {summary.get('digested', 0)}"
+        + (f", digest delivered: {summary.get('digest_delivered')}" if 'digest_delivered' in summary else "")
+    )
+    return 0
+
+
+def _cmd_commitments(args: argparse.Namespace) -> int:
+    from . import _handle_commitments
+
+    print(_handle_commitments(""))
     return 0
 
 

@@ -1,12 +1,12 @@
 ---
 sidebar_position: 1
 title: "Telegram"
-description: "Set up OpenComputer as a Telegram bot"
+description: "Set up OpenComputer Agent as a Telegram bot"
 ---
 
 # Telegram Setup
 
-OpenComputer integrates with Telegram as a full-featured conversational bot. Once connected, you can chat with your agent from any device, send voice memos that get auto-transcribed, receive scheduled task results, and use the agent in group chats. The integration is built on [python-telegram-bot](https://python-telegram-bot.org/) and supports text, voice, images, and file attachments.
+OpenComputer Agent integrates with Telegram as a full-featured conversational bot. Once connected, you can chat with your agent from any device, send voice memos that get auto-transcribed, receive scheduled task results, and use the agent in group chats. The integration is built on [python-telegram-bot](https://python-telegram-bot.org/) and supports text, voice, images, and file attachments.
 
 ## Step 1: Create a Bot via BotFather
 
@@ -14,7 +14,7 @@ Every Telegram bot requires an API token issued by [@BotFather](https://t.me/Bot
 
 1. Open Telegram and search for **@BotFather**, or visit [t.me/BotFather](https://t.me/BotFather)
 2. Send `/newbot`
-3. Choose a **display name** (e.g., "OpenComputer") — this can be anything
+3. Choose a **display name** (e.g., "OpenComputer Agent") — this can be anything
 4. Choose a **username** — this must be unique and end in `bot` (e.g., `my_hermes_bot`)
 5. BotFather replies with your **API token**. It looks like this:
 
@@ -103,7 +103,7 @@ This requires Telegram to deliver ordinary group messages to the gateway, so dis
 
 ## Step 4: Find Your User ID
 
-OpenComputer uses numeric Telegram user IDs to control access. Your user ID is **not** your username — it's a number like `123456789`.
+OpenComputer Agent uses numeric Telegram user IDs to control access. Your user ID is **not** your username — it's a number like `123456789`.
 
 **Method 1 (recommended):** Message [@userinfobot](https://t.me/userinfobot) — it instantly replies with your user ID.
 
@@ -471,7 +471,7 @@ You should see a `[Telegram] Cached user voice at /home/<user>/.hermes/cache/aud
 
 ## Group Chat Usage
 
-OpenComputer works in Telegram group chats with a few considerations:
+OpenComputer Agent works in Telegram group chats with a few considerations:
 
 - **Privacy mode** determines what messages the bot can see (see [Step 3](#step-3-privacy-mode-critical-for-groups))
 - `TELEGRAM_ALLOWED_USERS` still applies — only authorized users can trigger the bot, even in groups
@@ -900,7 +900,16 @@ gateway:
 
 ## Rendering: Rich Messages, Tables and Link Previews
 
-**Rich Messages (Bot API 10.1).** When enabled, final replies are sent with Telegram's native [`sendRichMessage`](https://core.telegram.org/bots/api#sendrichmessage) using the agent's **raw markdown**, so tables, task lists, headings, nested blockquotes, collapsible `<details>`, footnotes/references, math/formulas, underline, sub/superscript, marked text, and anchors render natively — no client-side flattening. In DMs the live streaming preview also uses `sendRichMessageDraft`, so the animated draft matches the final rich message. This is **opt-in** (default off) while the new endpoint is validated; enable it per platform:
+**Rich Messages (Bot API 10.1).** When opted in, final replies are sent with Telegram's native [`sendRichMessage`](https://core.telegram.org/bots/api#sendrichmessage) using the agent's **raw markdown**, so tables, task lists, headings, nested blockquotes, collapsible `<details>`, footnotes/references, math/formulas, underline, sub/superscript, marked text, and anchors render natively — no client-side flattening. In DMs the live streaming preview also uses `sendRichMessageDraft`, so the animated draft matches the final rich message.
+
+The rich path is skipped automatically when content exceeds the 32,768-byte rich text limit, and any rejection from Telegram (unsupported endpoint on an older `python-telegram-bot`, parser error, oversized blocks/columns) **transparently falls back** to the MarkdownV2 path — your message is never lost. Transient/network errors are *not* silently re-sent (no duplicate final message).
+
+**MarkdownV2 fallback.** When the rich path is unavailable for a message, OpenComputer converts markdown to MarkdownV2. Since MarkdownV2 has no native table syntax, pipe tables are normalized:
+
+- **Small tables** are flattened into **row-group bullets** — each row becomes a readable bulleted list under the column headings. Good for 2–4 columns and short cells.
+- **Larger or wider tables** fall back to a **fenced code block** with aligned columns so nothing collapses.
+
+Rich messages are disabled by default because some Telegram clients accept the Bot API payload but render it poorly. To opt in for clients that handle rich messages well:
 
 ```yaml
 gateway:
@@ -910,14 +919,7 @@ gateway:
         rich_messages: true
 ```
 
-The rich path is skipped automatically when content exceeds the 32,768-byte rich text limit, and any rejection from Telegram (unsupported endpoint on an older `python-telegram-bot`, parser error, oversized blocks/columns) **transparently falls back** to the MarkdownV2 path — your message is never lost. Transient/network errors are *not* silently re-sent (no duplicate final message).
-
-**MarkdownV2 fallback.** When the rich path is disabled or unavailable, OpenComputer converts markdown to MarkdownV2. Since MarkdownV2 has no native table syntax, pipe tables are normalized:
-
-- **Small tables** are flattened into **row-group bullets** — each row becomes a readable bulleted list under the column headings. Good for 2–4 columns and short cells.
-- **Larger or wider tables** fall back to a **fenced code block** with aligned columns so nothing collapses.
-
-There's nothing to configure for the fallback — the adapter picks the right rendering per message. If you want the legacy "always code-block" behavior, disable table normalization by setting `telegram.pretty_tables: false` in `config.yaml` (default: `true`).
+This setting is for client-rendering compatibility; OpenComputer already falls back automatically when Telegram rejects the rich API call. If you only want the legacy "always code-block" table behavior while keeping rich messages enabled, disable table normalization by setting `telegram.pretty_tables: false` in `config.yaml` (default: `true`).
 
 **Link previews.** Telegram auto-generates link previews for URLs in bot messages. If you'd rather suppress those (long `/tools` output, agent reply that mentions ten links, etc.):
 

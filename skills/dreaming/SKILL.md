@@ -29,7 +29,7 @@ and how to reason about what it does.
 ## Prerequisites
 
 - The `dreaming` plugin must be enabled (it registers the `/dream` command and the
-  `dreaming` auxiliary task). Check with `hermes dream status`.
+  `dreaming` auxiliary task). Check with `opencomputer dream status`.
 - An auxiliary model for the `dreaming` task (config `auxiliary.dreaming`) is needed
   for fact extraction/scoring. Without one, dreaming safely promotes nothing.
 
@@ -38,24 +38,24 @@ and how to reason about what it does.
 Run a consolidation pass now (bypasses the debounce interval):
 
 ```
-hermes dream run --force
+opencomputer dream run --force
 ```
 
 Or in a conversation: `/dream run force`. Inspect status / the holding pen:
 
 ```
-hermes dream status
-hermes dream dreams
+opencomputer dream status
+opencomputer dream dreams
 ```
 
 ## Quick Reference
 
 | Command | Effect |
 |---------|--------|
-| `hermes dream status` | config, last-run time, recent pass counts |
-| `hermes dream run` | one consolidation pass (respects debounce) |
-| `hermes dream run --force` | consolidation pass now, ignoring debounce |
-| `hermes dream dreams` | list the `DREAMS.md` holding pen |
+| `opencomputer dream status` | config, last-run time, recent pass counts |
+| `opencomputer dream run` | one consolidation pass (respects debounce) |
+| `opencomputer dream run --force` | consolidation pass now, ignoring debounce |
+| `opencomputer dream dreams` | list the `DREAMS.md` holding pen |
 | `/dream`, `/dream run`, `/dream dreams` | same, in-session |
 
 ## How It Works
@@ -86,5 +86,5 @@ Config lives under `dreaming:` in `config.yaml`; the model under `auxiliary.drea
 
 ## Verification
 
-`hermes dream run --force` prints the per-pass counts and each promoted fact; confirm
-new `(dreamed …)` entries with `hermes dream status` and by reading `MEMORY.md`.
+`opencomputer dream run --force` prints the per-pass counts and each promoted fact; confirm
+new `(dreamed …)` entries with `opencomputer dream status` and by reading `MEMORY.md`.

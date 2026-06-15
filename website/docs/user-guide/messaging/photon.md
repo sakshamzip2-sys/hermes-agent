@@ -66,7 +66,7 @@ The setup, in order:
 
 1. **Device login** (`client_id=photon-cli`) — opens
    `https://app.photon.codes/` for approval and stores the bearer token.
-2. **Finds or creates** the `OpenComputer` project on your account.
+2. **Finds or creates** the `OpenComputer Agent` project on your account.
 3. **Enables Spectrum**, reads the project's Spectrum id, and rotates
    the project secret.
 4. **Registers your phone number** as a Spectrum user — skipped if a
@@ -127,7 +127,7 @@ gateway:
 
 With `require_mention: true`, group-chat messages are ignored unless
 they match a wake-word pattern. The defaults match `OpenComputer` and
-`@OpenComputer` variants. For a custom agent name, set regex patterns:
+`@OpenComputer agent` variants. For a custom agent name, set regex patterns:
 
 ```yaml
 gateway:
@@ -145,7 +145,7 @@ BlueBubbles iMessage channel uses.
 ## Start the gateway
 
 ```bash
-opencomputer gateway start --platform photon
+opencomputer gateway start
 ```
 
 You'll see something like:

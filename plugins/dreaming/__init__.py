@@ -16,7 +16,7 @@ How it runs
 * Opportunistically on ``on_session_start`` / ``on_session_end`` (debounced to at
   most once per ``dreaming.min_interval_hours``), on a background thread so it
   never delays a turn.
-* Manually via the ``/dream`` slash command or ``hermes dream run`` CLI command.
+* Manually via the ``/dream`` slash command or ``oc dream run`` CLI command.
 
 Config lives under ``dreaming:`` in config.yaml; the consolidation model is pinned
 via ``auxiliary.dreaming``.

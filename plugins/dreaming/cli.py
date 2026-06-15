@@ -1,4 +1,4 @@
-"""``hermes dream`` terminal subcommand for the dreaming plugin.
+"""``oc dream`` terminal subcommand for the dreaming plugin.
 
 Subcommands:
   status   show config, last run, and recent pass counts
@@ -25,7 +25,7 @@ def setup(subparser: argparse.ArgumentParser) -> None:
     p_dreams = sub.add_parser("dreams", help="list the DREAMS.md holding pen")
     p_dreams.set_defaults(func=_cmd_dreams)
 
-    # Default when bare `hermes dream` is invoked.
+    # Default when bare `oc dream` is invoked.
     subparser.set_defaults(func=_cmd_status)
 
 
