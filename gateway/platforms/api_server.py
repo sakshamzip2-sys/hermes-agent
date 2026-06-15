@@ -1017,6 +1017,8 @@ class APIServerAdapter(BasePlatformAdapter):
         tool_start_callback=None,
         tool_complete_callback=None,
         gateway_session_key: Optional[str] = None,
+        model_override: Optional[str] = None,
+        reasoning_config_override: Optional[Dict[str, Any]] = None,
     ) -> Any:
         """
         Create an AIAgent instance using the gateway's runtime config.
@@ -1040,6 +1042,15 @@ class APIServerAdapter(BasePlatformAdapter):
         runtime_kwargs = _resolve_runtime_agent_kwargs()
         reasoning_config = GatewayRunner._load_reasoning_config()
         model = _resolve_gateway_model()
+
+        # Per-request overrides (from the prompt-bar model picker).  When the
+        # caller pins a model / reasoning effort / thinking toggle for this turn,
+        # honor it instead of the config defaults.  model_override is trusted to
+        # be a provider-routable id (validated/whitelisted by the handler).
+        if model_override and model_override.strip():
+            model = model_override.strip()
+        if reasoning_config_override is not None:
+            reasoning_config = reasoning_config_override
 
         user_config = _load_gateway_config()
         enabled_toolsets = sorted(_get_platform_tools(user_config, "api_server"))
@@ -1800,20 +1811,32 @@ class APIServerAdapter(BasePlatformAdapter):
         if key_err is not None:
             return key_err
 
-        # Allow caller to continue an existing session by passing X-OpenComputer-Session-Id.
-        # When provided, history is loaded from state.db instead of from the request body.
+        # Allow caller to continue an existing session.  The canonical carrier is
+        # the X-OpenComputer-Session-Id header, but OpenAI-compat clients commonly
+        # send only the latest message and carry the conversation id in the request
+        # body instead.  Accept the body field "oc_session_id" as a fallback so
+        # those clients get the same server-side history rehydration rather than
+        # silently starting a fresh session every turn — the bug behind "the web
+        # UI agent has no memory of earlier turns".  Both sources go through the
+        # identical auth gate + validation below.  (Only a real string is honored;
+        # a non-string oc_session_id is ignored so malformed input can't coerce a
+        # garbage id.)  When provided, history is loaded from state.db instead of
+        # from the request body.
         #
         # Security: session continuation exposes conversation history, so it is
         # only allowed when the API key is configured and the request is
         # authenticated.  Without this gate, any unauthenticated client could
         # read arbitrary session history by guessing/enumerating session IDs.
-        provided_session_id = request.headers.get("X-OpenComputer-Session-Id", "").strip()
+        _body_sid = body.get("oc_session_id")
+        provided_session_id = (
+            request.headers.get("X-OpenComputer-Session-Id", "").strip()
+            or (_body_sid.strip() if isinstance(_body_sid, str) else "")
+        )
         if provided_session_id:
             if not self._api_key:
                 logger.warning(
-                    "Session continuation via X-OpenComputer-Session-Id rejected: "
-                    "no API key configured.  Set API_SERVER_KEY to enable "
-                    "session continuity."
+                    "Session continuation rejected: no API key configured.  "
+                    "Set API_SERVER_KEY to enable session continuity."
                 )
                 return web.json_response(
                     _openai_error(
@@ -1822,10 +1845,16 @@ class APIServerAdapter(BasePlatformAdapter):
                     ),
                     status=403,
                 )
-            # Sanitize: reject control characters that could enable header injection.
+            # Validate identically to the session-creation path: reject control
+            # characters (header injection) and over-long ids (store abuse).
             if re.search(r'[\r\n\x00]', provided_session_id):
                 return web.json_response(
                     {"error": {"message": "Invalid session ID", "type": "invalid_request_error"}},
+                    status=400,
+                )
+            if len(provided_session_id) > self._MAX_SESSION_HEADER_LEN:
+                return web.json_response(
+                    {"error": {"message": "Session ID too long", "type": "invalid_request_error"}},
                     status=400,
                 )
             session_id = provided_session_id
@@ -1849,8 +1878,32 @@ class APIServerAdapter(BasePlatformAdapter):
             session_id = _derive_chat_session_id(system_prompt, first_user)
             # history already set from request body above
 
+        # Per-request model / reasoning overrides from the prompt-bar model
+        # picker.  Sent under dedicated oc_* fields so they never collide with the
+        # OpenAI `model` field that arbitrary OpenAI-compat clients populate
+        # (passing those through as a model switch would regress them).  Reasoning
+        # is built from oc_reasoning_effort + oc_thinking into the same shape as
+        # parse_reasoning_effort / _load_reasoning_config.
+        _oc_model = body.get("oc_model")
+        model_override = (
+            _oc_model.strip()
+            if isinstance(_oc_model, str)
+            and _oc_model.strip()
+            and not re.search(r'[\r\n\x00]', _oc_model)
+            and len(_oc_model.strip()) <= self._MAX_SESSION_HEADER_LEN
+            else None
+        )
+        reasoning_config_override = None
+        _oc_thinking = body.get("oc_thinking")
+        _oc_effort = body.get("oc_reasoning_effort")
+        if _oc_thinking is False:
+            reasoning_config_override = {"enabled": False}
+        elif isinstance(_oc_effort, str) and _oc_effort.strip():
+            from hermes_constants import parse_reasoning_effort
+            reasoning_config_override = parse_reasoning_effort(_oc_effort.strip())
+
         completion_id = f"chatcmpl-{uuid.uuid4().hex[:29]}"
-        model_name = body.get("model", self._model_name)
+        model_name = (model_override or body.get("model") or self._model_name)
         created = int(time.time())
 
         if stream:
@@ -1944,6 +1997,8 @@ class APIServerAdapter(BasePlatformAdapter):
                 tool_complete_callback=_on_tool_complete,
                 agent_ref=agent_ref,
                 gateway_session_key=gateway_session_key,
+                model_override=model_override,
+                reasoning_config_override=reasoning_config_override,
             ))
             # Ensure SSE drain loops can terminate without relying on polling
             # agent_task.done(), which can race with queue timeout checks.
@@ -1963,6 +2018,8 @@ class APIServerAdapter(BasePlatformAdapter):
                 ephemeral_system_prompt=system_prompt,
                 session_id=session_id,
                 gateway_session_key=gateway_session_key,
+                model_override=model_override,
+                reasoning_config_override=reasoning_config_override,
             )
 
         idempotency_key = request.headers.get("Idempotency-Key")
@@ -2986,6 +3043,8 @@ class APIServerAdapter(BasePlatformAdapter):
                 tool_complete_callback=_on_tool_complete,
                 agent_ref=agent_ref,
                 gateway_session_key=gateway_session_key,
+                model_override=model_override,
+                reasoning_config_override=reasoning_config_override,
             ))
             # Ensure SSE drain loops can terminate without relying on polling
             # agent_task.done(), which can race with queue timeout checks.
@@ -3530,6 +3589,8 @@ class APIServerAdapter(BasePlatformAdapter):
         tool_complete_callback=None,
         agent_ref: Optional[list] = None,
         gateway_session_key: Optional[str] = None,
+        model_override: Optional[str] = None,
+        reasoning_config_override: Optional[Dict[str, Any]] = None,
     ) -> tuple:
         """
         Create an agent and run a conversation in a thread executor.
@@ -3562,6 +3623,8 @@ class APIServerAdapter(BasePlatformAdapter):
                     tool_progress_callback=tool_progress_callback,
                     tool_start_callback=tool_start_callback,
                     tool_complete_callback=tool_complete_callback,
+                    model_override=model_override,
+                    reasoning_config_override=reasoning_config_override,
                     gateway_session_key=gateway_session_key,
                 )
                 if agent_ref is not None:
