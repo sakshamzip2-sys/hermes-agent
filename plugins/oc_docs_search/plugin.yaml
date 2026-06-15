@@ -1,0 +1,11 @@
+name: oc_docs_search
+version: 1.0.0
+description: "BM25 search over the project's markdown docs (docs/, website/docs/, top-level *.md). Ported from OpenComputer v1's OcDocs tool into the v2 plugin idiom with a pure-stdlib BM25 (no rank_bm25 dependency). The agent calls docs_search explicitly to locate where a concept/config/command is documented; no per-turn injection. Override roots with OC_DOCS_SEARCH_ROOTS."
+author: "OpenComputer (ported from v1 opencomputer/agent/oc_docs_index.py)"
+kind: standalone
+platforms:
+  - linux
+  - macos
+  - windows
+provides_tools:
+  - docs_search
