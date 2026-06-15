@@ -339,6 +339,98 @@ class TestAdapterInit:
 
 
 # ---------------------------------------------------------------------------
+# Prompt-bar model picker: per-request override parsing (_parse_oc_overrides)
+# ---------------------------------------------------------------------------
+
+
+class TestParseOcOverrides:
+    """Guards the oc_model / oc_reasoning_effort / oc_thinking parser shared by
+    /v1/chat/completions and /v1/responses. A prior regression referenced these
+    overrides in a handler where they were undefined → NameError 500; the shared
+    parser must never raise and must validate input."""
+
+    def _adapter(self):
+        return APIServerAdapter(PlatformConfig(enabled=True))
+
+    def test_valid_model_only(self):
+        m, rc = self._adapter()._parse_oc_overrides({"oc_model": "claude-haiku-4-5"})
+        assert m == "claude-haiku-4-5"
+        assert rc is None  # no thinking/effort given → leave reasoning at default
+
+    def test_empty_body(self):
+        assert self._adapter()._parse_oc_overrides({}) == (None, None)
+
+    def test_non_string_model_ignored(self):
+        # number / dict / list must not coerce into a garbage model id
+        for bad in (12345, {"x": 1}, ["a"], None, True):
+            m, _ = self._adapter()._parse_oc_overrides({"oc_model": bad})
+            assert m is None, bad
+
+    def test_model_with_control_chars_rejected(self):
+        m, _ = self._adapter()._parse_oc_overrides({"oc_model": "claude\n-haiku"})
+        assert m is None
+
+    def test_overlong_model_rejected(self):
+        m, _ = self._adapter()._parse_oc_overrides({"oc_model": "x" * 300})
+        assert m is None
+
+    def test_thinking_off_disables(self):
+        _, rc = self._adapter()._parse_oc_overrides({"oc_thinking": False})
+        assert rc == {"enabled": False}
+
+    def test_effort_builds_config(self):
+        _, rc = self._adapter()._parse_oc_overrides(
+            {"oc_thinking": True, "oc_reasoning_effort": "low"}
+        )
+        assert rc == {"enabled": True, "effort": "low"}
+
+    def test_thinking_off_precedes_effort(self):
+        # oc_thinking False wins even if an effort is also present
+        _, rc = self._adapter()._parse_oc_overrides(
+            {"oc_thinking": False, "oc_reasoning_effort": "high"}
+        )
+        assert rc == {"enabled": False}
+
+    def test_invalid_effort_falls_back(self):
+        _, rc = self._adapter()._parse_oc_overrides(
+            {"oc_reasoning_effort": "bogus"}
+        )
+        assert rc is None
+
+    def test_create_agent_applies_overrides(self, monkeypatch):
+        captured = {}
+
+        class FakeAgent:
+            def __init__(self, **kwargs):
+                captured.update(kwargs)
+
+        monkeypatch.setattr("run_agent.AIAgent", FakeAgent)
+        monkeypatch.setattr("gateway.run._resolve_runtime_agent_kwargs", lambda: {})
+        monkeypatch.setattr("gateway.run._resolve_gateway_model", lambda: "config-model")
+        monkeypatch.setattr("gateway.run._load_gateway_config", lambda: {})
+        monkeypatch.setattr(
+            "gateway.run.GatewayRunner._load_reasoning_config",
+            staticmethod(lambda: {"enabled": True, "effort": "high"}),
+        )
+        monkeypatch.setattr(
+            "gateway.run.GatewayRunner._load_fallback_model", staticmethod(lambda: None)
+        )
+        monkeypatch.setattr("hermes_cli.tools_config._get_platform_tools", lambda *_: set())
+
+        adapter = APIServerAdapter(PlatformConfig(enabled=True))
+        monkeypatch.setattr(adapter, "_ensure_session_db", lambda: None)
+
+        adapter._create_agent(
+            session_id="api-session",
+            model_override="claude-haiku-4-5",
+            reasoning_config_override={"enabled": False},
+        )
+        # per-request override beats config defaults
+        assert captured["model"] == "claude-haiku-4-5"
+        assert captured["reasoning_config"] == {"enabled": False}
+
+
+# ---------------------------------------------------------------------------
 # Auth checking
 # ---------------------------------------------------------------------------
 
