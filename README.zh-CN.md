@@ -173,7 +173,7 @@ cd hermes-agent
 ./opencomputer              # 自动检测 venv，无需先 source
 ```
 
-手动安装（等效于上述命令）：
+手动克隆备用路径（用于一次性 clone / CI，或你明确不想使用 managed install layout 时）：
 
 ```bash
 curl -LsSf https://astral.sh/uv/install.sh | sh

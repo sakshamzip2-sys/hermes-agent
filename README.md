@@ -190,7 +190,8 @@ cd hermes-agent
 ./opencomputer              # auto-detects the venv, no need to `source` first
 ```
 
-Manual path (equivalent to the above):
+Manual clone fallback (for throwaway clones/CI where you intentionally do not
+want the managed install layout):
 
 ```bash
 curl -LsSf https://astral.sh/uv/install.sh | sh
