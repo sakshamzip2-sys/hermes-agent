@@ -1083,6 +1083,34 @@ class APIServerAdapter(BasePlatformAdapter):
         )
         return agent
 
+    def _parse_oc_overrides(self, body: Dict[str, Any]) -> tuple:
+        """Parse the prompt-bar model-picker fields from a request body.
+
+        Returns ``(model_override, reasoning_config_override)``.  Sent under
+        dedicated ``oc_*`` body fields so they never collide with the OpenAI
+        ``model`` field arbitrary OpenAI-compat clients populate.  Shared by
+        ``/v1/chat/completions`` and ``/v1/responses`` so both honor the picker
+        (and so neither path can reference these names undefined).
+        """
+        oc_model = body.get("oc_model")
+        model_override = (
+            oc_model.strip()
+            if isinstance(oc_model, str)
+            and oc_model.strip()
+            and not re.search(r'[\r\n\x00]', oc_model)
+            and len(oc_model.strip()) <= self._MAX_SESSION_HEADER_LEN
+            else None
+        )
+        reasoning_config_override: Optional[Dict[str, Any]] = None
+        oc_thinking = body.get("oc_thinking")
+        oc_effort = body.get("oc_reasoning_effort")
+        if oc_thinking is False:
+            reasoning_config_override = {"enabled": False}
+        elif isinstance(oc_effort, str) and oc_effort.strip():
+            from hermes_constants import parse_reasoning_effort
+            reasoning_config_override = parse_reasoning_effort(oc_effort.strip())
+        return model_override, reasoning_config_override
+
     # ------------------------------------------------------------------
     # HTTP Handlers
     # ------------------------------------------------------------------
@@ -1879,28 +1907,8 @@ class APIServerAdapter(BasePlatformAdapter):
             # history already set from request body above
 
         # Per-request model / reasoning overrides from the prompt-bar model
-        # picker.  Sent under dedicated oc_* fields so they never collide with the
-        # OpenAI `model` field that arbitrary OpenAI-compat clients populate
-        # (passing those through as a model switch would regress them).  Reasoning
-        # is built from oc_reasoning_effort + oc_thinking into the same shape as
-        # parse_reasoning_effort / _load_reasoning_config.
-        _oc_model = body.get("oc_model")
-        model_override = (
-            _oc_model.strip()
-            if isinstance(_oc_model, str)
-            and _oc_model.strip()
-            and not re.search(r'[\r\n\x00]', _oc_model)
-            and len(_oc_model.strip()) <= self._MAX_SESSION_HEADER_LEN
-            else None
-        )
-        reasoning_config_override = None
-        _oc_thinking = body.get("oc_thinking")
-        _oc_effort = body.get("oc_reasoning_effort")
-        if _oc_thinking is False:
-            reasoning_config_override = {"enabled": False}
-        elif isinstance(_oc_effort, str) and _oc_effort.strip():
-            from hermes_constants import parse_reasoning_effort
-            reasoning_config_override = parse_reasoning_effort(_oc_effort.strip())
+        # picker (shared parser — see _parse_oc_overrides; /v1/responses uses it too).
+        model_override, reasoning_config_override = self._parse_oc_overrides(body)
 
         completion_id = f"chatcmpl-{uuid.uuid4().hex[:29]}"
         model_name = (model_override or body.get("model") or self._model_name)
@@ -2991,6 +2999,10 @@ class APIServerAdapter(BasePlatformAdapter):
         session_id = stored_session_id or str(uuid.uuid4())
 
         stream = _coerce_request_bool(body.get("stream"), default=False)
+        # Per-request model / reasoning overrides (prompt-bar picker) — shared
+        # parser; applies to BOTH the streaming and non-streaming branches below
+        # (must be defined before either references it).
+        model_override, reasoning_config_override = self._parse_oc_overrides(body)
         if stream:
             # Streaming branch — emit OpenAI Responses SSE events as the
             # agent runs so frontends can render text deltas and tool
@@ -3078,6 +3090,8 @@ class APIServerAdapter(BasePlatformAdapter):
                 ephemeral_system_prompt=instructions,
                 session_id=session_id,
                 gateway_session_key=gateway_session_key,
+                model_override=model_override,
+                reasoning_config_override=reasoning_config_override,
             )
 
         idempotency_key = request.headers.get("Idempotency-Key")
