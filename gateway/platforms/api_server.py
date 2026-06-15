@@ -1079,7 +1079,7 @@ class APIServerAdapter(BasePlatformAdapter):
     async def _handle_health(self, request: "web.Request") -> "web.Response":
         """GET /health — simple health check."""
         return web.json_response(
-            {"status": "ok", "platform": "hermes-agent", "version": _hermes_version()}
+            {"status": "ok", "platform": "open-computer", "version": _hermes_version()}
         )
 
     async def _handle_health_detailed(self, request: "web.Request") -> "web.Response":
@@ -1145,7 +1145,7 @@ class APIServerAdapter(BasePlatformAdapter):
 
         return web.json_response({
             "object": "hermes.api_server.capabilities",
-            "platform": "hermes-agent",
+            "platform": "open-computer",
             "model": self._model_name,
             "auth": {
                 "type": "bearer",
