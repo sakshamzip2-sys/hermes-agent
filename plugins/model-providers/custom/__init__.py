@@ -55,12 +55,18 @@ class CustomProfile(ProviderProfile):
                 # parameter"), which silently fails every Haiku request when a
                 # reasoning effort is set (the default). Skipping reasoning for
                 # Haiku makes it answer normally instead.
+                # Pass the full Anthropic effort ladder through to the router
+                # (low < medium < high < xhigh < max). ``xhigh`` and ``max`` are
+                # real levels the OpenComputer router accepts — previously both
+                # were collapsed to ``high`` here, so the prompt-bar "Extra"
+                # (xhigh) and "Max" picks silently did nothing.
                 _clamp = {
                     "minimal": "low",
                     "low": "low",
                     "medium": "medium",
                     "high": "high",
-                    "xhigh": "high",
+                    "xhigh": "xhigh",
+                    "max": "max",
                 }
                 top_level["reasoning_effort"] = _clamp.get(_effort, "medium")
                 # Anthropic models require temperature == 1 whenever extended
