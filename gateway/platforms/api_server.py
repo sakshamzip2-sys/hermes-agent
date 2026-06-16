@@ -1967,6 +1967,17 @@ class APIServerAdapter(BasePlatformAdapter):
                 if text:
                     _stream_q.put(("__reasoning__", text))
 
+            def _on_status(kind, message):
+                # Surface agent status/lifecycle activity (context compaction,
+                # provider fallbacks, warnings) to the frontend as a
+                # ``hermes.agent.status`` SSE event — this is the model-agnostic
+                # seam that was previously CLI-only ("Gateway status_callback is
+                # not yet wired"). ``kind`` is e.g. "lifecycle" | "warn".
+                if message:
+                    _stream_q.put(
+                        ("__agent_status__", {"kind": str(kind or "info"), "message": str(message)})
+                    )
+
             # Track which tool_call_ids we've emitted a "running" lifecycle
             # event for, so a "completed" event without a matching "running"
             # (e.g. internal/filtered tools) is silently dropped instead of
@@ -2033,6 +2044,7 @@ class APIServerAdapter(BasePlatformAdapter):
                 reasoning_callback=_on_reasoning,
                 tool_start_callback=_on_tool_start,
                 tool_complete_callback=_on_tool_complete,
+                status_callback=_on_status,
                 agent_ref=agent_ref,
                 gateway_session_key=gateway_session_key,
                 model_override=model_override,
@@ -2218,6 +2230,15 @@ class APIServerAdapter(BasePlatformAdapter):
                     event_data = json.dumps(item[1])
                     await response.write(
                         f"event: hermes.tool.progress\ndata: {event_data}\n\n".encode()
+                    )
+                elif isinstance(item, tuple) and len(item) == 2 and item[0] == "__agent_status__":
+                    # Agent status/lifecycle activity (compaction, fallback,
+                    # warnings) → custom ``event: hermes.agent.status`` event so
+                    # the frontend can show what the agent is doing behind the
+                    # scenes without storing it in conversation history.
+                    event_data = json.dumps(item[1])
+                    await response.write(
+                        f"event: hermes.agent.status\ndata: {event_data}\n\n".encode()
                     )
                 elif isinstance(item, tuple) and len(item) == 2 and item[0] == "__reasoning__":
                     # Extended-thinking delta → ``delta.reasoning_content`` chunk.
@@ -3765,6 +3786,7 @@ class APIServerAdapter(BasePlatformAdapter):
                     tool_progress_callback=tool_progress_callback,
                     tool_start_callback=tool_start_callback,
                     tool_complete_callback=tool_complete_callback,
+                    status_callback=status_callback,
                     model_override=model_override,
                     reasoning_config_override=reasoning_config_override,
                     gateway_session_key=gateway_session_key,
