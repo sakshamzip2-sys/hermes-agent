@@ -429,8 +429,8 @@ _SCHEMA_OVERRIDES: Dict[str, Dict[str, Any]] = {
     },
     "terminal.backend": {
         "type": "select",
-        "description": "Terminal execution backend",
-        "options": ["local", "docker", "ssh", "modal", "daytona", "singularity"],
+        "description": "Terminal execution backend (auto = prefer an isolated sandbox, fall back to local)",
+        "options": ["auto", "local", "docker", "ssh", "modal", "daytona", "singularity"],
     },
     "terminal.modal_mode": {
         "type": "select",

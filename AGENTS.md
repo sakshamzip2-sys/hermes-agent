@@ -1123,6 +1123,32 @@ in config.yaml (or `HERMES_BACKGROUND_NOTIFICATIONS` env var):
 - `error` — only the final message when exit code != 0
 - `off` — no watcher messages at all
 
+### Execution Backend: Sandbox by Default (`terminal.backend: auto`)
+
+`terminal` and `execute_code` run agent-generated, untrusted code. The default
+backend is **`auto`** (`config.yaml: terminal.backend`, env `TERMINAL_ENV`),
+resolved by `tools/sandbox_resolver.py`:
+
+1. **`docker`** — chosen when a Docker daemon is running. The v2 Docker backend
+   is hardened (`--cap-drop ALL`, `--no-new-privileges`, pid/cpu/mem limits;
+   `tools/environments/docker.py`). When `auto` selects Docker, the project
+   `cwd` is bind-mounted to `/workspace` so the coding agent can still see and
+   edit the repo — but **only** the cwd; the rest of the host FS stays invisible.
+2. **`modal`** — chosen when Docker is absent but the Modal SDK + token are
+   configured (microVM-style isolation).
+3. **`local`** — fallback when no isolated backend exists. Agent code runs on
+   the **host with no kernel isolation**; the downgrade is logged at WARNING
+   (never silent).
+
+Resolution runs at most once per process (cached) and is written back to
+`TERMINAL_ENV` so every downstream reader (credential path translation, gateway,
+`doctor`/`status`) sees a concrete backend, never `auto`. The permission gate
+(`tools/approval.py`) already treats `{docker, singularity, modal, daytona}` as
+already-isolated and skips dangerous-command approval for them, so commands in a
+sandbox are auto-allowed while host commands keep the full guard floor. Set
+`terminal.backend: local` explicitly to force host execution (e.g. when the
+agent must operate the user's real shell/credentials as a trusted operator).
+
 ---
 
 ## Profiles: Multi-Instance Support

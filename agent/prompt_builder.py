@@ -855,7 +855,17 @@ def build_environment_hints() -> str:
 
     hints: list[str] = []
 
-    backend = (os.getenv("TERMINAL_ENV") or "local").strip().lower()
+    backend = (os.getenv("TERMINAL_ENV") or "auto").strip().lower()
+    if backend == "auto":
+        # Resolve "auto" to the concrete backend so the environment hint we put
+        # in the system prompt describes where tools ACTUALLY run (sandbox vs
+        # host), not the literal "auto". Cached + write-back, so this never
+        # tells the model "host" while it is really containerized.
+        try:
+            from tools.sandbox_resolver import resolve_backend_name
+            backend = resolve_backend_name("auto", write_back=True)
+        except Exception:
+            backend = "local"
     is_remote_backend = backend in _REMOTE_TERMINAL_BACKENDS
 
     if not is_remote_backend:

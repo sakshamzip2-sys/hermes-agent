@@ -933,7 +933,11 @@ DEFAULT_CONFIG = {
     },
     
     "terminal": {
-        "backend": "local",
+        # "auto" prefers a kernel-isolated sandbox (Docker, then Modal) for
+        # agent-generated code and falls back to "local" host execution when no
+        # isolated backend is available (logged, never silent). Set to "local"
+        # explicitly to force host execution. See tools/sandbox_resolver.py.
+        "backend": "auto",
         "modal_mode": "auto",
         "cwd": ".",  # Use current directory
         "timeout": 180,
@@ -5413,6 +5417,25 @@ def apply_terminal_config_to_env(
                 value = os.path.expanduser(value)
         if should_override or env_var not in target:
             target[env_var] = _terminal_env_value(value)
+
+    # Concretize an "auto" backend once, here at the config→env chokepoint, so
+    # every downstream reader that compares TERMINAL_ENV against "docker"/"local"
+    # (credential path translation, the gateway, doctor/status, and the system
+    # prompt's environment hint in agent/prompt_builder.py) observes a real
+    # backend rather than "auto". Probing is cached per-process and degrades to
+    # "local" when no isolated backend is available. The resolved backend is a
+    # machine-global fact, so we write it to BOTH the target dict AND the parent
+    # os.environ — otherwise a reader that fires before the first terminal call
+    # would still see "auto" and mis-describe the runtime. Best-effort: a probe
+    # failure must never break config loading.
+    try:
+        if str(target.get("TERMINAL_ENV", "")).strip().lower() == "auto":
+            from tools.sandbox_resolver import resolve_backend_name
+
+            concrete = resolve_backend_name("auto", write_back=True)
+            target["TERMINAL_ENV"] = concrete
+    except Exception:  # pragma: no cover - defensive
+        pass
     return target
 
 

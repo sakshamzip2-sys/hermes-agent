@@ -56,6 +56,7 @@ logger = logging.getLogger(__name__)
 # long-running subprocesses immediately instead of blocking until timeout.
 # ---------------------------------------------------------------------------
 from tools.interrupt import is_interrupted, _interrupt_event  # noqa: F401 — re-exported
+from tools.sandbox_resolver import resolve_terminal_backend
 # display_hermes_home imported lazily at call site (stale-module safety during hermes update)
 
 
@@ -566,7 +567,8 @@ def _sudo_nopasswd_works() -> bool:
     cache) so an expired sudo timestamp cannot make a later command silently
     block waiting for a password.
     """
-    terminal_env = os.getenv("TERMINAL_ENV", "local").strip().lower() or "local"
+    # Resolve "auto" without write-back: a read-only probe must not mutate env.
+    terminal_env, _ = resolve_terminal_backend(os.getenv("TERMINAL_ENV", "auto"), write_back=False)
     if terminal_env != "local":
         return False
 
@@ -1086,13 +1088,88 @@ def _safe_getcwd() -> str:
         return os.getenv("TERMINAL_CWD") or os.path.expanduser("~")
 
 
+def _is_safe_auto_mount_dir(path: str) -> bool:
+    """Return True when ``path`` is safe to auto bind-mount into a sandbox.
+
+    Sandbox-by-default bind-mounts the project cwd into the container so the
+    coding agent can still work. But auto-mounting the filesystem root, the
+    user's home directory, or another shallow/sensitive root would re-expose
+    ``~/.ssh``, ``~/.aws``, ``.env`` and similar secrets into the "sandbox",
+    defeating the very isolation we just enabled. Those require an explicit
+    opt-in (``TERMINAL_DOCKER_MOUNT_CWD_TO_WORKSPACE=true``); this guard refuses
+    to mount them automatically.
+    """
+    if not path or not str(path).strip():
+        return False
+    try:
+        expanded = os.path.abspath(os.path.expanduser(path))
+        real = os.path.realpath(expanded)
+    except Exception:
+        return False
+    if not expanded or not real:
+        return False
+
+    home_real = os.path.realpath(os.path.expanduser("~"))
+    home_abs = os.path.abspath(os.path.expanduser("~"))
+
+    # Shallow system / shared roots that contain many users' data or are a
+    # parent of home. os.path.dirname(home) blocks e.g. /Users and /home. We
+    # check BOTH the symlink-resolved path and the literal path, because on
+    # macOS /etc, /tmp, /var are symlinks into /private/* — realpath alone would
+    # let a literal "/etc" slip past the denylist.
+    denylist = {
+        os.sep, "/Users", "/home", "/root", "/etc", "/var", "/usr",
+        "/tmp", "/opt", "/mnt", "/media", "/srv", "/private",
+        "/private/etc", "/private/var", "/private/tmp",
+        os.path.dirname(home_real), os.path.dirname(home_abs),
+    }
+    for candidate in (expanded, real):
+        if candidate == os.sep or candidate in denylist:
+            return False
+        if candidate in (home_real, home_abs):
+            return False
+        # Require at least two path segments below root (e.g. /Users/<name>/<proj>
+        # or /home/<name>/<proj>), so a bare top-level dir is never auto-mounted.
+        if len([s for s in candidate.split(os.sep) if s]) < 2:
+            return False
+    return True
+
+
 def _get_env_config() -> Dict[str, Any]:
     """Get terminal environment configuration from environment variables."""
     # Default image with Python and Node.js for maximum compatibility
     default_image = "nikolaik/python-nodejs:python3.11-nodejs20"
-    env_type = os.getenv("TERMINAL_ENV", "local")
-    
+    # Resolve the (possibly "auto") backend to a concrete one, preferring a
+    # kernel-isolated sandbox when available and writing the choice back to the
+    # env so downstream readers (credential gating, gateway, doctor) see it.
+    # was_auto is returned per-call (not via a shared global) so concurrent
+    # subagents in the in-process thread pool each get the right mount decision.
+    raw_env_type = os.getenv("TERMINAL_ENV", "auto")
+    env_type, was_auto = resolve_terminal_backend(raw_env_type)
+    auto_sandboxed = was_auto and env_type in {"docker", "singularity", "modal", "daytona"}
+
     mount_docker_cwd = os.getenv("TERMINAL_DOCKER_MOUNT_CWD_TO_WORKSPACE", "false").lower() in {"true", "1", "yes"}
+    # When WE auto-selected a sandbox (the user didn't explicitly pick docker),
+    # bind-mount the project directory into the container by default so the
+    # coding agent can still see and edit the user's repo. Only the cwd is
+    # exposed — the rest of the host filesystem stays invisible. An explicit
+    # TERMINAL_DOCKER_MOUNT_CWD_TO_WORKSPACE setting always wins.
+    #
+    # SECURITY: never auto-mount the filesystem root or the user's home dir —
+    # that would re-expose ~/.ssh, ~/.aws, .env, etc. into the "sandbox" and
+    # defeat the isolation. Such dirs require an explicit opt-in.
+    if auto_sandboxed and env_type == "docker" and "TERMINAL_DOCKER_MOUNT_CWD_TO_WORKSPACE" not in os.environ:
+        candidate_cwd = os.getenv("TERMINAL_CWD") or _safe_getcwd()
+        if _is_safe_auto_mount_dir(candidate_cwd):
+            mount_docker_cwd = True
+        else:
+            logger.warning(
+                "TERMINAL_ENV=auto selected the Docker sandbox but will NOT "
+                "auto-mount %r (filesystem root / home dir / sensitive shallow "
+                "path) — auto-mounting it would re-expose host credentials into "
+                "the sandbox. Set TERMINAL_DOCKER_MOUNT_CWD_TO_WORKSPACE=true to "
+                "mount it explicitly.", candidate_cwd,
+            )
     container_backend = env_type in {"docker", "singularity", "modal", "daytona"}
     docker_backend = env_type == "docker"
 
@@ -2565,8 +2642,8 @@ def check_terminal_requirements() -> bool:
 
         else:
             logger.error(
-                "Unknown TERMINAL_ENV '%s'. Use one of: local, docker, singularity, "
-                "modal, daytona, ssh.",
+                "Unknown TERMINAL_ENV '%s'. Use one of: auto, local, docker, "
+                "singularity, modal, daytona, ssh.",
                 env_type,
             )
             return False
