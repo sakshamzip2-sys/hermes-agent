@@ -386,6 +386,38 @@ def test_worktree_helpers(tmp_path):
     assert worktrees.remove_worktree(wt["path"], force=True) is True
 
 
+def test_worktreeinclude_copies_gitignored_files(tmp_path):
+    """A gitignored file listed in .worktreeinclude is copied into a new worktree
+    (so a subagent gets e.g. its .env), while a non-listed gitignored file is not."""
+    import subprocess
+
+    from plugins.oc_flow import worktrees
+
+    repo = tmp_path / "r"
+    repo.mkdir()
+    for cmd in (
+        ["git", "init", "-q"],
+        ["git", "config", "user.email", "t@t.t"],
+        ["git", "config", "user.name", "t"],
+    ):
+        subprocess.run(cmd, cwd=repo, check=True, capture_output=True)
+    (repo / ".gitignore").write_text(".env\nsecret.txt\n")
+    (repo / ".worktreeinclude").write_text(".env\n")  # only .env is opted in
+    (repo / ".env").write_text("TOKEN=abc")
+    (repo / "secret.txt").write_text("nope")
+    (repo / "tracked.txt").write_text("x")
+    subprocess.run(["git", "add", "."], cwd=repo, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-qm", "init"], cwd=repo, check=True, capture_output=True)
+
+    wt = worktrees.create_worktree(str(repo))
+    assert wt is not None
+    wt_path = Path(wt["path"])
+    # .env was copied (listed + gitignored); secret.txt was NOT (gitignored but not listed).
+    assert (wt_path / ".env").read_text() == "TOKEN=abc"
+    assert not (wt_path / "secret.txt").exists()
+    worktrees.remove_worktree(str(wt_path), force=True)
+
+
 def test_resolve_default_runner_env(monkeypatch):
     monkeypatch.delenv("OC_FLOW_FAKE_AGENT", raising=False)
     assert resolve_default_runner() is run_agent_task

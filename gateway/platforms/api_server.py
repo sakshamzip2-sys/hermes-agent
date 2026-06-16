@@ -1044,6 +1044,7 @@ class APIServerAdapter(BasePlatformAdapter):
         tool_progress_callback=None,
         tool_start_callback=None,
         tool_complete_callback=None,
+        status_callback=None,
         gateway_session_key: Optional[str] = None,
         model_override: Optional[str] = None,
         reasoning_config_override: Optional[Dict[str, Any]] = None,
@@ -1104,6 +1105,7 @@ class APIServerAdapter(BasePlatformAdapter):
             tool_progress_callback=tool_progress_callback,
             tool_start_callback=tool_start_callback,
             tool_complete_callback=tool_complete_callback,
+            status_callback=status_callback,
             session_db=self._ensure_session_db(),
             fallback_model=fallback_model,
             reasoning_config=reasoning_config,
@@ -3321,15 +3323,15 @@ class APIServerAdapter(BasePlatformAdapter):
         except Exception as e:
             return web.json_response({"error": str(e)}, status=500)
 
-    async def _handle_parallel_agents(self, request: "web.Request") -> "web.Response":
-        """GET /api/parallel-agents — read-only snapshot of dynamic workflows
-        (oc_flow), background agent sessions (oc_agents), and agent teams
-        (oc_teams) for the dashboard. Each section degrades to an empty list if
-        its plugin isn't enabled, so the endpoint never hard-fails."""
-        auth_err = self._check_auth(request)
-        if auth_err:
-            return auth_err
+    @staticmethod
+    def build_parallel_agents_snapshot() -> dict:
+        """Gather a read-only snapshot of dynamic workflows (oc_flow), background
+        agent sessions (oc_agents), and agent teams (oc_teams). Each section
+        degrades to an empty list (with its error recorded under ``errors``) if
+        its plugin is disabled or absent, so the snapshot never hard-fails.
 
+        Factored out of the handler so it is unit-testable without aiohttp.
+        """
         flows: list = []
         agents: list = []
         teams: list = []
@@ -3366,14 +3368,22 @@ class APIServerAdapter(BasePlatformAdapter):
         except Exception as exc:  # noqa: BLE001
             teams_err = str(exc)
 
-        return web.json_response({
+        return {
             "object": "hermes.parallel_agents",
             "flows": flows,
             "agents": agents,
             "teams": teams,
             "errors": {"flows": flows_err, "agents": agents_err, "teams": teams_err},
             "timestamp": int(time.time()),
-        })
+        }
+
+    async def _handle_parallel_agents(self, request: "web.Request") -> "web.Response":
+        """GET /api/parallel-agents — read-only snapshot of dynamic workflows,
+        background agent sessions, and agent teams for the dashboard."""
+        auth_err = self._check_auth(request)
+        if auth_err:
+            return auth_err
+        return web.json_response(self.build_parallel_agents_snapshot())
 
     async def _handle_create_job(self, request: "web.Request") -> "web.Response":
         """POST /api/jobs — create a new cron job."""
@@ -3718,6 +3728,7 @@ class APIServerAdapter(BasePlatformAdapter):
         tool_progress_callback=None,
         tool_start_callback=None,
         tool_complete_callback=None,
+        status_callback=None,
         agent_ref: Optional[list] = None,
         gateway_session_key: Optional[str] = None,
         model_override: Optional[str] = None,
