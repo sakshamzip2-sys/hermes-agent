@@ -1,0 +1,14 @@
+name: oc_teams
+version: 1.0.0
+description: "Agent Teams — a lead agent and teammates sharing a task list and a mailbox (ported from the Claude-Code agent-teams concept into the v2 idiom; teammates run as background sessions, coordination via service-gated tools)."
+author: "OpenComputer v2"
+kind: standalone
+provides_tools:
+  - team_status
+  - team_list_tasks
+  - team_create_task
+  - team_claim_task
+  - team_complete_task
+  - team_send_message
+  - team_read_inbox
+provides_hooks: []

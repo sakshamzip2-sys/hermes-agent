@@ -1,0 +1,6 @@
+name: oc_agents
+version: 1.0.0
+description: "Agent View — dispatch and manage many background agent sessions from one place (ported from the Claude-Code agent-view concept into the v2 idiom)."
+author: "OpenComputer v2"
+kind: standalone
+provides_hooks: []

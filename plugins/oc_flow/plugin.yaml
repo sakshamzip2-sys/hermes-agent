@@ -1,0 +1,6 @@
+name: oc_flow
+version: 1.0.0
+description: "Dynamic Workflows — orchestrate many subagents from a resumable Python script (ported from the Claude-Code dynamic-workflows concept into the v2 idiom)."
+author: "OpenComputer v2"
+kind: standalone
+provides_hooks: []
