@@ -735,3 +735,70 @@ class TestAllowlistConcurrency:
 
         assert len(tmp_paths_seen) == 2
         assert tmp_paths_seen[0] != tmp_paths_seen[1]
+
+
+# ── exit-2 block synthesis (pre_tool_call + team gates) ─────────────────────
+
+
+class TestSynthesizeExit2Block:
+    """Claude-Code convention: a shell hook that exits 2 BLOCKS the call, using
+    stderr as the reason — even with no JSON on stdout. Synthesised only for
+    blockable events; a JSON directive already on stdout always wins."""
+
+    def test_pre_tool_call_exit2_synthesizes_block(self):
+        out = shell_hooks._synthesize_exit2_block(
+            "pre_tool_call", 2, None, "forbidden command"
+        )
+        assert out == {"action": "block", "message": "forbidden command"}
+
+    def test_team_task_completed_exit2_synthesizes_block(self):
+        out = shell_hooks._synthesize_exit2_block(
+            "team_task_completed", 2, None, "needs a passing test"
+        )
+        assert out == {"action": "block", "message": "needs a passing test"}
+
+    def test_non_blockable_event_exit2_does_not_block(self):
+        # on_session_start cannot be vetoed; exit-2 must not fabricate a block.
+        assert shell_hooks._synthesize_exit2_block("on_session_start", 2, None, "boom") is None
+
+    def test_json_directive_on_stdout_wins_over_exit_code(self):
+        parsed = {"action": "block", "message": "from stdout"}
+        out = shell_hooks._synthesize_exit2_block("team_task_completed", 0, parsed, "")
+        assert out == parsed
+
+    def test_clean_exit_no_directive_is_none(self):
+        assert shell_hooks._synthesize_exit2_block("team_task_created", 0, None, "") is None
+
+    def test_team_gates_are_exit2_blockable(self):
+        assert {"team_task_created", "team_task_completed"} <= shell_hooks._EXIT2_BLOCKABLE_EVENTS
+
+
+# ── stdout-JSON block directives for team gates (parity with pre_tool_call) ──
+
+
+class TestParseResponseTeamGates:
+    """A shell hook for a team gate may veto via stdout JSON (action/decision
+    block), exactly like pre_tool_call — not only via exit-2."""
+
+    def test_team_task_completed_stdout_block_action(self):
+        out = shell_hooks._parse_response(
+            "team_task_completed", '{"action":"block","message":"need a test"}'
+        )
+        assert out == {"action": "block", "message": "need a test"}
+
+    def test_team_task_created_stdout_block_cc_shape(self):
+        out = shell_hooks._parse_response(
+            "team_task_created", '{"decision":"block","reason":"too vague"}'
+        )
+        assert out == {"action": "block", "message": "too vague"}
+
+    def test_pre_tool_call_stdout_block_still_works(self):
+        out = shell_hooks._parse_response(
+            "pre_tool_call", '{"decision":"block","reason":"nope"}'
+        )
+        assert out == {"action": "block", "message": "nope"}
+
+    def test_non_blockable_event_stdout_block_ignored(self):
+        assert shell_hooks._parse_response(
+            "on_session_start", '{"action":"block","message":"x"}'
+        ) is None

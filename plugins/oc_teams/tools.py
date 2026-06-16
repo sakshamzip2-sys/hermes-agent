@@ -34,6 +34,38 @@ def _ok(payload: Dict[str, Any]) -> str:
     return json.dumps(payload, default=str)
 
 
+def _fire_team_hook(name: str, **kwargs: Any) -> Optional[str]:
+    """Fire a team lifecycle hook; return a veto message if any callback blocks.
+
+    Mirrors v2's canonical block contract so team gates behave like every other
+    blocking hook: a callback returns ``{"action": "block", "message": "..."}``
+    (canonical) or ``{"decision": "block", "reason": "..."}`` (Claude-Code shape)
+    to veto, or ``None`` to observe. The first veto wins.
+
+    Fails OPEN: if the plugin system is unavailable or no callback vetoes, this
+    returns ``None`` and the caller proceeds unchanged — a normal team session
+    with no quality-gate plugins behaves exactly as before.
+    """
+    try:
+        from hermes_cli.plugins import invoke_hook
+    except Exception:  # noqa: BLE001 — never let hook plumbing break a team tool
+        return None
+    try:
+        results = invoke_hook(name, **kwargs)
+    except Exception:  # noqa: BLE001
+        return None
+    for r in results:
+        if not isinstance(r, dict):
+            continue
+        if r.get("action") == "block":
+            msg = r.get("message")
+            return msg if isinstance(msg, str) and msg else "blocked"
+        if r.get("decision") == "block":
+            reason = r.get("reason")
+            return reason if isinstance(reason, str) and reason else "blocked"
+    return None
+
+
 # --------------------------------------------------------------------------- #
 # Handlers
 # --------------------------------------------------------------------------- #
@@ -62,11 +94,18 @@ def _handle_create_task(args: dict, **kw) -> str:
     subject = (args.get("subject") or "").strip()
     if not subject:
         return tool_error("subject is required")
+    description = args.get("description", "") or ""
+    block = _fire_team_hook(
+        "team_task_created", team_id=team_id, subject=subject,
+        description=description, created_by=member,
+    )
+    if block:
+        return tool_error(f"task creation blocked: {block}")
     depends_on = args.get("depends_on")
     if isinstance(depends_on, str):
         depends_on = [d.strip() for d in depends_on.split(",") if d.strip()]
     tid = db.create_task(
-        team_id, subject, description=args.get("description", "") or "",
+        team_id, subject, description=description,
         depends_on=depends_on if isinstance(depends_on, list) else None,
         created_by=member,
     )
@@ -97,12 +136,27 @@ def _handle_complete_task(args: dict, **kw) -> str:
     if not task_id:
         return tool_error("task_id is required")
     result = args.get("result", "")
+    # Quality gate: a registered hook may veto completion (e.g. require evidence).
+    task = db.get_task(task_id)
+    block = _fire_team_hook(
+        "team_task_completed", team_id=team_id, task_id=task_id, member=member,
+        result=result, subject=(task or {}).get("subject", ""),
+    )
+    if block:
+        return _ok({"completed": False, "blocked": True, "reason": block, "task_id": task_id})
     if db.complete_task(task_id, member):
         if result:
             db.send_message(team_id, member, "lead", f"[task {task_id} done] {result}")
         # Report which dependent tasks are now unblocked.
         unblocked = [t["id"] for t in db.claimable_tasks(team_id)]
-        return _ok({"completed": True, "task_id": task_id, "now_claimable": unblocked})
+        payload: Dict[str, Any] = {"completed": True, "task_id": task_id, "now_claimable": unblocked}
+        # If the teammate has nothing left to claim it is about to go idle —
+        # let a hook nudge it to keep working instead of stopping.
+        if not unblocked:
+            nudge = _fire_team_hook("team_teammate_idle", team_id=team_id, member=member)
+            if nudge:
+                payload["idle_nudge"] = nudge
+        return _ok(payload)
     return tool_error(f"could not complete {task_id} (already completed or missing)")
 
 

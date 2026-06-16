@@ -226,6 +226,9 @@ def _task_claim(args) -> int:
 def _task_done(args) -> int:
     if not _require_team(args.team_id):
         return 2
+    # Lead/human-operator override: this CLI path intentionally bypasses the
+    # team_task_completed quality gate (which fires on the teammate tool path in
+    # tools.py). A human running `hermes team task-done` is the final authority.
     if db.complete_task(args.task_id):
         unblocked = [t["id"] for t in db.claimable_tasks(args.team_id)]
         print(f"task {args.task_id}: completed" + (f"   now claimable: {', '.join(unblocked)}" if unblocked else ""))

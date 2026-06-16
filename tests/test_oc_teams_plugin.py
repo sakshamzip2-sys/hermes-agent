@@ -318,3 +318,238 @@ def test_cli_full_flow(teams_db, capsys, monkeypatch):
 def test_cli_unknown_team(teams_db, capsys):
     parser = _make_parser()
     assert cli.handle(parser.parse_args(["team", "show", "team_nope"])) == 2
+
+
+# --------------------------------------------------------------------------- #
+# Team lifecycle hooks (quality gates) — Feature B
+#
+# Mirror Claude-Code's TaskCreated / TaskCompleted / TeammateIdle: a plugin (or
+# shell-script) callback may veto a task creation/completion, or nudge an idle
+# teammate to keep working. Veto uses the canonical v2 block contract
+# ({"action":"block","message":...}) or the Claude-Code shape
+# ({"decision":"block","reason":...}).
+# --------------------------------------------------------------------------- #
+
+@pytest.fixture()
+def team_hook():
+    """Register team lifecycle hook callbacks on the live plugin manager.
+
+    Yields a register(name, callback) function; all registrations are removed
+    on teardown so hooks never leak between tests.
+    """
+    from hermes_cli import plugins as _plugins
+
+    pm = _plugins.get_plugin_manager()
+    registered = []
+
+    def _register(name, cb):
+        pm._hooks.setdefault(name, []).append(cb)
+        registered.append((name, cb))
+
+    yield _register
+
+    for name, cb in registered:
+        try:
+            pm._hooks.get(name, []).remove(cb)
+        except ValueError:
+            pass
+
+
+def test_team_lifecycle_hooks_in_valid_hooks():
+    from hermes_cli.plugins import VALID_HOOKS
+
+    assert {"team_task_created", "team_task_completed", "team_teammate_idle"} <= VALID_HOOKS
+
+
+def test_complete_task_hook_can_block(teams_db, team_hook, monkeypatch):
+    import json
+
+    tid = coordinator.create_team("t", goal="g")
+    db.add_member(tid, "alice")
+    monkeypatch.setenv("HERMES_TEAM_ID", tid)
+    monkeypatch.setenv("HERMES_TEAM_MEMBER", "alice")
+
+    task_id = json.loads(tools._handle_create_task({"subject": "fix the bug"}))["task_id"]
+    tools._handle_claim_task({"task_id": task_id})
+
+    seen = {}
+
+    def gate(**kw):
+        seen.update(kw)
+        return {"action": "block", "message": "attach a failing test as evidence"}
+
+    team_hook("team_task_completed", gate)
+
+    out = json.loads(tools._handle_complete_task({"task_id": task_id, "result": "done"}))
+    assert out["completed"] is False
+    assert out["blocked"] is True
+    assert out["reason"] == "attach a failing test as evidence"
+    # The gate saw enough context to judge the work.
+    assert seen.get("task_id") == task_id and seen.get("subject") == "fix the bug"
+    assert seen.get("member") == "alice"
+    # The task was NOT completed.
+    assert db.get_task(task_id)["status"] == db.TASK_IN_PROGRESS
+
+
+def test_complete_task_proceeds_when_hook_observes(teams_db, team_hook, monkeypatch):
+    import json
+
+    tid = coordinator.create_team("t")
+    db.add_member(tid, "alice")
+    monkeypatch.setenv("HERMES_TEAM_ID", tid)
+    monkeypatch.setenv("HERMES_TEAM_MEMBER", "alice")
+
+    task_id = json.loads(tools._handle_create_task({"subject": "x"}))["task_id"]
+    tools._handle_claim_task({"task_id": task_id})
+
+    # Observer returns None -> never blocks.
+    team_hook("team_task_completed", lambda **kw: None)
+
+    out = json.loads(tools._handle_complete_task({"task_id": task_id, "result": "did it"}))
+    assert out["completed"] is True
+    assert db.get_task(task_id)["status"] == db.TASK_COMPLETED
+
+
+def test_create_task_hook_can_block_cc_shape(teams_db, team_hook, monkeypatch):
+    import json
+
+    tid = coordinator.create_team("t")
+    db.add_member(tid, "alice")
+    monkeypatch.setenv("HERMES_TEAM_ID", tid)
+    monkeypatch.setenv("HERMES_TEAM_MEMBER", "alice")
+
+    # Claude-Code-style block shape must also be honoured.
+    team_hook("team_task_created", lambda **kw: {"decision": "block", "reason": "no vague tasks"})
+
+    out = json.loads(tools._handle_create_task({"subject": "do stuff"}))
+    assert "error" in out
+    assert "no vague tasks" in out["error"]
+    # Nothing was created.
+    assert db.list_tasks(tid) == []
+
+
+def test_teammate_idle_hook_nudges_when_no_claimable(teams_db, team_hook, monkeypatch):
+    import json
+
+    tid = coordinator.create_team("t")
+    db.add_member(tid, "alice")
+    monkeypatch.setenv("HERMES_TEAM_ID", tid)
+    monkeypatch.setenv("HERMES_TEAM_MEMBER", "alice")
+
+    task_id = json.loads(tools._handle_create_task({"subject": "only task"}))["task_id"]
+    tools._handle_claim_task({"task_id": task_id})
+
+    team_hook("team_teammate_idle", lambda **kw: {"action": "block", "message": "also audit the logout path"})
+
+    out = json.loads(tools._handle_complete_task({"task_id": task_id, "result": "done"}))
+    assert out["completed"] is True
+    # No claimable tasks remain -> the idle hook fired and its nudge surfaced.
+    assert out.get("idle_nudge") == "also audit the logout path"
+
+
+def test_completion_gate_fails_open_when_hook_raises(teams_db, team_hook, monkeypatch):
+    """A quality-gate callback that raises must NOT block completion (fail-open)."""
+    import json
+
+    tid = coordinator.create_team("t")
+    db.add_member(tid, "alice")
+    monkeypatch.setenv("HERMES_TEAM_ID", tid)
+    monkeypatch.setenv("HERMES_TEAM_MEMBER", "alice")
+    task_id = json.loads(tools._handle_create_task({"subject": "x"}))["task_id"]
+    tools._handle_claim_task({"task_id": task_id})
+
+    def boom(**kw):
+        raise RuntimeError("gate plugin crashed")
+
+    team_hook("team_task_completed", boom)
+    out = json.loads(tools._handle_complete_task({"task_id": task_id, "result": "done"}))
+    assert out["completed"] is True  # crash swallowed -> proceeds
+
+
+def test_completion_gate_first_veto_wins(teams_db, team_hook, monkeypatch):
+    """An earlier observer (None) does not mask a later blocker."""
+    import json
+
+    tid = coordinator.create_team("t")
+    db.add_member(tid, "alice")
+    monkeypatch.setenv("HERMES_TEAM_ID", tid)
+    monkeypatch.setenv("HERMES_TEAM_MEMBER", "alice")
+    task_id = json.loads(tools._handle_create_task({"subject": "x"}))["task_id"]
+    tools._handle_claim_task({"task_id": task_id})
+
+    team_hook("team_task_completed", lambda **kw: None)
+    team_hook("team_task_completed", lambda **kw: {"action": "block", "message": "second says no"})
+    out = json.loads(tools._handle_complete_task({"task_id": task_id, "result": "done"}))
+    assert out["completed"] is False and out["reason"] == "second says no"
+
+
+def test_completion_gate_malformed_block_message(teams_db, team_hook, monkeypatch):
+    """A block with a non-string message still vetoes, with a safe default reason."""
+    import json
+
+    tid = coordinator.create_team("t")
+    db.add_member(tid, "alice")
+    monkeypatch.setenv("HERMES_TEAM_ID", tid)
+    monkeypatch.setenv("HERMES_TEAM_MEMBER", "alice")
+    task_id = json.loads(tools._handle_create_task({"subject": "x"}))["task_id"]
+    tools._handle_claim_task({"task_id": task_id})
+
+    team_hook("team_task_completed", lambda **kw: {"action": "block", "message": 123})
+    out = json.loads(tools._handle_complete_task({"task_id": task_id, "result": "done"}))
+    assert out["completed"] is False and out["reason"] == "blocked"
+
+
+# --------------------------------------------------------------------------- #
+# Reusable agent-type definitions as teammates — Feature A wiring
+# --------------------------------------------------------------------------- #
+
+def test_spawn_teammate_from_agent_definition(teams_db, tmp_path, monkeypatch):
+    monkeypatch.setenv("HERMES_AGENTS_DIR", str(tmp_path))
+    (tmp_path / "rev.md").write_text(
+        "---\nname: reviewer\ndescription: reviews code\n"
+        "toolsets: [read_file]\nmodel: claude-haiku-4-5\nprovider: anthropic\n---\n"
+        "You are a strict security reviewer."
+    )
+    tid = coordinator.create_team("t")
+    calls = {}
+
+    def fake_dispatch(prompt, **kw):
+        calls.update(kw)
+        calls["prompt"] = prompt
+        return "bg9"
+
+    bg = coordinator.spawn_teammate(
+        tid, "alice", "review the auth module", agent_type="reviewer", dispatch_fn=fake_dispatch
+    )
+    assert bg == "bg9"
+    assert calls["model"] == "claude-haiku-4-5"
+    assert calls["provider"] == "anthropic"
+    assert calls["toolsets"] == ["read_file"]
+    # The definition's persona AND the concrete assignment both reach the teammate.
+    assert "strict security reviewer" in calls["prompt"]
+    assert "review the auth module" in calls["prompt"]
+    # Role defaults to the definition name.
+    assert db.get_member(tid, "alice")["role"] == "reviewer"
+
+
+def test_spawn_teammate_unknown_agent_type_raises(teams_db, tmp_path, monkeypatch):
+    monkeypatch.setenv("HERMES_AGENTS_DIR", str(tmp_path))
+    tid = coordinator.create_team("t")
+    with pytest.raises(ValueError):
+        coordinator.spawn_teammate(
+            tid, "alice", "x", agent_type="ghost", dispatch_fn=lambda *a, **k: "b"
+        )
+    # A failed resolve must not half-register the member.
+    assert db.get_member(tid, "alice") is None
+
+
+def test_spawn_teammate_explicit_model_overrides_definition(teams_db, tmp_path, monkeypatch):
+    monkeypatch.setenv("HERMES_AGENTS_DIR", str(tmp_path))
+    (tmp_path / "rev.md").write_text("---\nname: reviewer\nmodel: def-model\n---\nbody")
+    tid = coordinator.create_team("t")
+    calls = {}
+    coordinator.spawn_teammate(
+        tid, "alice", "x", agent_type="reviewer", model="explicit-model",
+        dispatch_fn=lambda p, **k: calls.update(k) or "b",
+    )
+    assert calls["model"] == "explicit-model"  # explicit arg wins over the definition

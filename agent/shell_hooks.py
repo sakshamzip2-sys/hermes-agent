@@ -85,6 +85,31 @@ MAX_TIMEOUT_SECONDS = 300
 ALLOWLIST_FILENAME = "shell-hooks-allowlist.json"
 _DEFAULT_BLOCK_MESSAGE = "Blocked by shell hook."
 
+# Events whose shell-hook scripts may BLOCK by exiting 2 (Claude-Code
+# convention), even with no JSON on stdout. ``pre_tool_call`` gates tool calls;
+# the ``team_*`` gates let a shell script veto/redirect agent-team task creation
+# and completion, or nudge an idle teammate. A non-blockable event (session
+# lifecycle, observers) never has a block synthesised from its exit code.
+_EXIT2_BLOCKABLE_EVENTS = frozenset({
+    "pre_tool_call",
+    "team_task_created",
+    "team_task_completed",
+    "team_teammate_idle",
+})
+
+
+def _synthesize_exit2_block(event, returncode, parsed, stderr):
+    """Apply the Claude-Code exit-2-blocks convention.
+
+    A shell hook that exits 2 BLOCKS the call, using stderr as the reason — even
+    with no JSON on stdout. A JSON directive already parsed from stdout (in
+    ``parsed``) always wins. Only blockable events synthesise a block; everything
+    else returns ``parsed`` unchanged (never fabricating a veto).
+    """
+    if parsed is None and returncode == 2 and event in _EXIT2_BLOCKABLE_EVENTS:
+        return {"action": "block", "message": stderr or _DEFAULT_BLOCK_MESSAGE}
+    return parsed
+
 # (event, matcher, command) triples that have been wired to the plugin
 # manager in the current process.  Matcher is part of the key because
 # the same script can legitimately register for different matchers under
@@ -570,13 +595,7 @@ def _run_command_hook(
         )
 
     parsed = _parse_response(spec.event, r["stdout"])
-    # Claude-Code convention: a hook that exits 2 BLOCKS the call, using stderr
-    # as the reason — even with no JSON on stdout.  Only synthesise a block for
-    # events that can actually be blocked (pre_tool_call); a JSON block on
-    # stdout (handled by _parse_response above) still wins when present.
-    if parsed is None and r["returncode"] == 2 and spec.event == "pre_tool_call":
-        return {"action": "block", "message": stderr or _DEFAULT_BLOCK_MESSAGE}
-    return parsed
+    return _synthesize_exit2_block(spec.event, r["returncode"], parsed, stderr)
 
 
 def _run_prompt_hook(
@@ -714,13 +733,14 @@ def _block_message(primary: Any, secondary: Any) -> str:
 def _parse_response(event: str, stdout: str) -> Optional[Dict[str, Any]]:
     """Translate stdout JSON into a OpenComputer wire-shape dict.
 
-    For ``pre_tool_call`` the Claude-Code-style ``{"decision": "block",
+    For any blockable event (``pre_tool_call`` and the ``team_*`` gates — see
+    ``_EXIT2_BLOCKABLE_EVENTS``) the Claude-Code-style ``{"decision": "block",
     "reason": "..."}`` payload is translated into the canonical OpenComputer
     ``{"action": "block", "message": "..."}`` shape expected by
-    :func:`hermes_cli.plugins.get_pre_tool_call_block_message`.  This is
-    the single most important correctness invariant in this module —
-    skipping the translation silently breaks every ``pre_tool_call``
-    block directive.
+    :func:`hermes_cli.plugins.get_pre_tool_call_block_message` and by the
+    oc_teams quality gates.  This is the single most important correctness
+    invariant in this module — skipping the translation silently breaks every
+    stdout-JSON block directive for those events.
 
     For ``pre_llm_call``, ``{"context": "..."}`` is passed through
     unchanged to match the existing plugin-hook contract.
@@ -743,7 +763,7 @@ def _parse_response(event: str, stdout: str) -> Optional[Dict[str, Any]]:
     if not isinstance(data, dict):
         return None
 
-    if event == "pre_tool_call":
+    if event in _EXIT2_BLOCKABLE_EVENTS:
         if data.get("action") == "block":
             return {"action": "block", "message": _block_message(data.get("message"), data.get("reason"))}
         if data.get("decision") == "block":

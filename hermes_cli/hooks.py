@@ -182,6 +182,23 @@ _DEFAULT_PAYLOADS = {
         "child_status": "completed",
         "duration_ms": 1234,
     },
+    "team_task_created": {
+        "team_id": "team_test",
+        "subject": "Write the migration script",
+        "description": "Port the v1 schema to v2",
+        "created_by": "alice",
+    },
+    "team_task_completed": {
+        "team_id": "team_test",
+        "task_id": "task_test",
+        "subject": "Write the migration script",
+        "member": "alice",
+        "result": "Added migration + tests, all green",
+    },
+    "team_teammate_idle": {
+        "team_id": "team_test",
+        "member": "alice",
+    },
 }
 
 

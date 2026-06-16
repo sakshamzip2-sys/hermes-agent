@@ -145,6 +145,22 @@ VALID_HOOKS: Set[str] = {
     "on_session_reset",
     "subagent_start",
     "subagent_stop",
+    # Agent-teams quality gates (oc_teams). Veto-capable observers, fired by the
+    # service-gated team tools. A callback returns the canonical block shape
+    # ({"action": "block", "message": "..."}) or the Claude-Code shape
+    # ({"decision": "block", "reason": "..."}) to veto; returning None observes.
+    #   team_task_created   — kwargs: team_id, subject, description, created_by.
+    #                         A block prevents the task from being added.
+    #   team_task_completed — kwargs: team_id, task_id, subject, member, result.
+    #                         A block refuses completion and feeds the reason
+    #                         back to the teammate (the quality gate).
+    #   team_teammate_idle  — kwargs: team_id, member. Fired when a teammate has
+    #                         just finished and no claimable task remains; a
+    #                         returned message is surfaced as a "keep working"
+    #                         nudge rather than a hard block.
+    "team_task_created",
+    "team_task_completed",
+    "team_teammate_idle",
     # Gateway pre-dispatch hook. Fired once per incoming MessageEvent
     # after the internal-event guard but BEFORE auth/pairing and agent
     # dispatch. Plugins may return a dict to influence flow:
