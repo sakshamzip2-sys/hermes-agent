@@ -57,6 +57,9 @@ _HERMES_CORE_TOOLS = [
     "clarify",
     # Code execution + delegation
     "execute_code", "delegate_task",
+    # Code intelligence (LSP — go-to-def/refs/hover/symbols; gated on a
+    # language server being installed via check_fn in tools/lsp_tool.py)
+    "lsp",
     # Cronjob management
     "cronjob",
     # Cross-platform messaging (gated on gateway running via check_fn)
@@ -242,7 +245,13 @@ TOOLSETS = {
         "tools": ["execute_code"],
         "includes": []
     },
-    
+
+    "lsp": {
+        "description": "Code intelligence via the language server (go-to-definition, find-references, hover, document symbols)",
+        "tools": ["lsp"],
+        "includes": []
+    },
+
     "delegation": {
         "description": "Spawn subagents with isolated context for complex subtasks",
         "tools": ["delegate_task"],
@@ -417,6 +426,8 @@ TOOLSETS = {
             "session_search",
             # Code execution + delegation
             "execute_code", "delegate_task",
+            # Code intelligence (LSP — gated on a language server via check_fn)
+            "lsp",
             # Cronjob management
             "cronjob",
             # Home Assistant smart home control (gated on HASS_TOKEN via check_fn)
@@ -425,7 +436,7 @@ TOOLSETS = {
         ],
         "includes": []
     },
-    
+
     "hermes-cli": {
         "description": "Full interactive CLI toolset - all default tools plus cronjob management",
         "tools": _HERMES_CORE_TOOLS,

@@ -21,7 +21,7 @@ import logging
 import threading
 import time
 from pathlib import Path
-from typing import Callable, Dict, List, Optional, Set
+from typing import Any, Callable, Dict, List, Optional, Set
 
 logger = logging.getLogger(__name__)
 
@@ -146,6 +146,38 @@ def invalidate_check_fn_cache() -> None:
     affect tool availability (e.g. ``oc tools enable``)."""
     with _check_fn_cache_lock:
         _check_fn_cache.clear()
+
+
+def _augment_description_with_examples(description: str, examples: Any) -> str:
+    """Render Tool Use Examples into a tool's description (model-agnostic).
+
+    Anthropic's "advanced tool use" Tool Use Examples feature attaches sample
+    calls to a tool so the model infers formats, ID conventions, and which
+    optional fields to populate — cutting malformed calls. Their API exposes a
+    tool-level ``input_examples`` array, but that's Claude-only. OC is
+    model-agnostic and serializes tools to the OpenAI ``function`` shape that
+    any provider (Anthropic / OpenAI / OpenRouter / the OC Router) consumes, so
+    we fold the examples into the ``description`` text instead: every provider
+    forwards the description to the model verbatim, so this works everywhere
+    with zero provider-specific plumbing. A tool opts in by adding an
+    ``"input_examples": [ {...}, ... ]`` key to its schema dict; the raw key is
+    stripped before the function is emitted so strict OpenAI-compat validators
+    never see an unknown field.
+    """
+    if not examples or not isinstance(examples, (list, tuple)):
+        return description
+    try:
+        lines = [
+            f"{i}. {json.dumps(ex, ensure_ascii=False)}"
+            for i, ex in enumerate(examples, 1)
+        ]
+    except Exception:
+        return description
+    if not lines:
+        return description
+    block = "Example calls (valid input shapes):\n" + "\n".join(lines)
+    base = (description or "").rstrip()
+    return f"{base}\n\n{block}" if base else block
 
 
 class ToolRegistry:
@@ -380,6 +412,15 @@ class ToolRegistry:
                         "using static schema",
                         name, exc,
                     )
+            # Tool Use Examples (Anthropic "advanced tool use", made model-
+            # agnostic): fold any ``input_examples`` into the description so the
+            # model sees concrete sample calls on every provider, then strip the
+            # raw key so strict OpenAI-compat validators don't reject it.
+            examples = schema_with_name.pop("input_examples", None)
+            if examples:
+                schema_with_name["description"] = _augment_description_with_examples(
+                    schema_with_name.get("description", ""), examples
+                )
             result.append({"type": "function", "function": schema_with_name})
         return result
 

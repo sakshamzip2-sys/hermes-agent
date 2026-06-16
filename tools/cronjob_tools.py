@@ -836,7 +836,26 @@ Important safety rule: cron-run sessions should not recursively schedule more cr
             },
         },
         "required": ["action"]
-    }
+    },
+    # Tool Use Examples — the schedule-string format (cron vs '30m' vs ISO) and
+    # the list-before-remove convention are the classic ambiguities. Rendered
+    # into the description model-agnostically by registry.get_definitions.
+    "input_examples": [
+        {
+            "action": "create",
+            "schedule": "0 9 * * *",
+            "name": "Morning briefing",
+            "prompt": "Summarize today's top AI headlines in 5 bullets and send them.",
+        },
+        {
+            "action": "create",
+            "schedule": "30m",
+            "prompt": "Check the deploy status page; if a service is down, report which one.",
+            "enabled_toolsets": ["web"],
+        },
+        {"action": "list"},
+        {"action": "remove", "job_id": "job_abc123"},
+    ],
 }
 
 

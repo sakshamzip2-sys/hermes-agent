@@ -290,7 +290,27 @@ TODO_SCHEMA = {
             }
         },
         "required": []
-    }
+    },
+    # Tool Use Examples — folded into the description (model-agnostic) by
+    # registry.get_definitions so the model sees concrete read / fresh-plan /
+    # merge-update shapes and the one-in_progress-at-a-time convention.
+    "input_examples": [
+        {},
+        {
+            "todos": [
+                {"id": "1", "content": "Reproduce the failing test", "status": "in_progress"},
+                {"id": "2", "content": "Fix the root cause", "status": "pending"},
+                {"id": "3", "content": "Re-run the full suite", "status": "pending"},
+            ]
+        },
+        {
+            "merge": True,
+            "todos": [
+                {"id": "1", "content": "Reproduce the failing test", "status": "completed"},
+                {"id": "2", "content": "Fix the root cause", "status": "in_progress"},
+            ],
+        },
+    ],
 }
 
 

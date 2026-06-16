@@ -383,6 +383,48 @@ class LSPService:
             eventlog.log_clean(server_id, file_path)
         return diags
 
+    def query_sync(
+        self,
+        file_path: str,
+        lsp_method: str,
+        *,
+        line: int = 0,
+        character: int = 0,
+        include_declaration: bool = False,
+        timeout: Optional[float] = None,
+    ) -> Any:
+        """Run a one-off navigation LSP request and return the raw result.
+
+        ``lsp_method`` is one of ``textDocument/definition`` /
+        ``textDocument/references`` / ``textDocument/hover`` /
+        ``textDocument/documentSymbol``. ``line``/``character`` are 0-indexed
+        (LSP convention). Returns ``None`` when LSP is unavailable for the file
+        (disabled, no workspace, no server, spawn failure, or timeout). Never
+        raises — mirrors :meth:`get_diagnostics_sync`. Powers the ``lsp`` tool.
+        """
+        if not self.enabled_for(file_path):
+            return None
+        srv = find_server_for_file(file_path)
+        server_id = srv.server_id if srv else "?"
+        try:
+            t = timeout if timeout is not None else self._wait_timeout + 3.0
+            return self._loop.run(
+                self._query_async(
+                    file_path, lsp_method, line, character, include_declaration
+                ),
+                timeout=t,
+            )
+        except asyncio.TimeoutError as e:
+            eventlog.log_timeout(server_id, file_path)
+            logger.debug("LSP %s timeout for %s: %s", lsp_method, file_path, e)
+            self._mark_broken_for_file(file_path, e)
+            return None
+        except Exception as e:  # noqa: BLE001
+            eventlog.log_server_error(server_id, file_path, e)
+            logger.debug("LSP %s failed for %s: %s", lsp_method, file_path, e)
+            self._mark_broken_for_file(file_path, e)
+            return None
+
     def _mark_broken_for_file(self, file_path: str, exc: BaseException) -> None:
         """Mark the (server_id, workspace_root) pair as broken so subsequent
         edits skip it instantly instead of re-paying timeout cost.
@@ -472,6 +514,49 @@ class LSPService:
             return []
         self._last_used[(client.server_id, client.workspace_root)] = time.time()
         return list(client.diagnostics_for(file_path))
+
+    async def _query_async(
+        self,
+        file_path: str,
+        lsp_method: str,
+        line: int,
+        character: int,
+        include_declaration: bool,
+    ) -> Any:
+        client = await self._get_or_spawn(file_path)
+        if client is None:
+            return None
+        from agent.lsp.client import file_uri
+        try:
+            version = await client.open_file(
+                file_path, language_id=language_id_for(file_path)
+            )
+            # Let the server index the file before answering navigation queries
+            # (definition/references are empty until analysis settles).
+            try:
+                await client.wait_for_diagnostics(
+                    file_path, version, mode=self._wait_mode
+                )
+            except Exception:  # noqa: BLE001
+                pass
+            uri = file_uri(file_path)
+            if lsp_method == "textDocument/documentSymbol":
+                params: Dict[str, Any] = {"textDocument": {"uri": uri}}
+            else:
+                params = {
+                    "textDocument": {"uri": uri},
+                    "position": {"line": int(line), "character": int(character)},
+                }
+                if lsp_method == "textDocument/references":
+                    params["context"] = {"includeDeclaration": bool(include_declaration)}
+            result = await client._send_request_with_retry(
+                lsp_method, params, timeout=5.0
+            )
+        except Exception as e:  # noqa: BLE001
+            logger.debug("LSP query %s failed for %s: %s", lsp_method, file_path, e)
+            return None
+        self._last_used[(client.server_id, client.workspace_root)] = time.time()
+        return result
 
     async def _current_diags_async(self, file_path: str) -> List[Dict[str, Any]]:
         ws, gated = resolve_workspace_for_file(file_path)

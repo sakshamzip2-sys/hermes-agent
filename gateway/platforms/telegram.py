@@ -419,11 +419,13 @@ class TelegramAdapter(BasePlatformAdapter):
         self._mention_patterns = self._compile_mention_patterns()
         self._reply_to_mode: str = getattr(config, 'reply_to_mode', 'first') or 'first'
         self._disable_link_previews: bool = self._coerce_bool_extra("disable_link_previews", False)
-        # Bot API 10.1 Rich Messages: when explicitly enabled, send final
-        # replies via sendRichMessage with the raw agent markdown so
-        # tables/task lists/etc. render natively. Disabled by default because
-        # several Telegram clients accept but render rich messages poorly.
-        self._rich_messages_enabled: bool = self._coerce_bool_extra("rich_messages", False)
+        # Bot API 10.1 Rich Messages: send final replies via sendRichMessage
+        # with the raw agent markdown so tables/task lists/etc. render natively.
+        # ON by default (config default + this fallback both True) so every user
+        # / fork gets rich rendering out of the box; a per-chat capability
+        # failure latches it off automatically (see _rich_send_disabled below),
+        # and users can force it off with telegram.extra.rich_messages: false.
+        self._rich_messages_enabled: bool = self._coerce_bool_extra("rich_messages", True)
         # Latched off after a capability failure on sendRichMessage /
         # sendRichMessageDraft (e.g. older python-telegram-bot without the
         # endpoint) so later sends skip the doomed rich attempt entirely.

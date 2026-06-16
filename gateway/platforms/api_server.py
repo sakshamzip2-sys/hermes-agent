@@ -1201,6 +1201,29 @@ class APIServerAdapter(BasePlatformAdapter):
             ],
         })
 
+    async def _handle_oc_model_availability(self, request: "web.Request") -> "web.Response":
+        """GET /v1/oc/model_availability?models=a,b,c — cheap live availability.
+
+        Probes each model with a minimal ``max_tokens=1`` completion against the
+        configured provider (no agent loop, no tools, no system prompt), so the
+        web prompt-bar picker can grey out models that currently fail (e.g. the
+        router's credit-gating) AND auto-enable them the moment they work —
+        without anyone editing the hardcoded list. Results are cached in-process
+        (TTL), so this is one cheap probe-set per cache window, never continuous
+        polling. Model-agnostic: uses the resolved provider's base_url/api_key;
+        only the chat_completions api_mode is probed — others report
+        ``available: null`` and the client falls back to its static defaults.
+        """
+        auth_err = self._check_auth(request)
+        if auth_err:
+            return auth_err
+        raw = request.query.get("models", "")
+        models = [m.strip() for m in raw.split(",") if m.strip()][:16]
+        if not models:
+            models = list(_DEFAULT_AVAIL_MODELS)
+        result = await _probe_model_availability(models)
+        return web.json_response(result)
+
     async def _handle_capabilities(self, request: "web.Request") -> "web.Response":
         """GET /v1/capabilities — advertise the stable API surface.
 
@@ -3406,6 +3429,81 @@ class APIServerAdapter(BasePlatformAdapter):
             return auth_err
         return web.json_response(self.build_parallel_agents_snapshot())
 
+    # Loopback base for the on-box Open Design daemon (the in-OpenComputer
+    # "Open Design" panel backend). Overridable for tests / non-default ports.
+    _OPEN_DESIGN_DAEMON_BASE = os.environ.get(
+        "OC_OPEN_DESIGN_DAEMON_URL", "http://127.0.0.1:17456"
+    )
+
+    async def _handle_open_design_proxy(self, request: "web.Request") -> "web.Response":
+        """ANY /api/od/{path} — authenticated passthrough to the on-box Open
+        Design daemon (loopback only).
+
+        This is how the workspace frontend reaches a user's Open Design panel on
+        their VM *without* exposing the daemon publicly: the request rides the
+        agent's existing dashboard-token-authenticated tunnel, and we forward it
+        to the daemon on loopback. The daemon never gets a public listener.
+        """
+        auth_err = self._check_auth(request)
+        if auth_err:
+            return auth_err
+
+        try:
+            import aiohttp  # lazy: optional dep of this module
+        except Exception:  # noqa: BLE001
+            return web.json_response(
+                {"error": "aiohttp unavailable for Open Design proxy"}, status=503
+            )
+
+        # SSRF guard: the target base is a fixed loopback URL; the only
+        # caller-controlled part is the trailing path, which we treat as opaque
+        # path segments (no scheme/host injection possible via the match).
+        sub = request.match_info.get("path", "")
+        base = self._OPEN_DESIGN_DAEMON_BASE.rstrip("/")
+        target = f"{base}/{sub}" if sub else base
+        if request.query_string:
+            target = f"{target}?{request.query_string}"
+
+        # Forward method, body, and a minimal header set. Drop hop-by-hop and
+        # auth headers (the daemon is loopback-trusted; our own bearer must not
+        # leak onward).
+        drop = {
+            "host", "connection", "content-length", "authorization",
+            "accept-encoding", "origin", "referer", "cookie",
+        }
+        fwd_headers = {
+            k: v for k, v in request.headers.items() if k.lower() not in drop
+        }
+        body = None
+        if request.method not in ("GET", "HEAD"):
+            body = await request.read()
+
+        try:
+            timeout = aiohttp.ClientTimeout(total=60)
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.request(
+                    request.method, target, headers=fwd_headers, data=body,
+                ) as resp:
+                    payload = await resp.read()
+                    out_headers = {
+                        k: v for k, v in resp.headers.items()
+                        if k.lower() not in {"transfer-encoding", "content-encoding", "content-length", "connection"}
+                    }
+                    return web.Response(
+                        body=payload, status=resp.status, headers=out_headers,
+                    )
+        except Exception as exc:  # noqa: BLE001 — daemon may be down
+            return web.json_response(
+                {
+                    "error": (
+                        "Open Design daemon is not reachable on this machine. "
+                        "Start it with: tools-dev start daemon --daemon-port 17456 --web-port 17573"
+                    ),
+                    "detail": str(exc),
+                },
+                status=503,
+            )
+
     async def _handle_create_job(self, request: "web.Request") -> "web.Response":
         """POST /api/jobs — create a new cron job."""
         auth_err = self._check_auth(request)
@@ -4427,6 +4525,7 @@ class APIServerAdapter(BasePlatformAdapter):
             self._app.router.add_get("/health/detailed", self._handle_health_detailed)
             self._app.router.add_get("/v1/health", self._handle_health)
             self._app.router.add_get("/v1/models", self._handle_models)
+            self._app.router.add_get("/v1/oc/model_availability", self._handle_oc_model_availability)
             self._app.router.add_get("/v1/capabilities", self._handle_capabilities)
             self._app.router.add_get("/v1/skills", self._handle_skills)
             self._app.router.add_get("/v1/toolsets", self._handle_toolsets)
@@ -4455,6 +4554,11 @@ class APIServerAdapter(BasePlatformAdapter):
             self._app.router.add_post("/api/jobs/{job_id}/run", self._handle_run_job)
             # Parallel-agents read-only surface (oc_flow / oc_agents / oc_teams plugins)
             self._app.router.add_get("/api/parallel-agents", self._handle_parallel_agents)
+            # Authenticated passthrough to the on-box Open Design daemon so the
+            # workspace "Open Design" panel reaches it over the agent's existing
+            # tunnel without exposing the daemon publicly.
+            self._app.router.add_route("*", "/api/od", self._handle_open_design_proxy)
+            self._app.router.add_route("*", "/api/od/{path:.*}", self._handle_open_design_proxy)
             # Structured event streaming
             self._app.router.add_post("/v1/runs", self._handle_runs)
             self._app.router.add_get("/v1/runs/{run_id}", self._handle_get_run)
@@ -4579,3 +4683,143 @@ class APIServerAdapter(BasePlatformAdapter):
             "host": self._host,
             "port": self._port,
         }
+
+
+# ---------------------------------------------------------------------------
+# Model-availability probe — powers the web prompt-bar picker's autonomy.
+#
+# There is no free signal for whether a given model currently routes: the
+# router's /v1/models catalog is a curated subset (it omits some routable ids
+# like opus-4-7) and carries no credit/affordability data, and there's no
+# credits endpoint. The only truthful signal is an actual minimal generation.
+# So we probe each model with max_tokens=1 (no agent loop, no tools, no system
+# prompt) — the cheapest possible call — and cache the verdict per TTL so this
+# is one probe-set per window, not continuous polling. The client overlays the
+# verdict on its static defaults, so a credit-gated model auto-enables the
+# moment funding lands and auto-disables if it starts failing, with no code
+# edit. Model-agnostic: works for any chat_completions provider.
+# ---------------------------------------------------------------------------
+
+_DEFAULT_AVAIL_MODELS = (
+    "claude-fable-5",
+    "claude-opus-4-8",
+    "claude-opus-4-7",
+    "claude-opus-4-6",
+    "claude-sonnet-4-6",
+    "claude-haiku-4-5",
+)
+_MODEL_AVAIL_TTL_SECONDS = 600.0
+# key: frozenset(model ids) -> (monotonic_ts, result_dict). Best-effort, no
+# lock: a rare concurrent miss just issues a duplicate cheap probe.
+_model_avail_cache: Dict[Any, tuple] = {}
+
+
+async def _probe_one_model(
+    session, base_url: str, api_key: Optional[str], model: str, probe_max_tokens: int
+):
+    """Classify one model's availability with a minimal completion.
+
+    ``probe_max_tokens`` matches the budget the agent really requests so the
+    provider's credit-affordability gate (``402 ... can only afford N tokens``)
+    fires identically to real usage — a tiny ``max_tokens`` would falsely pass
+    (1 token is affordable even when the agent's real request isn't). The model
+    still only emits a few tokens for the ``"."`` prompt; ``max_tokens`` is the
+    cap, not a forced length, so the probe stays cheap for funded models and
+    is free (402, no generation) for credit-gated ones.
+    """
+    import aiohttp  # lazy: aiohttp is an optional dep of this module
+
+    url = base_url.rstrip("/") + "/chat/completions"
+    headers = {"Content-Type": "application/json"}
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+    payload = {
+        "model": model,
+        "max_tokens": probe_max_tokens,
+        "messages": [{"role": "user", "content": "."}],
+        "stream": False,
+    }
+    try:
+        async with session.post(
+            url, json=payload, headers=headers,
+            timeout=aiohttp.ClientTimeout(total=20),
+        ) as resp:
+            status = resp.status
+            text = (await resp.text())[:2000]
+    except Exception as exc:  # network/timeout — ambiguous, don't disable
+        return model, {"available": None, "reason": f"probe-error:{type(exc).__name__}"}
+    if status == 200:
+        return model, {"available": True, "reason": "ok"}
+    low = text.lower()
+    # A 400 specifically about max_tokens means the model IS reachable — our
+    # probe just over-asked. Treat as available (the model itself works).
+    if status == 400 and "max_tokens" in low:
+        return model, {"available": True, "reason": "ok"}
+    if status == 402 or "more credits" in low or "insufficient" in low or "afford" in low:
+        return model, {"available": False, "reason": "credits"}
+    if (
+        status == 404
+        or "not found" in low
+        or "no available accounts" in low
+        or "no endpoints" in low
+        or "no allowed providers" in low
+    ):
+        return model, {"available": False, "reason": "unsupported"}
+    # 401/403/5xx/other — ambiguous; never falsely disable a possibly-working model.
+    return model, {"available": None, "reason": f"http-{status}"}
+
+
+async def _probe_model_availability(models: List[str]) -> Dict[str, Any]:
+    """Probe (cached) the availability of ``models`` against the configured provider."""
+    import asyncio  # lazy
+
+    key = frozenset(models)
+    now = time.monotonic()
+    cached = _model_avail_cache.get(key)
+    if cached and now - cached[0] < _MODEL_AVAIL_TTL_SECONDS:
+        return cached[1]
+
+    try:
+        from gateway.run import _resolve_runtime_agent_kwargs
+        rk = _resolve_runtime_agent_kwargs()
+        base_url = rk.get("base_url")
+        api_key = rk.get("api_key")
+        api_mode = rk.get("api_mode")
+    except Exception as exc:
+        return {"availability": {}, "probed_at": int(time.time()), "error": f"provider-resolve:{exc}"}
+
+    if not base_url or (api_mode not in (None, "", "chat_completions", "openai")):
+        # Non-chat_completions providers aren't probed here; client uses static defaults.
+        availability = {m: {"available": None, "reason": "unprobed-api-mode"} for m in models}
+        result = {"availability": availability, "probed_at": int(time.time()), "api_mode": api_mode}
+    else:
+        # Match the agent's real output budget so the credit-affordability gate
+        # fires the same way (clamped to a safe band: high enough to trip a
+        # near-empty wallet, low enough to stay under any model's output ceiling
+        # and avoid a max_tokens 400).
+        # Default 64000 — the effective output budget the agent requests for
+        # these Claude models (the credit 402 reports "you requested up to
+        # 64000"); a smaller probe under-shoots the affordability gate and
+        # false-positives a credit-gated model. The 400-max_tokens handler in
+        # _probe_one_model covers any provider whose ceiling is lower.
+        try:
+            probe_max = int(rk.get("max_tokens") or 64000)
+        except Exception:
+            probe_max = 64000
+        probe_max = max(4096, min(probe_max, 64000))
+        try:
+            import aiohttp
+            async with aiohttp.ClientSession() as session:
+                pairs = await asyncio.gather(
+                    *[_probe_one_model(session, base_url, api_key, m, probe_max) for m in models]
+                )
+            result = {
+                "availability": {m: info for m, info in pairs},
+                "probed_at": int(time.time()),
+                "probe_max_tokens": probe_max,
+            }
+        except Exception as exc:
+            return {"availability": {}, "probed_at": int(time.time()), "error": str(exc)}
+
+    _model_avail_cache[key] = (time.monotonic(), result)
+    return result

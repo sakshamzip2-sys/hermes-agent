@@ -1591,6 +1591,34 @@ PATCH_SCHEMA = {
         },
         "required": ["mode"],
     },
+    # Tool Use Examples — replace vs patch mode, and the empty-new_string
+    # delete, are the classic ambiguities. Rendered into the description
+    # (model-agnostic) by registry.get_definitions.
+    "input_examples": [
+        {
+            "mode": "replace",
+            "path": "src/billing/charge.py",
+            "old_string": "def charge(amount):",
+            "new_string": "def charge(amount, currency='USD'):",
+        },
+        {
+            "mode": "replace",
+            "path": "src/app.py",
+            "old_string": "# TODO: remove before release\n",
+            "new_string": "",
+        },
+        {
+            "mode": "replace",
+            "path": "config.py",
+            "old_string": "DEBUG = True",
+            "new_string": "DEBUG = False",
+            "replace_all": True,
+        },
+        {
+            "mode": "patch",
+            "patch": "*** Begin Patch\n*** Update File: src/app.py\n@@ def charge\n-    total = amount\n+    total = round(amount, 2)\n*** End Patch",
+        },
+    ],
 }
 
 SEARCH_FILES_SCHEMA = {
@@ -1609,7 +1637,14 @@ SEARCH_FILES_SCHEMA = {
             "context": {"type": "integer", "description": "Number of context lines before and after each match (grep mode only)", "default": 0}
         },
         "required": ["pattern"]
-    }
+    },
+    # Tool Use Examples — content-regex vs files-by-glob vs count mode are the
+    # ambiguities. Rendered into the description (model-agnostic).
+    "input_examples": [
+        {"pattern": "def charge\\(", "target": "content", "path": "src"},
+        {"pattern": "*.py", "target": "files"},
+        {"pattern": "TODO", "target": "content", "file_glob": "*.py", "output_mode": "count"},
+    ],
 }
 
 

@@ -122,6 +122,16 @@ CLARIFY_SCHEMA = {
         },
         "required": ["question"],
     },
+    # Tool Use Examples — show the multiple-choice vs open-ended shapes so the
+    # model knows `choices` is what switches modes (rendered into the
+    # description, model-agnostic, by registry.get_definitions).
+    "input_examples": [
+        {
+            "question": "Which database should I target for the migration?",
+            "choices": ["PostgreSQL (prod)", "SQLite (local)", "Skip the migration"],
+        },
+        {"question": "That refactor is done — how did it work out for you?"},
+    ],
 }
 
 
