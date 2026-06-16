@@ -1149,6 +1149,27 @@ sandbox are auto-allowed while host commands keep the full guard floor. Set
 `terminal.backend: local` explicitly to force host execution (e.g. when the
 agent must operate the user's real shell/credentials as a trusted operator).
 
+### Permission Gate: Credential-Read Detection + Audit Log
+
+Two hardening additions to the command gate (`tools/approval.py`):
+
+- **Credential-read detection.** Reading private keys / cloud credential stores
+  via the terminal (`cat ~/.ssh/id_rsa`, `base64 ~/.aws/credentials`,
+  `cat ~/.netrc`, `cp ~/.ssh/id_* /tmp`, `curl -T ~/.netrc ...`, `scp` of a key)
+  is now flagged as a DANGEROUS (approval-required, overridable) pattern — the
+  read side was previously ungated. Scoped to **unambiguous secret stores**
+  (SSH private keys, `.aws/credentials`, gcloud/kube creds, `.netrc`/`.pgpass`);
+  project `.env` reads remain deliberately safe (normal agent work).
+- **Structured decision audit log** (`tools/gate_audit.py`). Every terminal /
+  execute_code gate decision is appended as one JSONL line to
+  `$HERMES_HOME/logs/gate_decisions.jsonl` (`ts`, `action`, `verdict`, `reason`,
+  `command`, `env_type`, `session`). Best-effort and isolated — a logging
+  failure never blocks or delays execution. Disable with `HERMES_GATE_AUDIT=off`.
+
+Both are thin wrappers/additions over the existing non-overridable HARDLINE
+floor and rules engine — they do not change the hardline set or the
+`normal|plan|yolo` permission modes.
+
 ---
 
 ## Profiles: Multi-Instance Support

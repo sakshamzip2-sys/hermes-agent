@@ -216,6 +216,45 @@ _USER_SENSITIVE_WRITE_TARGET = (
 _PROJECT_SENSITIVE_WRITE_TARGET = rf'(?:{_PROJECT_ENV_PATH}|{_PROJECT_CONFIG_PATH})'
 _COMMAND_TAIL = r'(?:\s*(?:&&|\|\||;).*)?$'
 
+# ---- Sensitive credential READ targets ----------------------------------
+# Reading private keys / credential stores via the terminal is a classic
+# exfiltration vector (cat ~/.ssh/id_rsa, cat .env, cp ~/.aws/credentials
+# /tmp, curl -T ~/.netrc ...). The repo already gates WRITES to these paths;
+# the read side was previously ungated (threat_patterns.read_secrets only
+# feeds the context/memory/skill scanners, not the live terminal gate). These
+# fragments add read coverage as DANGEROUS (approval-required, overridable)
+# patterns — surfacing the read for approval rather than hard-blocking, so a
+# legitimate "show me my .env" still works in smart/manual approval.
+_PRIVATE_KEY_FILE = (
+    r'(?:~|\$home|\$\{home\})/\.ssh/'
+    r'["\']?'                                       # optional quote before basename
+    r'(?:'
+    r'id_(?:rsa|ed25519|ecdsa|dsa)(?!\.pub)'        # private key (NOT the .pub public key)
+    r'|identity'
+    r'|id_[^\s\'"/]*\*'                              # glob: id_*
+    r'|\*'                                           # bare glob: ~/.ssh/*
+    r')'
+)
+_CLOUD_CRED_FILE = (
+    r'(?:~|\$home|\$\{home\})/\.'
+    r'(?:aws/credentials|config/gcloud/[^\s"\'`]*credential[^\s"\'`]*|kube/config)\b'
+)
+# Scope: unambiguous secret stores that have no legitimate agent read purpose
+# (private SSH keys, cloud credential files, .netrc/.pgpass). We deliberately do
+# NOT include project/.env paths here — the repo treats reading a local .env as
+# normal agent work (see TestSensitiveRedirectPattern), and the actual secret
+# *values* are scrubbed from the execute_code child env separately.
+_SENSITIVE_READ_TARGET = (
+    rf'(?:{_PRIVATE_KEY_FILE}|{_CREDENTIAL_FILES}|{_CLOUD_CRED_FILE})'
+)
+# Common file-reading commands an agent uses to dump file contents. Includes
+# text processors (awk/sed/grep/cut/tr) since pointing them at a private key is
+# the same exfil read — they only fire when a SENSITIVE target follows.
+_READ_CMD = (
+    r'(?:cat|bat|tac|less|more|head|tail|nl|xxd|od|strings|base64|'
+    r'awk|sed|grep|cut|tr|gpg)'
+)
+
 # =========================================================================
 # Hardline (unconditional) blocklist
 # =========================================================================
@@ -517,6 +556,26 @@ DANGEROUS_PATTERNS = [
     # into a single -X token. Catches the same threat class.
     (r'\bsudo\b[^;|&\n]*?\s+-[a-z]*[sa][a-z]*\b',
      "sudo with combined-flag privilege escalation"),
+    # --- Sensitive credential / private-key READS (exfil vector) ---
+    # Dumping a private key or credential store via a read command. Gated as
+    # DANGEROUS (overridable) so a legitimate read still works after approval.
+    (rf'\b{_READ_CMD}\b[^;|&\n]*\s["\']?{_SENSITIVE_READ_TARGET}',
+     "read of sensitive credential/private-key/.env file"),
+    # Copying a credential/key OUT of its protected location (exfil to /tmp etc).
+    (rf'\bcp\b[^;|&\n]*\s["\']?{_SENSITIVE_READ_TARGET}',
+     "copy out of sensitive credential/key path (possible exfil)"),
+    # Uploading / posting a sensitive file over the network (curl -T/--upload-file,
+    # curl -d @file, scp of a key/credential).
+    (rf'\bcurl\b[^;|&\n]*(?:-T\b|--upload-file\b|--data[a-z-]*\s+@|-d\s+@)[^;|&\n]*{_SENSITIVE_READ_TARGET}',
+     "curl upload/exfil of sensitive credential file"),
+    (rf'\bscp\b[^;|&\n]*\s{_SENSITIVE_READ_TARGET}',
+     "scp of sensitive credential/key file"),
+    # Key-specific tools whose flag syntax has no space before the path
+    # (openssl rsa -in KEY, ssh-keygen -f KEY, dd if=KEY).
+    (rf'\b(?:openssl|ssh-keygen)\b[^;|&\n]*{_SENSITIVE_READ_TARGET}',
+     "openssl/ssh-keygen reading a private key"),
+    (rf'\bdd\b[^;|&\n]*\bif=["\']?{_SENSITIVE_READ_TARGET}',
+     "dd reading a sensitive credential/key file"),
 ]
 
 
@@ -1352,6 +1411,32 @@ def _await_gateway_decision(session_key: str, notify_cb, approval_data: dict,
 
 def check_all_command_guards(command: str, env_type: str,
                              approval_callback=None) -> dict:
+    """Run all pre-exec command guards and record the decision to the audit log.
+
+    Thin wrapper over ``_check_all_command_guards_impl`` that appends a single
+    structured line to the gate audit trail (``$HERMES_HOME/logs/
+    gate_decisions.jsonl``) for every terminal command decision. Logging is
+    best-effort and never alters the returned verdict.
+    """
+    result = _check_all_command_guards_impl(command, env_type, approval_callback)
+    try:
+        from tools.gate_audit import record_decision, _verdict_from_result
+
+        record_decision(
+            action="terminal",
+            verdict=_verdict_from_result(result),
+            reason=result.get("message") if isinstance(result, dict) else None,
+            command=command,
+            env_type=env_type,
+            session=get_current_session_key(default=""),
+        )
+    except Exception:  # pragma: no cover - audit must never break execution
+        pass
+    return result
+
+
+def _check_all_command_guards_impl(command: str, env_type: str,
+                                   approval_callback=None) -> dict:
     """Run all pre-exec security checks and return a single approval decision.
 
     Gathers findings from tirith and dangerous-command detection, then
@@ -1685,6 +1770,30 @@ def check_all_command_guards(command: str, env_type: str,
 
 
 def check_execute_code_guard(code: str, env_type: str) -> dict:
+    """Approve an execute_code script, recording the decision to the audit log.
+
+    Thin wrapper over ``_check_execute_code_guard_impl`` that appends a
+    structured line to the gate audit trail. Best-effort; never alters the
+    verdict.
+    """
+    result = _check_execute_code_guard_impl(code, env_type)
+    try:
+        from tools.gate_audit import record_decision, _verdict_from_result
+
+        record_decision(
+            action="execute_code",
+            verdict=_verdict_from_result(result),
+            reason=result.get("message") if isinstance(result, dict) else None,
+            command=code,
+            env_type=env_type,
+            session=get_current_session_key(default=""),
+        )
+    except Exception:  # pragma: no cover - audit must never break execution
+        pass
+    return result
+
+
+def _check_execute_code_guard_impl(code: str, env_type: str) -> dict:
     """Approve an execute_code script before its child process is spawned.
 
     execute_code runs arbitrary local Python — the script can call
