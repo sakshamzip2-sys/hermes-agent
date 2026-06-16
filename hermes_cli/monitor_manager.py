@@ -130,12 +130,15 @@ def start_plugin_monitors(
     return started
 
 
-def start_monitors_for_skill(skill_name: str) -> List[Dict[str, Any]]:
+def start_monitors_for_skill(
+    skill_name: str, plugin_manager: Optional[Any] = None
+) -> List[Dict[str, Any]]:
     """Start any ``when: on-skill-invoke:<skill_name>`` monitors."""
     if not skill_name:
         return []
     return start_plugin_monitors(
-        when_values=(f"on-skill-invoke:{skill_name.strip().lower()}",)
+        when_values=(f"on-skill-invoke:{skill_name.strip().lower()}",),
+        plugin_manager=plugin_manager,
     )
 
 

@@ -1937,6 +1937,15 @@ def _format_gateway_process_notification(evt: dict) -> "str | None":
         from tools.process_registry import format_process_notification
         return format_process_notification(evt)
 
+    if evt_type == "channel":
+        # Out-of-band channel event (Claude Code "channels" concept) injected
+        # via tools.channels.inject_channel_event from an in-process source.
+        try:
+            from tools.channels import format_channel_event
+            return format_channel_event(evt)
+        except Exception:  # noqa: BLE001
+            return None
+
     return None
 
 
@@ -1958,7 +1967,7 @@ def _drain_gateway_watch_events(completion_queue) -> "list[dict]":
         except Exception:
             break
         evt_type = evt.get("type", "completion")
-        if evt_type in {"watch_match", "watch_disabled"}:
+        if evt_type in {"watch_match", "watch_disabled", "channel"}:
             watch_events.append(evt)
         elif evt_type == "async_delegation":
             requeue.append(evt)
@@ -12229,6 +12238,30 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             text = _build_media_placeholder(event)
         return text or None
 
+    def _home_channel_source(self):
+        """Build a SessionSource for the first configured + connected home channel.
+
+        Used as the routing fallback for global out-of-band events (plugin
+        monitors, channels) that have no originating conversation.  Returns
+        ``None`` when no home channel is configured for any connected adapter.
+        """
+        from gateway.session import SessionSource
+
+        for platform, _adapter in self.adapters.items():
+            try:
+                home = self.config.get_home_channel(platform)
+            except Exception:
+                home = None
+            if not home or not getattr(home, "chat_id", None):
+                continue
+            return SessionSource(
+                platform=platform,
+                chat_id=str(home.chat_id),
+                chat_type=getattr(home, "chat_type", "dm") or "dm",
+                thread_id=(str(home.thread_id) if getattr(home, "thread_id", None) else None),
+            )
+        return None
+
     def _build_process_event_source(self, evt: dict):
         """Resolve the canonical source for a synthetic background-process event.
 
@@ -12270,6 +12303,23 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         chat_type = str(evt.get("chat_type") or derived_chat_type or "").strip().lower()
         chat_id = str(evt.get("chat_id") or derived_chat_id or "").strip()
         if not platform_name or not chat_type or not chat_id:
+            # Global out-of-band events (plugin monitors, channels) have no
+            # originating conversation.  Route them to the user's configured
+            # home channel so they actually reach the agent instead of being
+            # dropped.  Explicit routing on the event (platform/chat_id above)
+            # still wins.  Only fall back for a genuinely global event with NO
+            # routing at all — partially-specified routing (e.g. a platform but
+            # an empty chat_id) is a caller bug and should fail loudly (return
+            # None) rather than silently landing in the home channel.
+            is_global = (
+                evt.get("type") == "channel"
+                or str(evt.get("session_key") or "") == "__monitors__"
+            )
+            no_routing_supplied = not platform_name and not chat_type and not chat_id
+            if is_global and no_routing_supplied:
+                home_source = self._home_channel_source()
+                if home_source is not None:
+                    return home_source
             return None
 
         try:

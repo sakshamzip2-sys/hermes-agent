@@ -3062,6 +3062,23 @@ def _looks_like_slash_command(text: str) -> bool:
     return "/" not in first_word[1:]
 
 
+def _looks_like_bang_command(text: str) -> bool:
+    """Return True if *text* is a ``!``-prefixed shell passthrough.
+
+    Mirrors Claude Code's interactive ``!`` shell mode: ``! ls -la`` runs the
+    command directly in a shell and adds the output to context, without the
+    agent interpreting it.  A bare ``!`` (or ``!=``-style text that's clearly
+    not a command, e.g. ``!important note``) is left to the agent — we only
+    treat it as shell mode when there's an actual command after the ``!``.
+    """
+    if not isinstance(text, str):
+        return False
+    if not text.startswith("!"):
+        return False
+    body = text[1:].strip()
+    return bool(body)
+
+
 # ============================================================================
 # Skill Slash Commands — dynamic commands generated from installed skills
 # ============================================================================
@@ -8205,6 +8222,51 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin):
             "[test <Tool> <target>]"
         )
 
+    def _handle_bang_command(self, text: str) -> None:
+        """``! <cmd>`` — run a shell command directly and show its output.
+
+        Ports Claude Code's interactive shell mode: the command runs in the
+        user's shell without the agent interpreting it; the command + output are
+        printed (and added to scrollback/context).  Runs via an explicit
+        ``[shell, "-c", cmd]`` argv (full shell semantics — pipes, redirects —
+        passing the command as an argument rather than via the subprocess shell
+        flag).  Output is bounded so a runaway command can't flood the terminal.
+        """
+        import subprocess as _sp
+
+        command = text[1:].strip()
+        if not command:
+            return
+        from hermes_cli.colors import Colors as _Colors
+
+        shell = os.environ.get("SHELL") or "/bin/sh"
+        _cprint(f"  $ {_Colors.BOLD}{command}{_Colors.RESET}")
+        try:
+            proc = _sp.run(
+                [shell, "-c", command],
+                capture_output=True,
+                text=True,
+                timeout=120,
+                cwd=os.getcwd(),
+            )
+        except _sp.TimeoutExpired:
+            _cprint(f"  {_Colors.RED}! command timed out after 120s{_Colors.RESET}")
+            return
+        except Exception as exc:  # noqa: BLE001
+            _cprint(f"  {_Colors.RED}! failed to run: {exc}{_Colors.RESET}")
+            return
+
+        _MAX = 30000  # match the agent's terminal output cap; keep the REPL sane
+        out = (proc.stdout or "")
+        err = (proc.stderr or "")
+        combined = out + (("\n" + err) if err else "")
+        if len(combined) > _MAX:
+            combined = combined[:_MAX] + f"\n…[truncated, {len(combined) - _MAX} more chars]"
+        if combined.strip():
+            print(combined.rstrip())
+        if proc.returncode != 0:
+            _cprint(f"  {_Colors.RED}[exit {proc.returncode}]{_Colors.RESET}")
+
     def _on_reasoning(self, reasoning_text: str):
         """Callback for intermediate reasoning display during tool-call loops."""
         if not reasoning_text:
@@ -13099,6 +13161,17 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin):
                         and isinstance(user_input, str)
                         and self._consume_pending_resume_selection(user_input)
                     ):
+                        continue
+
+                    # Bang (!) shell passthrough: ``! ls -la`` runs directly in
+                    # the shell and shows output, without the agent interpreting
+                    # it (Claude Code interactive shell mode).  Checked before
+                    # chat routing so it never reaches the agent as a message.
+                    if not _file_drop and isinstance(user_input, str) and _looks_like_bang_command(user_input):
+                        try:
+                            self._handle_bang_command(user_input)
+                        except KeyboardInterrupt:
+                            _cprint("\n[dim]Command interrupted.[/dim]")
                         continue
 
                     if not _file_drop and isinstance(user_input, str) and _looks_like_slash_command(user_input):

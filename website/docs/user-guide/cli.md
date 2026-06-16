@@ -49,7 +49,21 @@ opencomputer chat --verbose
 # Isolated git worktree (for running multiple agents in parallel)
 opencomputer -w                         # Interactive mode in worktree
 opencomputer -w -z "Fix issue #123"     # Single query in worktree
+
+# Headless / scripting (-z one-shot mode)
+opencomputer -z "summarize README"                      # print only the final response
+echo "summarize this" | opencomputer -z -               # read the prompt from stdin
+opencomputer -z "audit deps" --output-format json       # machine-readable {final_response,session_id,failed,error,usage}
+opencomputer -z "research only" --max-turns 5           # cap tool-call iterations (no runaway loops)
+opencomputer -z "build it" --allowedTools "Bash(npm run *),Read"   # scope tools for this run
+opencomputer -z "be careful" --disallowedTools "Bash(curl *),Edit(/etc/**)"
+opencomputer -z "stay terse" --append-system-prompt "Answer in one sentence."
 ```
+
+`--allowedTools`/`--disallowedTools` map onto the
+[permissions engine](/user-guide/features/permissions) as runtime rules for that
+run only. In an interactive session, prefix a line with `!` to run a shell
+command directly (e.g. `! git status`) without the agent interpreting it.
 
 ## Interface Layout
 

@@ -259,6 +259,52 @@ class TestRobustness:
         # cleared
         assert pr.evaluate_tool_call("terminal", {"command": "rm x"}).action == "normal"
 
+    def test_runtime_rules_set_and_clear(self, monkeypatch):
+        """set_runtime_rules layers on; clear_runtime_rules fully resets (oneshot cleanup)."""
+        monkeypatch.setattr(pr, "_load_permissions_config", lambda: {})
+        pr.set_global_mode(None)
+        pr.clear_runtime_rules()
+        try:
+            pr.set_runtime_rules(allow=["Bash(npm *)"], deny=["Bash(rm *)"])
+            assert pr.evaluate_tool_call("terminal", {"command": "rm x"}).action == "deny"
+            assert pr.evaluate_tool_call("terminal", {"command": "npm test"}).action == "allow"
+        finally:
+            pr.clear_runtime_rules()
+        # After clear, no runtime rule leaks.
+        assert pr.evaluate_tool_call("terminal", {"command": "rm x"}).action == "normal"
+        assert pr.evaluate_tool_call("terminal", {"command": "npm test"}).action == "normal"
+
+
+class TestPlanModeSystemPromptTier:
+    """Plan-mode prompt must live in the VOLATILE tier so the STABLE tier (the
+    cacheable prefix) is byte-identical whether or not plan mode is on."""
+
+    class _Agent:
+        def __getattr__(self, name):
+            return None
+        session_id = "tier-sess"
+        load_soul_identity = False
+        skip_context_files = True
+        valid_tool_names = set()
+        _task_completion_guidance = False
+
+    def test_stable_tier_byte_identical_regardless_of_plan_mode(self):
+        import agent.system_prompt as sp
+
+        pr.set_session_mode("tier-sess", None)
+        normal = sp.build_system_prompt_parts(self._Agent())
+        pr.set_session_mode("tier-sess", "plan")
+        try:
+            plan = sp.build_system_prompt_parts(self._Agent())
+            # Stable prefix unchanged → existing users' prompt cache not broken.
+            assert plan["stable"] == normal["stable"]
+            # Plan instruction landed in the volatile tier instead.
+            assert "PLAN MODE" in plan["volatile"].upper()
+            assert "PLAN MODE" not in normal["volatile"].upper()
+        finally:
+            pr.set_session_mode("tier-sess", None)
+
+
     def test_no_vendor_name_hardcoded(self):
         """Standing rule: every feature must be model-agnostic — no vendor names."""
         import os

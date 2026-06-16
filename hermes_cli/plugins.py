@@ -1889,6 +1889,12 @@ def get_pre_tool_call_block_message(
     directive wins.  Invalid or irrelevant hook return values are
     silently ignored so existing observer-only hooks are unaffected.
     """
+    # Thread tool whitelist is a HARD SCOPE (e.g. a subagent restricted to a
+    # tool subset).  It is checked first ON PURPOSE: it can only BLOCK a tool
+    # that isn't in the scope — it never allows a tool past the permission rules
+    # below.  A tool that IS in the scope still falls through to the deny/plan
+    # checks, so permissions.deny can never be bypassed by a whitelist; the
+    # whitelist only ever adds restriction (whitelist ∩ permission policy).
     allowed = getattr(_thread_tool_whitelist, "allowed", None)
     if allowed is not None and tool_name not in allowed:
         fmt = getattr(_thread_tool_whitelist, "fmt", "Tool '{tool_name}' denied")
