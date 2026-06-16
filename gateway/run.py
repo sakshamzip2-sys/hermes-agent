@@ -5026,6 +5026,21 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                 "plugin discovery failed at gateway startup", exc_info=True,
             )
 
+        # Start plugin-declared background monitors (Claude Code "monitors"
+        # concept). Their matching output lines stream back to the agent via the
+        # existing process-registry watch runtime, drained into the conversation
+        # by _drain_gateway_watch_events() below.  Safe no-op when no plugin
+        # declares a ``when: always`` monitor.
+        try:
+            from hermes_cli.monitor_manager import start_plugin_monitors
+            _mons = start_plugin_monitors()
+            if _mons:
+                logger.info("Started %d plugin monitor(s) at gateway startup", len(_mons))
+        except Exception:
+            logger.warning(
+                "plugin monitor startup failed", exc_info=True,
+            )
+
         # Register declarative shell hooks from cli-config.yaml.  Gateway
         # has no TTY, so consent has to come from one of the three opt-in
         # channels (--accept-hooks on launch, HERMES_ACCEPT_HOOKS env var,
