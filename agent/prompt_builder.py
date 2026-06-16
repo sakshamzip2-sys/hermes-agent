@@ -271,7 +271,13 @@ TOOL_USE_ENFORCEMENT_GUIDANCE = (
 
 # Model name substrings that trigger tool-use enforcement guidance.
 # Add new patterns here when a model family needs explicit steering.
-TOOL_USE_ENFORCEMENT_MODELS = ("gpt", "codex", "gemini", "gemma", "grok", "glm", "qwen", "deepseek")
+# Claude (claude/opus/sonnet/haiku/fable) is included: it is the default family
+# here and exhibits the same "answer current facts from memory instead of
+# web_search" failure mode — the guidance body is family-agnostic.
+TOOL_USE_ENFORCEMENT_MODELS = (
+    "gpt", "codex", "gemini", "gemma", "grok", "glm", "qwen", "deepseek",
+    "claude", "opus", "sonnet", "haiku", "fable",
+)
 
 # Universal "finish the job" guidance — applied to ALL models, not gated
 # by model family.  Addresses two cross-model failure modes:

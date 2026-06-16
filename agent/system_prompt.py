@@ -179,7 +179,17 @@ def build_system_prompt_parts(agent: Any, system_message: Optional[str] = None) 
             # Also applied to xAI Grok — same failure modes (claims completion
             # without tool calls, suggests workarounds instead of using
             # existing tools, replies with plans instead of executing).
-            if "gpt" in _model_lower or "codex" in _model_lower or "grok" in _model_lower:
+            # Family-agnostic execution discipline (tool persistence, the
+            # mandatory_tool_use freshness block: "Current facts → web_search",
+            # anti-hallucination). Applied to GPT/Codex/Grok AND Claude — Claude
+            # is the default family here and answers fresh facts from memory
+            # without it (the body is explicitly family-agnostic).
+            if (
+                "gpt" in _model_lower or "codex" in _model_lower or "grok" in _model_lower
+                or "claude" in _model_lower or "opus" in _model_lower
+                or "sonnet" in _model_lower or "haiku" in _model_lower
+                or "fable" in _model_lower
+            ):
                 stable_parts.append(OPENAI_MODEL_EXECUTION_GUIDANCE)
 
     has_skills_tools = any(name in agent.valid_tool_names for name in ['skills_list', 'skill_view', 'skill_manage'])

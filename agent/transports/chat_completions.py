@@ -426,7 +426,18 @@ class ChatCompletionsTransport(ProviderTransport):
                 if gh_reasoning is not None:
                     extra_body["reasoning"] = gh_reasoning
             else:
-                extra_body["reasoning"] = {"enabled": True, "effort": "medium"}
+                # Honor the per-request reasoning effort (e.g. the web-UI model
+                # picker's oc_reasoning_effort → reasoning_config.effort) instead
+                # of hardcoding "medium". When thinking is explicitly disabled,
+                # turn reasoning off; otherwise default to "high".
+                _rc = reasoning_config if isinstance(reasoning_config, dict) else {}
+                if _rc.get("enabled") is False:
+                    extra_body["reasoning"] = {"enabled": False}
+                else:
+                    _eff = str(_rc.get("effort") or "").strip().lower()
+                    if _eff not in {"low", "medium", "high", "xhigh", "max"}:
+                        _eff = "high"
+                    extra_body["reasoning"] = {"enabled": True, "effort": _eff}
 
         if provider_name == "gemini":
             raw_thinking_config = _build_gemini_thinking_config(model, reasoning_config)

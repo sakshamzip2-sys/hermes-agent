@@ -2164,8 +2164,13 @@ class APIServerAdapter(BasePlatformAdapter):
                 approval_notify_callback=_on_approval,
             ))
             # Ensure SSE drain loops can terminate without relying on polling
-            # agent_task.done(), which can race with queue timeout checks.
-            agent_task.add_done_callback(lambda _fut: _stream_q.put(None))
+            # agent_task.done(), which can race with queue timeout checks. Also
+            # drop any approval run→session mapping registered by _on_approval
+            # (matches the cleanup on the session-chat-stream and /v1/runs paths).
+            def _on_agent_done(_fut):
+                _stream_q.put(None)
+                self._run_approval_sessions.pop(completion_id, None)
+            agent_task.add_done_callback(_on_agent_done)
 
             return await self._write_sse_chat_completion(
                 request, completion_id, model_name, created, _stream_q,
