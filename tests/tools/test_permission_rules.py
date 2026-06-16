@@ -177,6 +177,38 @@ class TestPublicEntryPoints:
         # Must fail open, not propagate.
         assert pr.evaluate_tool_call("terminal", {"command": "rm -rf /"}).action == "normal"
 
+    def test_ambient_contextvar_resolves_gateway_plan_mode(self, monkeypatch):
+        """Gateway parity: a /plan handler keys the mode off the gateway session
+        key (== the approval contextvar), but the central gate is called with the
+        agent's DIFFERENT session_id.  The contextvar fallback must bridge them
+        so plan mode is enforced — otherwise gateway /plan is a silent no-op."""
+        from tools import approval
+
+        monkeypatch.setattr(pr, "_load_permissions_config", lambda: {})
+        pr.set_global_mode(None)
+
+        gateway_key = "agent:main:telegram:dm:12345"
+        agent_sid = "sess-uuid-abc"  # what the central gate actually passes
+
+        pr.set_session_mode(gateway_key, "plan")
+        token = approval.set_current_session_key(gateway_key)
+        try:
+            # Gate called with the agent's session_id (NOT the gateway key) —
+            # plan mode must still resolve via the ambient contextvar.
+            assert pr.get_effective_mode(agent_sid, "normal") == "plan"
+            assert (
+                pr.pre_tool_block_message("write_file", {"path": "/tmp/x"}, agent_sid)
+                is not None
+            )
+            assert (
+                pr.pre_tool_block_message("read_file", {"path": "/tmp/x"}, agent_sid)
+                is None
+            )
+        finally:
+            approval.reset_current_session_key(token)
+            pr.set_session_mode(gateway_key, None)
+        assert pr.get_effective_mode(agent_sid, "normal") == "normal"
+
 
 # --------------------------------------------------------------------------
 # mutation heuristic (drives plan-mode terminal blocking)

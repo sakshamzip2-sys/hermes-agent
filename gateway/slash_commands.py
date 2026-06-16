@@ -2331,6 +2331,70 @@ class GatewaySlashCommandsMixin:
             enable_session_yolo(session_key)
             return EphemeralReply(t("gateway.yolo.enabled"))
 
+    async def _handle_permission_mode_command(
+        self, canonical: str, event: MessageEvent
+    ) -> Union[str, EphemeralReply]:
+        """Handle /plan, /accept-edits, /permissions for this session only.
+
+        Mirrors /yolo: per-conversation state keyed off the same session key the
+        approval layer uses (``_session_key_for_source``), so the central tool
+        gate — which resolves the mode via the approval contextvar — sees it.
+        Plan-mode ENFORCEMENT is the tool gate (works regardless of surface);
+        this just toggles the per-session mode + reports it.
+        """
+        from tools import permission_rules as _perm
+
+        session_key = self._session_key_for_source(event.source)
+
+        if canonical == "plan":
+            _perm.set_session_mode(session_key, _perm.MODE_PLAN)
+            return EphemeralReply(
+                "📐 Plan mode ON — I'll investigate and propose only; file/state "
+                "changes are blocked until you send /accept-edits."
+            )
+        if canonical == "accept-edits":
+            _perm.set_session_mode(session_key, _perm.MODE_NORMAL)
+            return EphemeralReply(
+                "✅ Plan mode OFF — write/patch and state-changing commands are "
+                "available again."
+            )
+
+        # /permissions [mode <m>] [test <Tool> <target>]
+        args = (event.text or "").split()[1:]
+        if not args:
+            cfg = _perm._load_permissions_config()
+            lines = [f"Permission mode: {_perm.current_mode(session_key)}"]
+            for kind in ("allow", "deny", "ask"):
+                rules = cfg.get(kind) or []
+                lines.append(f"{kind}: {rules if rules else '(none)'}")
+            lines.append(
+                "Edit config.yaml 'permissions:' for persistent rules; /plan toggles plan mode."
+            )
+            return EphemeralReply("\n".join(lines))
+        verb = args[0].lower()
+        if verb == "mode" and len(args) >= 2:
+            mode = _perm.normalize_mode(args[1])
+            _perm.set_session_mode(session_key, mode)
+            return EphemeralReply(f"Permission mode set to: {mode} (this session)")
+        if verb == "test" and len(args) >= 2:
+            tool = args[1].lower()
+            target = " ".join(args[2:]) if len(args) > 2 else ""
+            if tool in ("bash", "shell", "terminal"):
+                tname, targs = "terminal", {"command": target}
+            elif tool in ("read", "read_file"):
+                tname, targs = "read_file", {"path": target}
+            elif tool in ("edit", "write", "write_file", "patch"):
+                tname, targs = "write_file", {"path": target}
+            elif tool in ("webfetch", "web_fetch", "fetch"):
+                tname, targs = "web_fetch", {"url": target}
+            else:
+                tname, targs = tool, {"command": target, "path": target, "url": target}
+            d = _perm.evaluate_tool_call(tname, targs, session_key)
+            return EphemeralReply(f"{args[1]}({target}) -> {d.action}" + (f": {d.reason}" if d.reason else ""))
+        return EphemeralReply(
+            "Usage: /permissions [mode <normal|plan|yolo>] [test <Tool> <target>]"
+        )
+
     async def _handle_verbose_command(self, event: MessageEvent) -> str:
         """Handle /verbose command — cycle tool progress display mode.
 

@@ -500,11 +500,40 @@ def set_session_mode(session_id: str, mode: Optional[str]) -> None:
             _session_mode_override[session_id] = normalize_mode(mode)
 
 
+def _ambient_session_key() -> str:
+    """The approval-layer's current session key (a contextvar), or ''.
+
+    The gateway sets this (``set_current_session_key``) to its per-conversation
+    session key around each turn, and slash handlers like ``/yolo`` key
+    per-session state off the same value.  The central plan-mode gate, however,
+    is called with ``agent.session_id`` — which in the gateway is NOT the same
+    string.  Consulting this contextvar lets a session-mode override set by a
+    gateway ``/plan`` handler be seen by the gate regardless of which identifier
+    the surface threads through.  Lazy import avoids a circular dependency
+    (tools.approval imports permission_rules).
+    """
+    try:
+        from tools.approval import get_current_session_key
+
+        return get_current_session_key(default="") or ""
+    except Exception:  # noqa: BLE001
+        return ""
+
+
 def get_effective_mode(session_id: str = "", config_mode: Optional[str] = None) -> str:
-    """Resolve the live mode: session override > global override > config."""
+    """Resolve the live mode: session override > global override > config.
+
+    Checks the passed ``session_id`` first (CLI: the agent's own id), then the
+    ambient approval session key (gateway: the per-conversation key its slash
+    handlers use), then the process-global override, then config.
+    """
     with _lock:
         if session_id and session_id in _session_mode_override:
             return _session_mode_override[session_id]
+    ambient = _ambient_session_key()
+    with _lock:
+        if ambient and ambient != session_id and ambient in _session_mode_override:
+            return _session_mode_override[ambient]
         if _global_mode_override is not None:
             return _global_mode_override
     return normalize_mode(config_mode if config_mode is not None else MODE_NORMAL)
