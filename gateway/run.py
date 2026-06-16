@@ -2176,6 +2176,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         self._reasoning_config = self._load_reasoning_config()
         self._service_tier = self._load_service_tier()
         self._show_reasoning = self._load_show_reasoning()
+        self._echo_voice_transcript = self._load_echo_voice_transcript()
         self._busy_input_mode = self._load_busy_input_mode()
         self._busy_text_mode = self._load_busy_text_mode()
         self._restart_drain_timeout = self._load_restart_drain_timeout()
@@ -3554,6 +3555,22 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         return is_truthy_value(
             cfg_get(cfg, "display", "show_reasoning"),
             default=False,
+        )
+
+    @staticmethod
+    def _load_echo_voice_transcript() -> bool:
+        """Load voice.echo_transcript toggle from config.yaml.
+
+        When True (default — preserves upstream behavior), the raw STT
+        transcript of a voice message is echoed back to the user (🎙️ "...")
+        before the agent answers. When False, the transcript is suppressed and
+        only the answer is sent. Platform-agnostic: applies to every connector
+        (Telegram, Discord, Slack, etc.).
+        """
+        cfg = _load_gateway_runtime_config()
+        return is_truthy_value(
+            cfg_get(cfg, "voice", "echo_transcript"),
+            default=True,
         )
 
     @staticmethod
@@ -8021,7 +8038,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                 # Echo each successful transcript back to the user immediately,
                 # before the agent loop runs. Lets the user verify STT quality
                 # in real-time and see the raw whisper output verbatim.
-                if _successful_transcripts:
+                if _successful_transcripts and self._echo_voice_transcript:
                     _echo_adapter = self.adapters.get(source.platform)
                     _echo_meta = self._thread_metadata_for_source(source, self._reply_anchor_for_event(event))
                     if _echo_adapter:
@@ -12219,7 +12236,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             )
             # Echo raw transcripts back to the user so voice interrupts
             # feel identical to fresh voice messages.
-            if successful_transcripts:
+            if successful_transcripts and self._echo_voice_transcript:
                 echo_adapter = self.adapters.get(source.platform)
                 echo_meta = {"thread_id": source.thread_id} if source.thread_id else None
                 if echo_adapter:
@@ -15441,7 +15458,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                                             pending_text, _audio_paths,
                                         )
                                         pending_text = _enriched
-                                        if _transcripts:
+                                        if _transcripts and self._echo_voice_transcript:
                                             _echo_meta = {"thread_id": source.thread_id} if source.thread_id else None
                                             for _tx in _transcripts:
                                                 try:
@@ -15809,7 +15826,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                                 _pending_text, _audio_paths,
                             )
                             pending = _enriched or None
-                            if _transcripts:
+                            if _transcripts and self._echo_voice_transcript:
                                 _echo_meta = {"thread_id": source.thread_id} if source.thread_id else None
                                 for _tx in _transcripts:
                                     try:
