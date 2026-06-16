@@ -12479,10 +12479,20 @@ def main():
 
     # Execute the command
     if hasattr(args, "func"):
-        args.func(args)
+        _rc = args.func(args)
+        # Propagate an explicit integer exit code from the command handler
+        # (e.g. plugin CLI commands return 0/1/2). Historically this return was
+        # discarded so every command exited 0; we preserve that for handlers
+        # that return None (the common case) and — importantly — for bools,
+        # which are an int subclass some legacy helpers return with the opposite
+        # (True=success) sense. Only a real, non-bool int becomes the exit code.
+        if isinstance(_rc, int) and not isinstance(_rc, bool):
+            return _rc
+        return None
     else:
         parser.print_help()
+        return None
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
