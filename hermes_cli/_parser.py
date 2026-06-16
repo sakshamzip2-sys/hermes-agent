@@ -114,11 +114,17 @@ def build_top_level_parser():
     )
     parser.add_argument(
         "--output-format",
-        choices=["text", "json"],
         default="text",
+        metavar="FORMAT",
+        # No argparse ``choices=`` here on purpose: a ``{text,json}`` choices
+        # group prints in the usage line BEFORE the subcommand
+        # ``{chat,model,...}`` group, so tooling that scrapes the first
+        # ``{...}`` group from --help (the startup-gating parity test) would
+        # mistake the format values for subcommands. ``run_oneshot`` validates
+        # the value and errors clearly on anything but text/json.
         help=(
-            "Output format for -z/--oneshot. 'text' (default) prints only the "
-            "final response. 'json' emits a single machine-parseable object "
+            "Output format for -z/--oneshot: 'text' (default) prints only the "
+            "final response; 'json' emits a single machine-parseable object "
             "(final_response, session_id, failed, error, usage) — emitted even "
             "on failure so scripts can parse it and read the exit code."
         ),
