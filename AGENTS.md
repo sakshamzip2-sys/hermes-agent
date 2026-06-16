@@ -1170,6 +1170,19 @@ Both are thin wrappers/additions over the existing non-overridable HARDLINE
 floor and rules engine — they do not change the hardline set or the
 `normal|plan|yolo` permission modes.
 
+### `http_request` — structured HTTP (CORE tool)
+
+`tools/http_request_tool.py` is the one always-on HTTP tool (in
+`toolsets._HERMES_CORE_TOOLS`). Prefer it over `curl`-in-`terminal` for API
+calls: it takes structured inputs (method/url/headers/query/typed body/auth) and
+returns a structured result (`status`, `headers`, parsed `body_json`,
+`elapsed_ms`, `truncated`, `final_url`), so the model never fights shell quoting
+or JSON escaping. Egress is SSRF-protected via `tools/url_safety.py`
+(private/internal/cloud-metadata addresses blocked pre-flight AND on every
+redirect hop); `auth` and sensitive headers are never logged; responses are
+capped at `max_response_bytes` (truncate + flag). Errors surface as structured
+fields (`kind`: timeout/connect/tls/ssrf/http), not raw stack traces.
+
 ---
 
 ## Profiles: Multi-Instance Support

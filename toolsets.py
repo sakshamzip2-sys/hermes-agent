@@ -31,6 +31,8 @@ from typing import List, Dict, Any, Set, Optional
 _HERMES_CORE_TOOLS = [
     # Web
     "web_search", "web_extract",
+    # Structured HTTP (the one justified always-on core HTTP tool; SSRF-gated)
+    "http_request",
     # Terminal + process management
     "terminal", "process",
     # Read the desktop GUI's embedded terminal pane (gated on HERMES_DESKTOP
