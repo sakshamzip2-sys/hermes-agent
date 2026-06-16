@@ -102,6 +102,24 @@ def build_system_prompt_parts(agent: Any, system_message: Optional[str] = None) 
     # Pointer to the hermes-agent skill + docs for user questions about OpenComputer itself.
     stable_parts.append(HERMES_AGENT_HELP_GUIDANCE)
 
+    # Plan mode (model-agnostic): when permissions.mode is plan, tell the model
+    # to investigate + propose only.  Mutating tools are hard-blocked at the tool
+    # gate (tools/permission_rules.py) regardless; this just sets expectations so
+    # the model proposes instead of trying and getting blocked.  Read live so a
+    # /plan toggle takes effect on the next prompt rebuild (the slash handler
+    # invalidates the cached prompt).
+    try:
+        from tools.permission_rules import (
+            current_mode as _perm_mode,
+            MODE_PLAN as _MODE_PLAN,
+            PLAN_MODE_SYSTEM_PROMPT as _PLAN_PROMPT,
+        )
+
+        if _perm_mode(getattr(agent, "session_id", "") or "") == _MODE_PLAN:
+            stable_parts.append(_PLAN_PROMPT)
+    except Exception:  # noqa: BLE001
+        pass
+
     # Universal task-completion / no-fabrication guidance.  Applied to ALL
     # models regardless of tool_use_enforcement gating — the failure modes
     # this targets (stopping after a stub; fabricating output when a real

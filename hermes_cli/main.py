@@ -11210,6 +11210,11 @@ def _try_termux_fast_cli_launch() -> bool:
                 model=getattr(args, "model", None),
                 provider=getattr(args, "provider", None),
                 toolsets=getattr(args, "toolsets", None),
+                output_format=getattr(args, "output_format", "text"),
+                append_system_prompt=getattr(args, "append_system_prompt", None),
+                max_turns=getattr(args, "max_turns", None),
+                allowed_tools=getattr(args, "allowed_tools", None),
+                disallowed_tools=getattr(args, "disallowed_tools", None),
             )
         )
 
@@ -12441,6 +12446,11 @@ def main():
                 model=getattr(args, "model", None),
                 provider=getattr(args, "provider", None),
                 toolsets=getattr(args, "toolsets", None),
+                output_format=getattr(args, "output_format", "text"),
+                append_system_prompt=getattr(args, "append_system_prompt", None),
+                max_turns=getattr(args, "max_turns", None),
+                allowed_tools=getattr(args, "allowed_tools", None),
+                disallowed_tools=getattr(args, "disallowed_tools", None),
             )
         )
 

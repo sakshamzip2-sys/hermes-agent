@@ -108,7 +108,64 @@ def build_top_level_parser():
             "response text to stdout. No banner, no spinner, no tool "
             "previews, no session_id line. Tools, memory, rules, and "
             "AGENTS.md in the CWD are loaded as normal; approvals are "
-            "auto-bypassed. Intended for scripts / pipes."
+            "auto-bypassed. Intended for scripts / pipes. Pass '-' to read "
+            "the prompt from stdin (echo 'hi' | oc -z -)."
+        ),
+    )
+    parser.add_argument(
+        "--output-format",
+        choices=["text", "json"],
+        default="text",
+        help=(
+            "Output format for -z/--oneshot. 'text' (default) prints only the "
+            "final response. 'json' emits a single machine-parseable object "
+            "(final_response, session_id, failed, error, usage) — emitted even "
+            "on failure so scripts can parse it and read the exit code."
+        ),
+    )
+    parser.add_argument(
+        "--append-system-prompt",
+        metavar="TEXT",
+        default=None,
+        help=(
+            "Append TEXT to the system prompt for this -z/--oneshot run "
+            "(added to the context tier, not replacing the default prompt)."
+        ),
+    )
+    parser.add_argument(
+        "--allowed-tools",
+        "--allowedTools",
+        dest="allowed_tools",
+        metavar="RULES",
+        default=None,
+        help=(
+            "Comma-separated permission rules to AUTO-APPROVE for this "
+            "-z/--oneshot run (e.g. 'Bash(npm run *),Read'). Layered on top of "
+            "config permissions as runtime allow rules. claude -p --allowedTools "
+            "parity; model-agnostic. Both --allowed-tools and --allowedTools work."
+        ),
+    )
+    parser.add_argument(
+        "--disallowed-tools",
+        "--disallowedTools",
+        dest="disallowed_tools",
+        metavar="RULES",
+        default=None,
+        help=(
+            "Comma-separated permission rules to DENY (block) for this "
+            "-z/--oneshot run (e.g. 'WebFetch,Bash(curl *)'). Layered on top of "
+            "config permissions as runtime deny rules. claude -p --disallowedTools "
+            "parity."
+        ),
+    )
+    parser.add_argument(
+        "--max-turns",
+        type=int,
+        default=None,
+        metavar="N",
+        help=(
+            "Cap the agent at N tool-call iterations for this -z/--oneshot run "
+            "(claude -p --max-turns parity). Prevents runaway loops in scripts."
         ),
     )
     # --model / --provider are accepted at the top level so they can pair

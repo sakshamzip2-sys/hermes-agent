@@ -2041,6 +2041,30 @@ DEFAULT_CONFIG = {
         "destructive_slash_confirm": True,
     },
 
+    # Declarative permission rules + permission mode (model-agnostic).
+    # Ported from the Claude Code "permissions" concept; enforced by
+    # tools/permission_rules.py at the central pre-tool-call gate and the
+    # terminal approval path.  Works with ANY provider/model.
+    #
+    #   mode: normal | plan | yolo
+    #     normal — default behaviour.
+    #     plan   — research/propose only; file & state mutations are blocked
+    #              until you exit (toggle live with /plan, leave with
+    #              /accept-edits or set mode: normal).  Read-only commands stay
+    #              available so the agent can investigate.
+    #     yolo   — skip all approval prompts (same as --yolo / approvals.mode off).
+    #   allow / deny / ask — lists of ToolName(specifier) rules, e.g.
+    #     Bash(npm run *), Read(~/secrets/**), Edit(/etc/**),
+    #     WebFetch(domain:example.com), or a bare tool name (matches any call).
+    #     Precedence: deny > allow > plan-mode > ask.  (ask is terminal-scoped
+    #     in this release.)  See website/docs for the full rule grammar.
+    "permissions": {
+        "mode": "normal",
+        "allow": [],
+        "deny": [],
+        "ask": [],
+    },
+
     # Permanently allowed dangerous command patterns (added via "always" approval)
     "command_allowlist": [],
     # User-defined quick commands that bypass the agent loop (type: exec only)

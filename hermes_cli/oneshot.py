@@ -21,11 +21,12 @@ Env var fallbacks (used when the corresponding arg is not passed):
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import sys
 from contextlib import redirect_stderr, redirect_stdout
-from typing import Optional
+from typing import Any, Optional
 
 from hermes_cli.fallback_config import get_fallback_chain
 
@@ -127,19 +128,56 @@ def run_oneshot(
     model: Optional[str] = None,
     provider: Optional[str] = None,
     toolsets: object = None,
+    output_format: str = "text",
+    append_system_prompt: Optional[str] = None,
+    max_turns: Optional[int] = None,
+    allowed_tools: Optional[str] = None,
+    disallowed_tools: Optional[str] = None,
 ) -> int:
     """Execute a single prompt and print only the final content block.
 
     Args:
-        prompt: The user message to send.
+        prompt: The user message to send.  ``"-"`` reads the prompt from
+            stdin (``echo "..." | oc -z -``).
         model: Optional model override. Falls back to HERMES_INFERENCE_MODEL
             env var, then config.yaml's model.default / model.model.
         provider: Optional provider override. Falls back to config.yaml's
             model.provider, then "auto".
         toolsets: Optional comma-separated string or iterable of toolsets.
+        output_format: ``"text"`` (default) prints only the final response;
+            ``"json"`` emits a single machine-parseable object
+            (``final_response`` / ``session_id`` / ``failed`` / ``error`` /
+            ``usage``) — emitted even on failure so scripts can ``jq`` it and
+            read the exit code, mirroring ``claude -p --output-format json``.
+        append_system_prompt: Optional text appended to the system prompt's
+            context tier (``claude -p --append-system-prompt`` semantic).
 
     Returns the exit code.  Caller should sys.exit() with the return.
     """
+    # --- stdin piping: ``oc -z -`` reads the prompt from stdin -------------
+    # Done before the stdout/stderr redirect so any error reaches the real
+    # terminal cleanly.
+    if prompt == "-":
+        try:
+            prompt = sys.stdin.read()
+        except Exception as exc:  # noqa: BLE001 — surface, never crash silently
+            sys.stderr.write(f"oc -z: failed to read prompt from stdin: {exc}\n")
+            return 2
+        prompt = (prompt or "").strip()
+        if not prompt:
+            sys.stderr.write(
+                "oc -z: '-' was given but stdin was empty — nothing to run.\n"
+            )
+            return 2
+
+    output_format = (output_format or "text").strip().lower()
+    if output_format not in {"text", "json"}:
+        sys.stderr.write(
+            f"oc -z: unknown --output-format {output_format!r} "
+            "(use 'text' or 'json').\n"
+        )
+        return 2
+
     # Silence every stdlib logger for the duration.  AIAgent, tools, and
     # provider adapters all log to stderr through the root logger; file
     # handlers added by setup_logging() keep working (they're attached to
@@ -177,17 +215,21 @@ def run_oneshot(
     real_stderr = sys.stderr
     devnull = open(os.devnull, "w", encoding="utf-8")
 
-    response: Optional[str] = None
+    result: Optional[dict] = None
     failure: BaseException | None = None
     try:
         with redirect_stdout(devnull), redirect_stderr(devnull):
             try:
-                response = _run_agent(
+                result = _run_agent(
                     prompt,
                     model=model,
                     provider=provider,
                     toolsets=explicit_toolsets,
                     use_config_toolsets=use_config_toolsets,
+                    append_system_prompt=append_system_prompt,
+                    max_turns=max_turns,
+                    allowed_tools=allowed_tools,
+                    disallowed_tools=disallowed_tools,
                 )
             except BaseException as exc:  # noqa: BLE001
                 # Capture anything that escapes the agent (including OSError
@@ -209,21 +251,99 @@ def run_oneshot(
         # (Ctrl-C / explicit sys.exit() inside the agent).
         if isinstance(failure, (KeyboardInterrupt, SystemExit)):
             raise failure
+        if output_format == "json":
+            _emit_json(
+                real_stdout,
+                {
+                    "final_response": "",
+                    "session_id": None,
+                    "failed": True,
+                    "error": f"{failure}",
+                    "usage": None,
+                },
+            )
+            return 1
         real_stderr.write(f"oc -z: agent failed: {failure}\n")
         real_stderr.flush()
         return 1
 
-    if not (response or "").strip():
-        real_stderr.write("oc -z: no final response was produced; treating the run as failed.\n")
+    result = result if isinstance(result, dict) else {}
+    response = str(result.get("final_response") or "")
+    empty = not response.strip()
+    # An empty final response is a failure in both modes — a clean exit with no
+    # output would look like success to an automation wrapper.
+    failed = bool(result.get("failed")) or empty
+
+    if output_format == "json":
+        _emit_json(
+            real_stdout,
+            {
+                "final_response": response,
+                "session_id": result.get("session_id"),
+                "failed": failed,
+                "error": result.get("error"),
+                "usage": _build_usage(result),
+            },
+        )
+        return 1 if failed else 0
+
+    # Text mode (original behaviour) — only the final response to stdout.
+    if empty:
+        real_stderr.write(
+            "oc -z: no final response was produced; treating the run as failed.\n"
+        )
         real_stderr.flush()
         return 1
-
-    assert response is not None  # narrowed by the empty-response guard above
     real_stdout.write(response)
     if not response.endswith("\n"):
         real_stdout.write("\n")
     real_stdout.flush()
     return 0
+
+
+def _emit_json(stream: Any, payload: dict) -> None:
+    """Write a single-line JSON object + newline to ``stream`` and flush.
+
+    ``default=str`` keeps the call total — any non-serialisable value (e.g. a
+    usage object) is stringified rather than raising and producing no output,
+    which would defeat the point of a machine-readable mode.
+    """
+    stream.write(json.dumps(payload, ensure_ascii=False, default=str))
+    stream.write("\n")
+    stream.flush()
+
+
+# Token / cost fields ``run_conversation`` returns at the TOP LEVEL of its
+# result dict (it surfaces these flat, not under a ``usage`` key).  Projected
+# into a single ``usage`` object for the JSON output so callers get tokens +
+# cost like ``claude -p --output-format json``.
+_USAGE_KEYS = (
+    "input_tokens",
+    "output_tokens",
+    "total_tokens",
+    "prompt_tokens",
+    "completion_tokens",
+    "cache_read_tokens",
+    "cache_write_tokens",
+    "reasoning_tokens",
+    "estimated_cost_usd",
+    "cost_source",
+    "cost_status",
+    "api_calls",
+    "model",
+    "provider",
+)
+
+
+def _build_usage(result: dict) -> Optional[dict]:
+    """Build the ``usage`` object from the flat token/cost fields the agent
+    returns.  Returns ``None`` when no usage data is present, so empty/failed
+    runs stay explicitly ``null`` rather than emitting a misleading all-zero
+    object."""
+    if not isinstance(result, dict):
+        return None
+    usage = {k: result[k] for k in _USAGE_KEYS if result.get(k) is not None}
+    return usage or None
 
 
 def _create_session_db_for_oneshot():
@@ -242,15 +362,39 @@ def _create_session_db_for_oneshot():
         return None
 
 
+def _split_tool_list(value: Optional[str]) -> Optional[list]:
+    """Parse a comma-separated --allowedTools/--disallowedTools value.
+
+    Entries are permission-rule strings (``Bash(npm run *)``, ``Read``, ...).
+    Returns None when nothing was supplied so callers can leave the bucket
+    untouched.
+    """
+    if not value or not str(value).strip():
+        return None
+    return [p.strip() for p in str(value).split(",") if p.strip()]
+
+
 def _run_agent(
     prompt: str,
     model: Optional[str] = None,
     provider: Optional[str] = None,
     toolsets: object = None,
     use_config_toolsets: bool = True,
-) -> str:
+    append_system_prompt: Optional[str] = None,
+    max_turns: Optional[int] = None,
+    allowed_tools: Optional[str] = None,
+    disallowed_tools: Optional[str] = None,
+) -> dict:
     """Build an AIAgent exactly like a normal CLI chat turn would, then
-    run a single conversation.  Returns the final response string."""
+    run a single conversation.  Returns the full ``run_conversation`` result
+    dict (``final_response`` / ``failed`` / ``error`` / ``usage`` ...) with
+    ``session_id`` surfaced, so ``run_oneshot`` can emit either plain text or
+    a machine-readable JSON object.
+
+    ``append_system_prompt`` is threaded through as ``run_conversation``'s
+    ``system_message`` — which the prompt builder appends to the system
+    prompt's *context* tier (see ``agent/system_prompt.py``), exactly the
+    Claude-Code ``--append-system-prompt`` semantic (append, not replace)."""
     # Imports are local so they don't run when hermes is invoked for
     # other commands (keeps top-level CLI startup cheap).
     from hermes_cli.config import load_config
@@ -364,7 +508,43 @@ def _run_agent(
     agent.stream_delta_callback = None
     agent.tool_gen_callback = None
 
-    return agent.chat(prompt) or ""
+    # --max-turns: cap the agent's tool-call iterations (claude -p parity).
+    if max_turns is not None:
+        try:
+            mt = int(max_turns)
+            if mt > 0:
+                agent.max_iterations = mt
+        except (TypeError, ValueError):
+            pass
+
+    # --allowedTools / --disallowedTools map onto the W1 permission engine as
+    # runtime allow/deny rules (model-agnostic, enforced at the central tool
+    # gate).  Entries are permission-rule strings, e.g. "Bash(npm run *)" or a
+    # bare tool name.  Set just before the run; the oneshot process exits after.
+    _allow = _split_tool_list(allowed_tools)
+    _deny = _split_tool_list(disallowed_tools)
+    if _allow is not None or _deny is not None:
+        try:
+            from tools.permission_rules import set_runtime_rules
+
+            set_runtime_rules(allow=_allow, deny=_deny)
+        except Exception:  # noqa: BLE001 — policy must never break the run
+            pass
+
+    result = agent.run_conversation(
+        prompt, system_message=(append_system_prompt or None)
+    )
+    if not isinstance(result, dict):
+        result = {"final_response": str(result or ""), "failed": False}
+    # Surface the (possibly rotated) session id so JSON callers get the live
+    # session — run_conversation can start a continuation session on mid-run
+    # compression, mirroring the quiet -Q path's stderr session_id line.
+    live_session = getattr(agent, "session_id", None)
+    if live_session:
+        result["session_id"] = live_session
+    else:
+        result.setdefault("session_id", None)
+    return result
 
 
 def _oneshot_clarify_callback(question: str, choices=None) -> str:

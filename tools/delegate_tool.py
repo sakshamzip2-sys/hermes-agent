@@ -1253,6 +1253,27 @@ def _build_child_agent(
     if parent_sid and getattr(child, "_session_init_model_config", None) is not None:
         child._session_init_model_config["_delegate_from"] = parent_sid
 
+    # Propagate the parent's live permission mode (e.g. plan mode set via /plan)
+    # to this user-delegated subagent.  The child gets a fresh session_id, so
+    # without this it would fall through to the config-default mode and bypass
+    # the parent's plan mode.  Scoped to delegate_task (user-spawned subagents)
+    # — internal system agents (curation, titles, compression) don't run here,
+    # so they are intentionally unaffected.  config/global modes already reach
+    # the child via the normal fallback; this only forwards a SESSION override.
+    try:
+        from tools.permission_rules import (
+            current_mode as _perm_current_mode,
+            set_session_mode as _perm_set_session_mode,
+            MODE_NORMAL as _PERM_MODE_NORMAL,
+        )
+
+        _parent_mode = _perm_current_mode(parent_sid or "")
+        _child_sid = getattr(child, "session_id", "") or ""
+        if _child_sid and _parent_mode != _PERM_MODE_NORMAL:
+            _perm_set_session_mode(_child_sid, _parent_mode)
+    except Exception:  # noqa: BLE001 — propagation must never break delegation
+        pass
+
     # Share a credential pool with the child when possible so subagents can
     # rotate credentials on rate limits instead of getting pinned to one key.
     child_pool = _resolve_child_credential_pool(

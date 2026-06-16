@@ -267,6 +267,14 @@ class PluginManifest:
     # category plugin at ``plugins/image_gen/openai/`` the key is
     # ``image_gen/openai``. When empty, falls back to ``name``.
     key: str = ""
+    # Background monitors (ported Claude Code "monitors" concept, model-agnostic).
+    # A list of {name, command, watch_patterns, when, notify_on_complete} dicts.
+    # Started by hermes_cli.monitor_manager when the plugin is active; each runs
+    # as a background process whose matching output lines are streamed back to
+    # the agent via the existing process-registry watch runtime (see
+    # tools/process_registry.py + gateway watch-event drain).  ``when`` is
+    # "always" (default) or "on-skill-invoke:<skill>".
+    monitors: List[Dict[str, Any]] = field(default_factory=list)
 
 
 @dataclass
@@ -1464,6 +1472,8 @@ class PluginManager:
                 "Parsed manifest: key=%s name=%s kind=%s source=%s path=%s",
                 key, name, kind, source, plugin_dir,
             )
+            raw_monitors = data.get("monitors", []) or []
+            monitors = [m for m in raw_monitors if isinstance(m, dict) and m.get("command")]
             return PluginManifest(
                 name=name,
                 version=str(data.get("version", "")),
@@ -1476,6 +1486,7 @@ class PluginManager:
                 path=str(plugin_dir),
                 kind=kind,
                 key=key,
+                monitors=monitors,
             )
         except Exception as exc:
             logger.warning(
@@ -1882,6 +1893,20 @@ def get_pre_tool_call_block_message(
     if allowed is not None and tool_name not in allowed:
         fmt = getattr(_thread_tool_whitelist, "fmt", "Tool '{tool_name}' denied")
         return fmt.format(tool_name=tool_name)
+
+    # Declarative permission rules + plan mode (model-agnostic).  Enforces
+    # permissions.deny for every tool and blocks mutating tools while plan mode
+    # is on; an explicit permissions.allow rule whitelists out of plan mode.
+    # ``ask`` is handled downstream in the terminal approval path.  Wrapped so a
+    # policy error can never wedge tool dispatch.
+    try:
+        from tools.permission_rules import pre_tool_block_message
+
+        perm_block = pre_tool_block_message(tool_name, args, session_id or "")
+        if perm_block:
+            return perm_block
+    except Exception:  # noqa: BLE001
+        pass
 
     hook_results = invoke_hook(
         "pre_tool_call",

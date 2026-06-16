@@ -7497,6 +7497,12 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin):
             self._handle_footer_command(cmd_original)
         elif canonical == "yolo":
             self._toggle_yolo()
+        elif canonical == "plan":
+            self._handle_plan_command()
+        elif canonical == "accept-edits":
+            self._handle_accept_edits_command()
+        elif canonical == "permissions":
+            self._handle_permissions_command(cmd_original)
         elif canonical == "reasoning":
             self._handle_reasoning_command(cmd_original)
         elif canonical == "fast":
@@ -8098,6 +8104,106 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin):
 
 
 
+
+    def _invalidate_prompt_for_mode_change(self):
+        """Rebuild the cached system prompt after a permission-mode change.
+
+        Plan mode injects a system-prompt block; toggling the mode mid-session
+        must rebuild the (otherwise byte-stable) prompt once so the model sees
+        the change.  This is the only sanctioned mid-session rebuild besides
+        compression — it is an explicit, user-initiated state change.
+        """
+        try:
+            from agent.system_prompt import invalidate_system_prompt
+            if getattr(self, "agent", None) is not None:
+                invalidate_system_prompt(self.agent)
+        except Exception:
+            pass
+
+    def _handle_plan_command(self):
+        """/plan — enter plan mode for this session (mutations blocked)."""
+        from hermes_cli.colors import Colors as _Colors
+        from tools import permission_rules as _perm
+
+        session_key = self.session_id or "default"
+        _perm.set_session_mode(session_key, _perm.MODE_PLAN)
+        self._invalidate_prompt_for_mode_change()
+        _cprint(
+            f"  📐 Plan mode {_Colors.BOLD}{_Colors.GREEN}ON{_Colors.RESET}"
+            " — investigate & propose only. File/state mutations are blocked"
+            " (read-only tools stay available). Leave with /accept-edits."
+        )
+
+    def _handle_accept_edits_command(self):
+        """/accept-edits — leave plan mode, restore mutating tools."""
+        from hermes_cli.colors import Colors as _Colors
+        from tools import permission_rules as _perm
+
+        session_key = self.session_id or "default"
+        _perm.set_session_mode(session_key, _perm.MODE_NORMAL)
+        self._invalidate_prompt_for_mode_change()
+        _cprint(
+            f"  ✅ Plan mode {_Colors.BOLD}OFF{_Colors.RESET}"
+            " — write/patch and state-changing commands are available again."
+        )
+
+    def _handle_permissions_command(self, cmd_original: str = ""):
+        """/permissions — show, set the mode, or test declarative rules.
+
+        Usage:
+          /permissions                       show current mode + rules
+          /permissions mode <normal|plan|yolo>   set the mode for this session
+          /permissions test <Tool> <target>     show the decision for a call
+        """
+        from tools import permission_rules as _perm
+
+        parts = (cmd_original or "").split()
+        args = parts[1:] if parts else []
+        session_key = self.session_id or "default"
+
+        if not args:
+            cfg = _perm._load_permissions_config()
+            _cprint(f"  Permission mode: {_perm.current_mode(session_key)}")
+            for kind in ("allow", "deny", "ask"):
+                rules = cfg.get(kind) or []
+                _cprint(f"  {kind}: {rules if rules else '(none)'}")
+            _cprint(
+                "  Edit config.yaml 'permissions:' for persistent rules. "
+                "/plan toggles plan mode; /permissions test <Tool> <target> to check a rule."
+            )
+            return
+
+        verb = args[0].lower()
+        if verb == "mode" and len(args) >= 2:
+            mode = _perm.normalize_mode(args[1])
+            _perm.set_session_mode(session_key, mode)
+            self._invalidate_prompt_for_mode_change()
+            _cprint(f"  Permission mode set to: {mode} (this session)")
+            return
+        if verb == "test" and len(args) >= 2:
+            tool = args[1]
+            target = " ".join(args[2:]) if len(args) > 2 else ""
+            tool_l = tool.lower()
+            if tool_l in ("bash", "shell", "terminal"):
+                tname, targs = "terminal", {"command": target}
+            elif tool_l in ("read", "read_file"):
+                tname, targs = "read_file", {"path": target}
+            elif tool_l in ("edit", "write", "write_file", "patch"):
+                tname, targs = "write_file", {"path": target}
+            elif tool_l in ("webfetch", "web_fetch", "fetch"):
+                tname, targs = "web_fetch", {"url": target}
+            else:
+                tname = tool_l
+                targs = {"command": target, "path": target, "url": target}
+            d = _perm.evaluate_tool_call(tname, targs, session_key)
+            suffix = f": {d.reason}" if d.reason else ""
+            _cprint(f"  {tool}({target}) -> {d.action}{suffix}")
+            return
+
+        _cprint(
+            "  Usage: /permissions [mode <normal|plan|yolo>] "
+            "[test <Tool> <target>]"
+        )
 
     def _on_reasoning(self, reasoning_text: str):
         """Callback for intermediate reasoning display during tool-call loops."""

@@ -1370,6 +1370,29 @@ def check_all_command_guards(command: str, env_type: str,
     if _YOLO_MODE_FROZEN or is_current_session_yolo_enabled() or approval_mode == "off":
         return {"approved": True, "message": None}
 
+    # Declarative permission rules (model-agnostic) for terminal commands.
+    # permissions.mode=yolo bypasses prompts; an explicit permissions.allow rule
+    # skips the dangerous-command prompt for matching commands; a permissions.ask
+    # rule forces a prompt even when the command isn't otherwise flagged.  deny +
+    # plan mode are already enforced upstream at the central pre-tool gate, so we
+    # only handle yolo/allow/ask here.  Hardline/sudo guards above still win.
+    _perm_ask = False
+    try:
+        from tools.permission_rules import (
+            evaluate_tool_call as _perm_eval,
+            current_mode as _perm_current_mode,
+        )
+
+        _perm_sid = get_current_session_key("default")
+        if _perm_current_mode(_perm_sid) == "yolo":
+            return {"approved": True, "message": None}
+        _perm_decision = _perm_eval("terminal", {"command": command}, _perm_sid)
+        if _perm_decision.action == "allow":
+            return {"approved": True, "message": None}
+        _perm_ask = _perm_decision.action == "ask"
+    except Exception:  # noqa: BLE001 — policy must never break the approval path
+        _perm_ask = False
+
     is_cli = env_var_enabled("HERMES_INTERACTIVE")
     is_gateway = _is_gateway_approval_context()
     is_ask = env_var_enabled("HERMES_EXEC_ASK")
@@ -1431,6 +1454,14 @@ def check_all_command_guards(command: str, env_type: str,
     if is_dangerous:
         if not is_approved(session_key, pattern_key):
             warnings.append((pattern_key, description, False))
+
+    # permissions.ask rule matched — force a prompt even if nothing else flagged
+    # this command.  ``ask`` means "always ask", so it is not silenced by a prior
+    # "always approve" (we don't consult is_approved for it).
+    if _perm_ask and not any(k == "permissions:ask" for k, _, _ in warnings):
+        warnings.append(
+            ("permissions:ask", "Approval required by your permissions.ask rule", False)
+        )
 
     # Nothing to warn about
     if not warnings:

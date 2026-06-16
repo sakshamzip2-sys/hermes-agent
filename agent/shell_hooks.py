@@ -102,16 +102,49 @@ _registered_lock = threading.Lock()
 # ``.lock`` file via ``fcntl.flock`` and bypass this.
 _allowlist_write_lock = threading.Lock()
 
+# Re-entrancy guard for prompt/agent hooks.  A ``type: prompt`` or
+# ``type: agent`` hook runs an LLM / sub-agent IN-PROCESS; that nested work can
+# itself trip ``pre_tool_call`` / ``pre_llm_call`` hooks, and an agent hook with
+# tools would otherwise recurse forever.  While a hook eval is in flight on this
+# thread, every hook callback short-circuits to a no-op.  Thread-local so
+# concurrent gateway sessions don't disable each other's hooks.
+_hook_eval_local = threading.local()
+
+
+def _hook_eval_active() -> bool:
+    return bool(getattr(_hook_eval_local, "active", False))
+
+
+@contextmanager
+def _hook_eval_guard() -> Iterator[None]:
+    prev = getattr(_hook_eval_local, "active", False)
+    _hook_eval_local.active = True
+    try:
+        yield
+    finally:
+        _hook_eval_local.active = prev
+
 
 @dataclass
 class ShellHookSpec:
     """Parsed and validated representation of a single ``hooks:`` entry."""
 
     event: str
-    command: str
+    command: str = ""
     matcher: Optional[str] = None
     timeout: int = DEFAULT_TIMEOUT_SECONDS
     compiled_matcher: Optional[re.Pattern] = field(default=None, repr=False)
+    # Hook type — Claude-Code parity:
+    #   "command" (default) — run ``command`` as a shell subprocess.
+    #   "prompt"            — an LLM judges the event (model-agnostic, resolved
+    #                         from config via ``auxiliary_client.call_llm``).
+    #   "agent"             — a tool-enabled sub-agent investigates
+    #                         (``oneshot._run_agent``) then returns a verdict.
+    # ``prompt`` carries the instruction for the prompt/agent variants.
+    hook_type: str = "command"
+    prompt: Optional[str] = None
+    model: Optional[str] = None
+    provider: Optional[str] = None
 
     def __post_init__(self) -> None:
         # Strip whitespace introduced by YAML quirks (e.g. multi-line string
@@ -297,13 +330,42 @@ def _parse_single_entry(
         )
         return None
 
-    command = raw.get("command")
-    if not isinstance(command, str) or not command.strip():
+    hook_type = raw.get("type", "command")
+    if not isinstance(hook_type, str):
+        hook_type = "command"
+    hook_type = hook_type.strip().lower() or "command"
+    if hook_type not in {"command", "prompt", "agent"}:
         logger.warning(
-            "hooks.%s[%d] is missing a non-empty 'command' field",
-            event, index,
+            "hooks.%s[%d].type=%r is not one of command/prompt/agent; skipped",
+            event, index, hook_type,
         )
         return None
+
+    command = ""
+    prompt = None
+    if hook_type == "command":
+        command = raw.get("command")
+        if not isinstance(command, str) or not command.strip():
+            logger.warning(
+                "hooks.%s[%d] is missing a non-empty 'command' field",
+                event, index,
+            )
+            return None
+        command = command.strip()
+    else:
+        # prompt / agent hooks carry an instruction in ``prompt`` instead of a
+        # shell ``command``.
+        prompt = raw.get("prompt")
+        if not isinstance(prompt, str) or not prompt.strip():
+            logger.warning(
+                "hooks.%s[%d] type=%s is missing a non-empty 'prompt' field",
+                event, index, hook_type,
+            )
+            return None
+        prompt = prompt.strip()
+
+    model = raw.get("model") if isinstance(raw.get("model"), str) else None
+    provider = raw.get("provider") if isinstance(raw.get("provider"), str) else None
 
     matcher = raw.get("matcher")
     if matcher is not None and not isinstance(matcher, str):
@@ -348,9 +410,13 @@ def _parse_single_entry(
 
     return ShellHookSpec(
         event=event,
-        command=command.strip(),
+        command=command,
         matcher=matcher,
         timeout=timeout,
+        hook_type=hook_type,
+        prompt=prompt,
+        model=model,
+        provider=provider,
     )
 
 
@@ -419,48 +485,200 @@ def _spawn(spec: ShellHookSpec, stdin_json: str) -> Dict[str, Any]:
     return result
 
 
+_HOOK_JUDGE_SYSTEM = (
+    "You are a hook policy evaluator for an AI agent. You receive an "
+    "INSTRUCTION and a JSON EVENT PAYLOAD describing what the agent is about to "
+    "do. Apply the instruction and reply with ONLY a single JSON object, no "
+    "prose:\n"
+    '  block a tool call:  {"decision": "block", "reason": "<short reason>"}\n'
+    '  allow it:           {"decision": "allow"}\n'
+    '  inject context (pre_llm_call only): {"context": "<text>"}\n'
+    "Default to allow when unsure."
+)
+
+
 def _make_callback(spec: ShellHookSpec) -> Callable[..., Optional[Dict[str, Any]]]:
-    """Build the closure that ``invoke_hook()`` will call per firing."""
+    """Build the closure that ``invoke_hook()`` will call per firing.
+
+    Dispatches on ``spec.hook_type`` (Claude-Code parity):
+      * ``command`` — run the shell subprocess (honours the exit-2 == block
+        convention).
+      * ``prompt``  — one model call judges the event (model-agnostic).
+      * ``agent``   — a tool-enabled sub-agent investigates, then judges.
+    All three normalise output through :func:`_parse_response`, so the block /
+    context wire contract is identical regardless of type.
+    """
 
     def _callback(**kwargs: Any) -> Optional[Dict[str, Any]]:
+        # Re-entrancy guard: a prompt/agent hook's own LLM / sub-agent runs
+        # in-process and would otherwise re-trigger hooks (an agent hook with
+        # tools could recurse forever).  Suppress all hook firing during eval.
+        if _hook_eval_active():
+            return None
+
         # Matcher gate — only meaningful for tool-scoped events.
         if spec.event in {"pre_tool_call", "post_tool_call"}:
             if not spec.matches_tool(kwargs.get("tool_name")):
                 return None
 
-        r = _spawn(spec, _serialize_payload(spec.event, kwargs))
+        if spec.hook_type == "prompt":
+            return _run_prompt_hook(spec, kwargs)
+        if spec.hook_type == "agent":
+            return _run_agent_hook(spec, kwargs)
+        return _run_command_hook(spec, kwargs)
 
-        if r["error"]:
-            logger.warning(
-                "shell hook failed (event=%s command=%s): %s",
-                spec.event, spec.command, r["error"],
-            )
-            return None
-        if r["timed_out"]:
-            logger.warning(
-                "shell hook timed out after %.2fs (event=%s command=%s)",
-                r["elapsed_seconds"], spec.event, spec.command,
-            )
-            return None
-
-        stderr = r["stderr"].strip()
-        if stderr:
-            logger.debug(
-                "shell hook stderr (event=%s command=%s): %s",
-                spec.event, spec.command, stderr[:400],
-            )
-        # Non-zero exits: log but still parse stdout so scripts that
-        # signal failure via exit code can also return a block directive.
-        if r["returncode"] != 0:
-            logger.warning(
-                "shell hook exited %d (event=%s command=%s); stderr=%s",
-                r["returncode"], spec.event, spec.command, stderr[:400],
-            )
-        return _parse_response(spec.event, r["stdout"])
-
-    _callback.__name__ = f"shell_hook[{spec.event}:{spec.command}]"
+    label = (
+        spec.command
+        if spec.hook_type == "command"
+        else f"{spec.hook_type}:{(spec.prompt or '')[:40]}"
+    )
+    _callback.__name__ = f"shell_hook[{spec.event}:{label}]"
     _callback.__qualname__ = _callback.__name__
     return _callback
+
+
+def _run_command_hook(
+    spec: ShellHookSpec, kwargs: Dict[str, Any],
+) -> Optional[Dict[str, Any]]:
+    r = _spawn(spec, _serialize_payload(spec.event, kwargs))
+
+    if r["error"]:
+        logger.warning(
+            "shell hook failed (event=%s command=%s): %s",
+            spec.event, spec.command, r["error"],
+        )
+        return None
+    if r["timed_out"]:
+        logger.warning(
+            "shell hook timed out after %.2fs (event=%s command=%s)",
+            r["elapsed_seconds"], spec.event, spec.command,
+        )
+        return None
+
+    stderr = r["stderr"].strip()
+    if stderr:
+        logger.debug(
+            "shell hook stderr (event=%s command=%s): %s",
+            spec.event, spec.command, stderr[:400],
+        )
+    # Non-zero exits: log but still parse stdout so scripts that
+    # signal failure via exit code can also return a block directive.
+    if r["returncode"] != 0:
+        logger.warning(
+            "shell hook exited %d (event=%s command=%s); stderr=%s",
+            r["returncode"], spec.event, spec.command, stderr[:400],
+        )
+
+    parsed = _parse_response(spec.event, r["stdout"])
+    # Claude-Code convention: a hook that exits 2 BLOCKS the call, using stderr
+    # as the reason — even with no JSON on stdout.  Only synthesise a block for
+    # events that can actually be blocked (pre_tool_call); a JSON block on
+    # stdout (handled by _parse_response above) still wins when present.
+    if parsed is None and r["returncode"] == 2 and spec.event == "pre_tool_call":
+        return {"action": "block", "message": stderr or _DEFAULT_BLOCK_MESSAGE}
+    return parsed
+
+
+def _run_prompt_hook(
+    spec: ShellHookSpec, kwargs: Dict[str, Any],
+) -> Optional[Dict[str, Any]]:
+    """``type: prompt`` — a single model call judges the event.
+
+    Model-agnostic: the model is resolved from the user's config via
+    ``auxiliary_client.call_llm`` (with an optional per-hook ``model`` /
+    ``provider`` override).  Fails OPEN (returns ``None``, never blocks) on any
+    error so a flaky side-LLM can't wedge the agent."""
+    payload = _serialize_payload(spec.event, kwargs)
+    messages = [
+        {"role": "system", "content": _HOOK_JUDGE_SYSTEM},
+        {
+            "role": "user",
+            "content": f"INSTRUCTION:\n{spec.prompt}\n\nEVENT PAYLOAD (JSON):\n{payload}",
+        },
+    ]
+    try:
+        with _hook_eval_guard():
+            from agent.auxiliary_client import call_llm
+
+            resp = call_llm(
+                messages=messages,
+                provider=spec.provider,
+                model=spec.model,
+                temperature=0,
+                max_tokens=512,
+                timeout=float(spec.timeout),
+            )
+        content = _extract_llm_content(resp)
+    except Exception as exc:  # noqa: BLE001 — fail open, never crash the agent
+        logger.warning(
+            "prompt hook failed (event=%s): %s — failing open", spec.event, exc,
+        )
+        return None
+    return _parse_response(spec.event, _coerce_json_text(content))
+
+
+def _run_agent_hook(
+    spec: ShellHookSpec, kwargs: Dict[str, Any],
+) -> Optional[Dict[str, Any]]:
+    """``type: agent`` — a tool-enabled sub-agent investigates, then judges.
+
+    Reuses the model-agnostic oneshot agent runner (``oneshot._run_agent``), so
+    the sub-agent honours the user's configured model/toolsets.  Fails OPEN on
+    any error."""
+    payload = _serialize_payload(spec.event, kwargs)
+    instruction = (
+        f"{spec.prompt}\n\n"
+        "When done, reply with ONLY a single JSON object (no prose): "
+        '{"decision":"block","reason":"..."} to block, {"decision":"allow"} to '
+        'allow, or {"context":"..."} to inject context.\n\n'
+        f"EVENT PAYLOAD (JSON):\n{payload}"
+    )
+    try:
+        with _hook_eval_guard():
+            from hermes_cli.oneshot import _run_agent
+
+            result = _run_agent(
+                instruction, model=spec.model, provider=spec.provider,
+            )
+        content = (
+            result.get("final_response", "")
+            if isinstance(result, dict)
+            else str(result or "")
+        )
+    except Exception as exc:  # noqa: BLE001 — fail open, never crash the agent
+        logger.warning(
+            "agent hook failed (event=%s): %s — failing open", spec.event, exc,
+        )
+        return None
+    return _parse_response(spec.event, _coerce_json_text(content))
+
+
+def _extract_llm_content(resp: Any) -> str:
+    try:
+        return resp.choices[0].message.content or ""
+    except (AttributeError, IndexError, TypeError):
+        return ""
+
+
+def _coerce_json_text(text: str) -> str:
+    """Pull a single JSON object out of an LLM reply that may be fenced or
+    wrapped in prose, so :func:`_parse_response` can ``json.loads`` it."""
+    if not text:
+        return ""
+    s = text.strip()
+    if s.startswith("```"):
+        s = s[3:]
+        if s[:4].lower() == "json":
+            s = s[4:]
+        if s.endswith("```"):
+            s = s[:-3]
+        s = s.strip()
+    if s.startswith("{") and s.endswith("}"):
+        return s
+    start, end = s.find("{"), s.rfind("}")
+    if start != -1 and end > start:
+        return s[start : end + 1]
+    return s
 
 
 def _serialize_payload(event: str, kwargs: Dict[str, Any]) -> str:
@@ -840,7 +1058,31 @@ def run_once(
     diverge silently from production behaviour.
 
     Returns the :func:`_spawn` diagnostic dict plus a ``parsed`` field
-    holding the canonical OpenComputer-wire-shape response."""
+    holding the canonical OpenComputer-wire-shape response.
+
+    prompt/agent hooks have no subprocess — they run their LLM / sub-agent
+    runner and report the parsed verdict in the same diagnostic shape, so
+    ``oc hooks test`` / ``doctor`` work for every hook type."""
+    if spec.hook_type in {"prompt", "agent"}:
+        runner = _run_prompt_hook if spec.hook_type == "prompt" else _run_agent_hook
+        t0 = time.monotonic()
+        diag: Dict[str, Any] = {
+            "returncode": 0,
+            "stdout": "",
+            "stderr": "",
+            "timed_out": False,
+            "elapsed_seconds": 0.0,
+            "error": None,
+            "parsed": None,
+        }
+        try:
+            diag["parsed"] = runner(spec, kwargs)
+        except Exception as exc:  # noqa: BLE001 — diagnostic only, never raise
+            diag["returncode"] = None
+            diag["error"] = str(exc)
+        diag["elapsed_seconds"] = round(time.monotonic() - t0, 3)
+        return diag
+
     stdin_json = _serialize_payload(spec.event, kwargs)
     result = _spawn(spec, stdin_json)
     result["parsed"] = _parse_response(spec.event, result["stdout"])
