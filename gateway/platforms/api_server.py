@@ -3321,6 +3321,60 @@ class APIServerAdapter(BasePlatformAdapter):
         except Exception as e:
             return web.json_response({"error": str(e)}, status=500)
 
+    async def _handle_parallel_agents(self, request: "web.Request") -> "web.Response":
+        """GET /api/parallel-agents — read-only snapshot of dynamic workflows
+        (oc_flow), background agent sessions (oc_agents), and agent teams
+        (oc_teams) for the dashboard. Each section degrades to an empty list if
+        its plugin isn't enabled, so the endpoint never hard-fails."""
+        auth_err = self._check_auth(request)
+        if auth_err:
+            return auth_err
+
+        flows: list = []
+        agents: list = []
+        teams: list = []
+        flows_err = agents_err = teams_err = None
+
+        try:
+            from plugins.oc_flow import db as _flow_db
+
+            flows = _flow_db.list_runs(limit=50)
+        except Exception as exc:  # noqa: BLE001 — plugin may be disabled/absent
+            flows_err = str(exc)
+
+        try:
+            from plugins.oc_agents import supervisor as _agents_sup
+
+            # Reconcile dead PIDs to 'failed' on read (the daemonless supervisor).
+            agents = _agents_sup.snapshot(include_done=True, limit=100)
+        except Exception as exc:  # noqa: BLE001
+            agents_err = str(exc)
+
+        try:
+            from plugins.oc_teams import db as _teams_db
+
+            teams = []
+            for t in _teams_db.list_teams():
+                summary = _teams_db.team_status_summary(t["id"])
+                teams.append({
+                    "id": t["id"], "name": t["name"], "goal": t.get("goal"),
+                    "status": t["status"],
+                    "member_count": len(summary.get("members", [])),
+                    "task_counts": summary.get("task_counts", {}),
+                    "tasks_total": summary.get("tasks_total", 0),
+                })
+        except Exception as exc:  # noqa: BLE001
+            teams_err = str(exc)
+
+        return web.json_response({
+            "object": "hermes.parallel_agents",
+            "flows": flows,
+            "agents": agents,
+            "teams": teams,
+            "errors": {"flows": flows_err, "agents": agents_err, "teams": teams_err},
+            "timestamp": int(time.time()),
+        })
+
     async def _handle_create_job(self, request: "web.Request") -> "web.Response":
         """POST /api/jobs — create a new cron job."""
         auth_err = self._check_auth(request)
@@ -4366,6 +4420,8 @@ class APIServerAdapter(BasePlatformAdapter):
             self._app.router.add_post("/api/jobs/{job_id}/pause", self._handle_pause_job)
             self._app.router.add_post("/api/jobs/{job_id}/resume", self._handle_resume_job)
             self._app.router.add_post("/api/jobs/{job_id}/run", self._handle_run_job)
+            # Parallel-agents read-only surface (oc_flow / oc_agents / oc_teams plugins)
+            self._app.router.add_get("/api/parallel-agents", self._handle_parallel_agents)
             # Structured event streaming
             self._app.router.add_post("/v1/runs", self._handle_runs)
             self._app.router.add_get("/v1/runs/{run_id}", self._handle_get_run)
