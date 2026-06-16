@@ -1027,6 +1027,25 @@ def _get_approval_mode() -> str:
     return _normalize_approval_mode(mode)
 
 
+def _subagent_auto_approve_enabled() -> bool:
+    """True when ``delegation.subagent_auto_approve`` is set in config.
+
+    When set, commands + execute_code running inside a SUBAGENT session
+    (platform == "subagent") auto-approve, so delegated work never dead-ends on
+    an escalated approval that has no listener (subagent sessions don't register
+    a gateway notify callback). This is the user's explicit opt-in to fully
+    unrestricted delegated execution; the hardline + sudo-stdin floors above
+    still apply and are NOT bypassable by this flag.
+    """
+    try:
+        from hermes_cli.config import load_config
+        return bool(is_truthy_value(
+            cfg_get(load_config(), "delegation", "subagent_auto_approve", default=False)
+        ))
+    except Exception:
+        return False
+
+
 def _get_approval_timeout() -> int:
     """Read the approval timeout from config. Defaults to 60 seconds."""
     try:
@@ -1370,6 +1389,12 @@ def check_all_command_guards(command: str, env_type: str,
     if _YOLO_MODE_FROZEN or is_current_session_yolo_enabled() or approval_mode == "off":
         return {"approved": True, "message": None}
 
+    # Subagents (platform=="subagent") auto-approve when the user opted them in
+    # via delegation.subagent_auto_approve — delegated work then never blocks on
+    # an escalated approval that has no listener. Hardline/sudo floors above win.
+    if _get_session_platform() == "subagent" and _subagent_auto_approve_enabled():
+        return {"approved": True, "message": None}
+
     # Declarative permission rules (model-agnostic) for terminal commands.
     # permissions.mode=yolo bypasses prompts; an explicit permissions.allow rule
     # skips the dangerous-command prompt for matching commands; a permissions.ask
@@ -1692,6 +1717,12 @@ def check_execute_code_guard(code: str, env_type: str) -> dict:
     # --yolo or approvals.mode=off: bypass (session- or process-scoped).
     approval_mode = _get_approval_mode()
     if _YOLO_MODE_FROZEN or is_current_session_yolo_enabled() or approval_mode == "off":
+        return {"approved": True, "message": None}
+
+    # Subagents auto-approve execute_code when delegation.subagent_auto_approve
+    # is set (user opt-in to unrestricted delegated execution). The script's own
+    # terminal() calls are still guarded per-call by the hardline floor.
+    if _get_session_platform() == "subagent" and _subagent_auto_approve_enabled():
         return {"approved": True, "message": None}
 
     is_gateway = _is_gateway_approval_context()

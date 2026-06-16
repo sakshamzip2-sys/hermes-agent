@@ -583,6 +583,34 @@ def _openai_error(message: str, err_type: str = "invalid_request_error", param: 
     }
 
 
+_TOOL_RESULT_STREAM_LIMIT = 100_000
+
+
+def _tool_result_to_text(result: Any, *, limit: int = _TOOL_RESULT_STREAM_LIMIT) -> str:
+    """Normalize a tool's return value into a string for the SSE timeline.
+
+    The structured ``tool_complete`` callback hands us whatever the tool
+    returned (str, dict, list, None). The chat-completions SSE only carries
+    text, so collapse it to a string and cap the size so a huge result
+    (e.g. a large file read or a long ``delegate_task`` report) can't flood
+    the stream. Returns ``""`` for ``None``/empty so the frontend renders
+    no Response box rather than the literal string ``"None"``.
+    """
+    if result is None:
+        return ""
+    try:
+        text = result if isinstance(result, str) else json.dumps(result, default=str)
+    except Exception:
+        text = str(result)
+    # Cap by encoded byte length (not code points) so the SSE payload stays
+    # bounded even for multibyte (e.g. CJK) output. errors="ignore" trims any
+    # multibyte sequence split at the boundary.
+    encoded = text.encode("utf-8")
+    if len(encoded) > limit:
+        text = encoded[:limit].decode("utf-8", errors="ignore") + "\n…[truncated]"
+    return text
+
+
 def _humanize_agent_error(raw: str) -> str:
     """Turn a raw provider/agent error string into a short, user-facing line.
 
@@ -1472,7 +1500,16 @@ class APIServerAdapter(BasePlatformAdapter):
 
         limit = self._parse_nonnegative_int(request.query.get("limit"), default=50, maximum=200)
         offset = self._parse_nonnegative_int(request.query.get("offset"), default=0, maximum=1_000_000)
-        source = request.query.get("source") or None
+        # Default to api_server-only so the WebUI never lists CLI/Telegram/etc.
+        # sessions (keeps WebUI and CLI chat histories isolated). A client can
+        # still pass ?source=<other> explicitly, or ?source=all for everything.
+        _src_param = request.query.get("source")
+        if _src_param is None or _src_param == "":
+            source = "api_server"
+        elif _src_param == "all":
+            source = None
+        else:
+            source = _src_param
         include_children = _coerce_request_bool(request.query.get("include_children"), default=False)
         sessions = db.list_sessions_rich(
             source=source,
@@ -1748,6 +1785,26 @@ class APIServerAdapter(BasePlatformAdapter):
                 event_name = event_type.replace("tool.", "tool.")
                 _enqueue(event_name, {"message_id": message_id, "tool_name": tool_name, "preview": preview, "args": args})
 
+        approval_skey = gateway_session_key or session_id
+
+        def _approval_notify(approval_data: Dict[str, Any]) -> None:
+            # Fired (from the agent worker thread) when a command / execute_code
+            # ESCALATES under smart mode and needs a human decision. Register the
+            # run→session mapping + run status so the existing
+            # POST /v1/runs/{run_id}/approval endpoint can resolve it, then emit
+            # an approval.request SSE event the WebUI renders as an Approve card.
+            event = dict(approval_data or {})
+            self._run_approval_sessions[run_id] = approval_skey
+            self._set_run_status(run_id, "waiting_for_approval",
+                                 session_id=session_id, last_event="approval.request")
+            _enqueue("approval.request", {
+                "message_id": message_id,
+                "command": event.get("command"),
+                "description": event.get("description"),
+                "pattern_key": event.get("pattern_key"),
+                "choices": ["once", "session", "always", "deny"],
+            })
+
         async def _run_and_signal() -> None:
             try:
                 await queue.put(_event_payload("run.started", {"user_message": {"role": "user", "content": user_message}}))
@@ -1761,6 +1818,7 @@ class APIServerAdapter(BasePlatformAdapter):
                     stream_delta_callback=_delta,
                     tool_progress_callback=_tool_progress,
                     gateway_session_key=gateway_session_key,
+                    approval_notify_callback=_approval_notify,
                 )
                 final_response = result.get("final_response", "") if isinstance(result, dict) else ""
                 effective_session_id = result.get("session_id", session_id) if isinstance(result, dict) else session_id
@@ -1784,6 +1842,7 @@ class APIServerAdapter(BasePlatformAdapter):
                 logger.exception("[api_server] session chat stream failed")
                 await queue.put(_event_payload("error", {"message": str(exc)}))
             finally:
+                self._run_approval_sessions.pop(run_id, None)
                 await queue.put(_event_payload("done", {}))
                 await queue.put(None)
 
@@ -2047,6 +2106,36 @@ class APIServerAdapter(BasePlatformAdapter):
                     "tool": function_name,
                     "toolCallId": tool_call_id,
                     "status": "completed",
+                    # Carry the tool's output so the frontend timeline can render
+                    # it (delegate_task report, skill_view body, etc.). Previously
+                    # dropped → every "Response" box rendered empty.
+                    "result": _tool_result_to_text(function_result),
+                }))
+
+            # Surface an escalated approval (smart mode) as a named
+            # ``approval.requested`` SSE event the WebUI renders as an Approve
+            # card. ``completion_id`` doubles as the run_id the frontend POSTs
+            # back to /v1/runs/{id}/approval, so register the run→session map +
+            # status (mirrors _handle_runs). Fires only on escalation — no
+            # effect on normal chat.
+            _approval_skey = gateway_session_key or session_id
+
+            def _on_approval(approval_data):
+                event = dict(approval_data or {})
+                if _approval_skey:
+                    self._run_approval_sessions[completion_id] = _approval_skey
+                self._set_run_status(
+                    completion_id, "waiting_for_approval",
+                    session_id=session_id, last_event="approval.requested",
+                )
+                _stream_q.put(("__approval__", {
+                    "approval_id": completion_id,
+                    "tool_call_id": completion_id,
+                    "tool_name": event.get("pattern_key") or "command",
+                    "command": event.get("command"),
+                    "description": event.get("description"),
+                    "args": {"command": event.get("command")},
+                    "choices": ["once", "session", "always", "deny"],
                 }))
 
             # Start agent in background.  agent_ref is a mutable container
@@ -2072,6 +2161,7 @@ class APIServerAdapter(BasePlatformAdapter):
                 gateway_session_key=gateway_session_key,
                 model_override=model_override,
                 reasoning_config_override=reasoning_config_override,
+                approval_notify_callback=_on_approval,
             ))
             # Ensure SSE drain loops can terminate without relying on polling
             # agent_task.done(), which can race with queue timeout checks.
@@ -2262,6 +2352,15 @@ class APIServerAdapter(BasePlatformAdapter):
                     event_data = json.dumps(item[1])
                     await response.write(
                         f"event: hermes.agent.status\ndata: {event_data}\n\n".encode()
+                    )
+                elif isinstance(item, tuple) and len(item) == 2 and item[0] == "__approval__":
+                    # Escalated approval (smart mode) → ``event: approval.requested``
+                    # which the WebUI (oc-openai-stream) parses into an
+                    # awaiting_approval tool chunk + Approve card. The decision is
+                    # POSTed back to /v1/runs/{approval_id}/approval.
+                    event_data = json.dumps(item[1])
+                    await response.write(
+                        f"event: approval.requested\ndata: {event_data}\n\n".encode()
                     )
                 elif isinstance(item, tuple) and len(item) == 2 and item[0] == "__reasoning__":
                     # Extended-thinking delta → ``delta.reasoning_content`` chunk.
@@ -3852,6 +3951,7 @@ class APIServerAdapter(BasePlatformAdapter):
         gateway_session_key: Optional[str] = None,
         model_override: Optional[str] = None,
         reasoning_config_override: Optional[Dict[str, Any]] = None,
+        approval_notify_callback=None,
     ) -> tuple:
         """
         Create an agent and run a conversation in a thread executor.
@@ -3863,8 +3963,16 @@ class APIServerAdapter(BasePlatformAdapter):
         at ``agent_ref[0]`` before ``run_conversation`` begins.  This allows
         callers (e.g. the SSE writer) to call ``agent.interrupt()`` from
         another thread to stop in-progress LLM calls.
+
+        If *approval_notify_callback* is provided, it is registered as the
+        gateway approval notifier for this run's session so that a command or
+        execute_code that ESCALATES (smart mode) surfaces an approval request
+        to the caller's stream instead of dead-ending on a missing listener.
+        Mirrors the wiring in ``_handle_runs``. Additive: when None (default)
+        behavior is unchanged.
         """
         loop = asyncio.get_running_loop()
+        _approval_skey = gateway_session_key or session_id or ""
 
         def _run():
             from gateway.session_context import clear_session_vars, set_session_vars
@@ -3875,6 +3983,14 @@ class APIServerAdapter(BasePlatformAdapter):
                 session_key=gateway_session_key or session_id or "",
                 session_id=session_id or "",
             )
+            _notify_registered = False
+            if approval_notify_callback is not None and _approval_skey:
+                try:
+                    from tools.approval import register_gateway_notify
+                    register_gateway_notify(_approval_skey, approval_notify_callback)
+                    _notify_registered = True
+                except Exception:
+                    _notify_registered = False
             try:
                 agent = self._create_agent(
                     ephemeral_system_prompt=ephemeral_system_prompt,
@@ -3910,6 +4026,12 @@ class APIServerAdapter(BasePlatformAdapter):
                     result["session_id"] = _eff_sid
                 return result, usage
             finally:
+                if _notify_registered:
+                    try:
+                        from tools.approval import unregister_gateway_notify
+                        unregister_gateway_notify(_approval_skey)
+                    except Exception:
+                        pass
                 clear_session_vars(tokens)
 
         return await loop.run_in_executor(None, _run)

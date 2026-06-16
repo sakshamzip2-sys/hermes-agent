@@ -757,7 +757,18 @@ def _resolve_workspace_hint(parent_agent) -> Optional[str]:
 
 
 def _strip_blocked_tools(toolsets: List[str]) -> List[str]:
-    """Remove toolsets that contain only blocked tools."""
+    """Remove toolsets that contain only blocked tools.
+
+    By default children do NOT get delegation/clarify/memory/code_execution
+    (prevents runaway recursion + concurrent MEMORY.md races). When
+    ``delegation.subagent_unrestricted_tools`` is truthy in config.yaml, the
+    strip is skipped so subagents inherit the parent's FULL toolset — paired
+    with ``delegation.max_spawn_depth`` >= 2 this enables recursive delegation.
+    Read via the same _load_config() path as the rest of delegate_task
+    (config.yaml over env; default False preserves the safe behavior).
+    """
+    if is_truthy_value(_load_config().get("subagent_unrestricted_tools", False)):
+        return toolsets
     blocked_toolset_names = {
         "delegation",
         "clarify",
