@@ -1063,13 +1063,18 @@ def init_agent(
     # Cached system prompt -- built once per session, only rebuilt on compression
     agent._cached_system_prompt: Optional[str] = None
     
-    # Filesystem checkpoint manager (transparent — not a tool)
+    # Filesystem checkpoint manager (transparent — not a tool).
+    # The task-state hooks reference agent._todo_store lazily (it is created a
+    # few lines below, always before any checkpoint runs) so a checkpoint also
+    # snapshots the todo list and a rewind restores it.
     from tools.checkpoint_manager import CheckpointManager
     agent._checkpoint_mgr = CheckpointManager(
         enabled=checkpoints_enabled,
         max_snapshots=checkpoint_max_snapshots,
         max_total_size_mb=checkpoint_max_total_size_mb,
         max_file_size_mb=checkpoint_max_file_size_mb,
+        task_state_provider=lambda: agent._todo_store.read(),
+        task_state_restorer=lambda todos: agent._todo_store.write(todos or [], merge=False),
     )
     
     # SQLite session store (optional -- provided by CLI or gateway)

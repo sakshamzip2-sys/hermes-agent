@@ -58,7 +58,7 @@ import subprocess
 import time
 from pathlib import Path
 from hermes_constants import get_hermes_home
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 
 from utils import env_int
 
@@ -229,6 +229,16 @@ def _ref_name(dir_hash: str) -> str:
 
 def _project_meta_path(store: Path, dir_hash: str) -> Path:
     return store / _PROJECTS_DIRNAME / f"{dir_hash}.json"
+
+
+def _task_state_path(store: Path, dir_hash: str, commit_sha: str) -> Path:
+    """Sidecar JSON holding the agent's todo/task state for one checkpoint.
+
+    Kept alongside (not inside) the shadow git tree so restoring files and
+    restoring task state are independent and the working tree is never polluted
+    with checkpoint bookkeeping.
+    """
+    return store / "task_state" / dir_hash / f"{commit_sha}.json"
 
 
 # ---------------------------------------------------------------------------
@@ -604,6 +614,8 @@ class CheckpointManager:
         max_snapshots: int = 20,
         max_total_size_mb: int = 500,
         max_file_size_mb: int = 10,
+        task_state_provider: Optional[Callable[[], Any]] = None,
+        task_state_restorer: Optional[Callable[[Any], None]] = None,
     ):
         self.enabled = enabled
         self.max_snapshots = max(1, int(max_snapshots))
@@ -611,6 +623,12 @@ class CheckpointManager:
         self.max_file_size_mb = max(0, int(max_file_size_mb))
         self._checkpointed_dirs: Set[str] = set()
         self._git_available: Optional[bool] = None  # lazy probe
+        # Optional hooks so a checkpoint also captures the agent's todo/task
+        # state and a rewind restores it. Both default None → file-only
+        # checkpoints exactly as before (fully backward compatible). The agent
+        # wires these to its TodoStore.
+        self.task_state_provider = task_state_provider
+        self.task_state_restorer = task_state_restorer
 
     # ------------------------------------------------------------------
     # Turn lifecycle
@@ -817,6 +835,27 @@ class CheckpointManager:
         }
         if file_path:
             result["file"] = file_path
+
+        # Restore the captured todo/task state, if a restorer is wired and a
+        # sidecar exists for this checkpoint. Only on a full restore (not a
+        # single-file restore, which is a partial operation). Best-effort.
+        if self.task_state_restorer is not None and not file_path:
+            try:
+                # Resolve a possibly-short hash to the full sha the sidecar uses.
+                ok_full, full_sha, _ = _run_git(
+                    ["rev-parse", commit_hash], store, abs_dir,
+                )
+                sha = full_sha.strip() if ok_full and full_sha else commit_hash
+                sidecar = _task_state_path(store, dir_hash, sha)
+                if sidecar.exists():
+                    payload = json.loads(sidecar.read_text(encoding="utf-8"))
+                    self.task_state_restorer(payload.get("todos"))
+                    result["task_state_restored"] = True
+                else:
+                    result["task_state_restored"] = False
+            except Exception as exc:
+                logger.debug("Checkpoint task-state restore failed: %s", exc)
+                result["task_state_restored"] = False
         return result
 
     def get_working_dir_for_path(self, file_path: str) -> str:
@@ -966,6 +1005,22 @@ class CheckpointManager:
             return False
 
         logger.debug("Checkpoint taken in %s: %s (%s)", working_dir, reason, new_sha[:8])
+
+        # Capture the agent's todo/task state alongside the file snapshot, keyed
+        # by the commit sha. Best-effort — a serialization failure must never
+        # fail the (already-committed) file checkpoint.
+        if self.task_state_provider is not None:
+            try:
+                state = self.task_state_provider()
+                if state is not None:
+                    sidecar = _task_state_path(store, dir_hash, new_sha)
+                    sidecar.parent.mkdir(parents=True, exist_ok=True)
+                    sidecar.write_text(
+                        json.dumps({"todos": state}, ensure_ascii=False),
+                        encoding="utf-8",
+                    )
+            except Exception as exc:
+                logger.debug("Checkpoint task-state capture failed: %s", exc)
 
         # Real pruning — drop old commits beyond max_snapshots.
         self._prune(store, working_dir, ref)

@@ -1183,6 +1183,19 @@ redirect hop); `auth` and sensitive headers are never logged; responses are
 capped at `max_response_bytes` (truncate + flag). Errors surface as structured
 fields (`kind`: timeout/connect/tls/ssrf/http), not raw stack traces.
 
+### Checkpoints Capture Task State Too
+
+`tools/checkpoint_manager.py` already snapshots the working tree (shadow git).
+It now also captures the agent's **todo/task list** alongside each checkpoint
+via optional `task_state_provider` / `task_state_restorer` hooks (wired in
+`agent/agent_init.py` to the session `TodoStore`). A rewind restores both the
+files and the todo list, keyed by the checkpoint's commit sha (sidecar JSON
+under `<store>/task_state/<dir_hash>/<sha>.json`). Both hooks default to None →
+file-only checkpoints, fully backward compatible. Checkpoints remain **opt-in**
+(`checkpoints.enabled` / `--checkpoints`): leaving them off by default avoids a
+shadow-git commit before every file write in every session — a real latency cost
+on large repos. Enable them to get full file + task-state rewind.
+
 ---
 
 ## Profiles: Multi-Instance Support
