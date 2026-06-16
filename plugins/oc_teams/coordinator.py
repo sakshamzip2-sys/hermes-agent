@@ -48,29 +48,53 @@ def create_team(name: str, goal: str = "", lead_name: str = "lead") -> str:
     return team_id
 
 
-def _augment_prompt(team_id: str, member: str, role: str, prompt: str) -> str:
+def _augment_prompt(team_id: str, member: str, role: str, prompt: str, *, persona: str = "") -> str:
     team = db.get_team(team_id) or {}
-    return PROTOCOL_PREAMBLE.format(
+    preamble = PROTOCOL_PREAMBLE.format(
         member=member, role=role or "teammate",
         team_name=team.get("name", ""), team_id=team_id,
         goal=team.get("goal", "") or "(see tasks)", prompt=prompt,
     )
+    # An agent-type definition's body becomes the teammate's persona, prepended
+    # to the team-coordination protocol so role expertise + team rules coexist.
+    return (persona.strip() + "\n\n" + preamble) if persona.strip() else preamble
 
 
 def spawn_teammate(
     team_id: str, name: str, prompt: str, *, role: str = "", model: str = "",
-    cwd: str = "", dispatch_fn=None,
+    cwd: str = "", agent_type: str = "", dispatch_fn=None,
 ) -> str:
     """Register a teammate and launch its background session. Returns the bg session id.
+
+    When ``agent_type`` names a reusable agent definition (see
+    ``tools.agent_defs``), its persona/toolsets/model/provider seed the teammate;
+    explicit ``role``/``model`` args still win. An unknown ``agent_type`` raises
+    *before* the member is registered, so a typo never half-creates a teammate.
 
     ``dispatch_fn`` is injected in tests; by default it is the oc_agents supervisor.
     """
     if db.get_team(team_id) is None:
         raise ValueError(f"unknown team {team_id}")
+
+    persona = ""
+    toolsets = None
+    provider = ""
+    if agent_type:
+        from tools.agent_defs import get_agent_definition
+
+        definition = get_agent_definition(agent_type)
+        if definition is None:
+            raise ValueError(f"unknown agent type '{agent_type}'")
+        role = role or definition.name
+        model = model or (definition.model or "")
+        provider = definition.provider or ""
+        toolsets = definition.toolsets
+        persona = definition.prompt
+
     if not db.add_member(team_id, name, role=role, kind=db.MEMBER_TEAMMATE):
         raise ValueError(f"member name '{name}' already exists on team {team_id}")
 
-    full_prompt = _augment_prompt(team_id, name, role, prompt)
+    full_prompt = _augment_prompt(team_id, name, role, prompt, persona=persona)
     extra_env = {"HERMES_TEAM_ID": team_id, "HERMES_TEAM_MEMBER": name}
 
     if dispatch_fn is None:
@@ -80,7 +104,8 @@ def spawn_teammate(
 
     bg_id = dispatch_fn(
         full_prompt, name=f"{team_id}:{name}", cwd=cwd, model=model,
-        kind="teammate", parent_id=team_id, extra_env=extra_env,
+        provider=provider, toolsets=toolsets, kind="teammate",
+        parent_id=team_id, extra_env=extra_env,
     )
     db.set_member_session(team_id, name, bg_id)
     logger.debug("oc_teams: spawned teammate %s on team %s (bg=%s)", name, team_id, bg_id)

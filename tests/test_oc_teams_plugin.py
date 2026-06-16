@@ -553,3 +553,24 @@ def test_spawn_teammate_explicit_model_overrides_definition(teams_db, tmp_path, 
         dispatch_fn=lambda p, **k: calls.update(k) or "b",
     )
     assert calls["model"] == "explicit-model"  # explicit arg wins over the definition
+
+
+def test_cli_spawn_passes_agent_type(teams_db, monkeypatch, capsys):
+    parser = _make_parser()
+    cli.handle(parser.parse_args(["team", "create", "alpha"]))
+    tid = capsys.readouterr().out.split()[1].rstrip(":")
+    captured = {}
+    monkeypatch.setattr(coordinator, "spawn_teammate", lambda *a, **k: captured.update(k) or "bgX")
+    rc = cli.handle(parser.parse_args(["team", "spawn", tid, "alice", "do it", "--agent", "reviewer"]))
+    assert rc == 0
+    assert captured["agent_type"] == "reviewer"
+
+
+def test_cli_defs_lists_agent_definitions(teams_db, tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("HERMES_AGENTS_DIR", str(tmp_path))
+    (tmp_path / "r.md").write_text("---\nname: reviewer\ndescription: reviews code\n---\nbody")
+    parser = _make_parser()
+    rc = cli.handle(parser.parse_args(["team", "defs"]))
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "reviewer" in out and "reviews code" in out

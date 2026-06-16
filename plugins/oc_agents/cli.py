@@ -44,6 +44,7 @@ def setup(subparser) -> None:
     p.add_argument("--model", default="", help="Model override")
     p.add_argument("--provider", default="", help="Provider override")
     p.add_argument("--toolsets", default="", help="Comma-separated toolset override")
+    p.add_argument("--agent", default="", help="Use a named agent-type definition (see tools.agent_defs)")
     p.add_argument("--attach", action="store_true", help="Follow the session live after dispatch")
 
     pl = sub.add_parser("list", help="List background sessions")
@@ -97,13 +98,31 @@ def handle(args) -> int:
 
 
 def _cmd_dispatch(args) -> int:
+    prompt = args.prompt
+    model = args.model
+    provider = args.provider
     toolsets: Optional[List[str]] = None
     if args.toolsets.strip():
         toolsets = [t.strip() for t in args.toolsets.split(",") if t.strip()]
+    # A named agent-type definition seeds the session; explicit flags win over it.
+    agent_type = getattr(args, "agent", "") or ""
+    if agent_type:
+        from tools.agent_defs import get_agent_definition
+
+        d = get_agent_definition(agent_type)
+        if d is None:
+            print(f"agents: unknown agent type '{agent_type}'", file=sys.stderr)
+            return 1
+        model = model or (d.model or "")
+        provider = provider or (d.provider or "")
+        if toolsets is None:
+            toolsets = d.toolsets
+        if d.prompt:
+            prompt = d.prompt.strip() + "\n\n" + prompt
     try:
         sid = supervisor.dispatch(
-            args.prompt, name=args.name, cwd=args.cwd, model=args.model,
-            provider=args.provider, toolsets=toolsets,
+            prompt, name=args.name, cwd=args.cwd, model=model,
+            provider=provider, toolsets=toolsets,
         )
     except Exception as exc:  # noqa: BLE001
         print(f"agents: dispatch failed: {exc}", file=sys.stderr)

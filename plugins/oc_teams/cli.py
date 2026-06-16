@@ -45,6 +45,9 @@ def setup(subparser) -> None:
     psp.add_argument("--role", default="")
     psp.add_argument("--model", default="")
     psp.add_argument("--cwd", default="")
+    psp.add_argument("--agent", default="", help="Use a named agent-type definition (see `hermes team defs`)")
+
+    sub.add_parser("defs", help="List available agent-type definitions")
 
     pm = sub.add_parser("members", help="List team members")
     pm.add_argument("team_id")
@@ -95,11 +98,12 @@ def handle(args) -> int:
         "members": _members, "tasks": _tasks, "task-add": _task_add,
         "task-claim": _task_claim, "task-done": _task_done, "send": _send,
         "inbox": _inbox, "shutdown": _shutdown, "cleanup": _cleanup,
+        "defs": _defs,
     }
     fn = table.get(cmd or "")
     if fn is None:
         print("usage: hermes team {create|list|show|spawn|members|tasks|task-add|"
-              "task-claim|task-done|send|inbox|shutdown|cleanup} ...", file=sys.stderr)
+              "task-claim|task-done|send|inbox|shutdown|cleanup|defs} ...", file=sys.stderr)
         return 2
     return fn(args)
 
@@ -162,6 +166,7 @@ def _spawn(args) -> int:
         bg = coordinator.spawn_teammate(
             args.team_id, args.member, args.prompt,
             role=args.role, model=args.model, cwd=args.cwd,
+            agent_type=getattr(args, "agent", "") or "",
         )
     except Exception as exc:  # noqa: BLE001
         print(f"team: spawn failed: {exc}", file=sys.stderr)
@@ -265,6 +270,20 @@ def _shutdown(args) -> int:
         return 0
     print(f"team: no such teammate {args.member}", file=sys.stderr)
     return 1
+
+
+def _defs(args) -> int:
+    from tools.agent_defs import list_agent_definitions
+
+    defs = list_agent_definitions()
+    if not defs:
+        print("No agent-type definitions. Add one at .hermes/agents/<name>.md or "
+              "~/.hermes/agents/<name>.md (Markdown + YAML frontmatter).")
+        return 0
+    print(f"{'AGENT TYPE':<20} {'MODEL':<22} DESCRIPTION")
+    for d in defs:
+        print(f"{d.name:<20} {(d.model or '-'):<22} {d.description}")
+    return 0
 
 
 def _cleanup(args) -> int:

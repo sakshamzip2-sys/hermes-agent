@@ -267,3 +267,26 @@ def test_cli_rm_guards_live_session(agents_db, capsys):
     rc = cli.handle(parser.parse_args(["agents", "rm", sid]))
     assert rc == 0
     assert db.get_session(sid) is None
+
+
+def test_cli_dispatch_with_agent_type(agents_db, tmp_path, monkeypatch):
+    """`hermes agents dispatch --agent <type>` seeds the session from a definition."""
+    monkeypatch.setenv("HERMES_AGENTS_DIR", str(tmp_path))
+    (tmp_path / "rev.md").write_text(
+        "---\nname: reviewer\ntoolsets: [read_file]\nmodel: claude-haiku-4-5\n---\nYou are a reviewer."
+    )
+    captured = {}
+
+    def fake_dispatch(prompt, **kw):
+        captured["prompt"] = prompt
+        captured.update(kw)
+        return "bg1"
+
+    monkeypatch.setattr(supervisor, "dispatch", fake_dispatch)
+    parser = _make_parser()
+    rc = cli.handle(parser.parse_args(["agents", "dispatch", "review the diff", "--agent", "reviewer"]))
+    assert rc == 0
+    assert captured["model"] == "claude-haiku-4-5"
+    assert captured["toolsets"] == ["read_file"]
+    assert "You are a reviewer." in captured["prompt"]
+    assert "review the diff" in captured["prompt"]
