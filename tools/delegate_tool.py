@@ -2071,6 +2071,8 @@ def delegate_task(
     acp_command: Optional[str] = None,
     acp_args: Optional[List[str]] = None,
     role: Optional[str] = None,
+    agent_type: Optional[str] = None,
+    model: Optional[str] = None,
     background: Optional[bool] = None,
     parent_agent=None,
 ) -> str:
@@ -2179,7 +2181,8 @@ def delegate_task(
         task_list = tasks
     elif goal and isinstance(goal, str) and goal.strip():
         task_list = [
-            {"goal": goal, "context": context, "toolsets": toolsets, "role": top_role}
+            {"goal": goal, "context": context, "toolsets": toolsets, "role": top_role,
+             "agent_type": agent_type, "model": model}
         ]
     else:
         return tool_error("Provide either 'goal' (single task) or 'tasks' (batch).")
@@ -2195,6 +2198,20 @@ def delegate_task(
             )
         if not task.get("goal", "").strip():
             return tool_error(f"Task {i} is missing a 'goal'.")
+        # Resolve an optional agent-type definition up front so a typo fails the
+        # whole call cleanly (with a tool_error) instead of part-way through the
+        # fan-out. The resolved definition is stashed for the build loop.
+        _at = task.get("agent_type")
+        if _at:
+            from tools.agent_defs import get_agent_definition
+
+            _adef = get_agent_definition(_at)
+            if _adef is None:
+                return tool_error(
+                    f"Task {i}: unknown agent type '{_at}'. "
+                    "List available types with `hermes team defs`."
+                )
+            task["_agent_def"] = _adef
 
     overall_start = time.monotonic()
     results = []
@@ -2220,31 +2237,42 @@ def delegate_task(
             # Per-task role beats top-level; normalise again so unknown
             # per-task values warn and degrade to leaf uniformly.
             effective_role = _normalize_role(t.get("role") or top_role)
+            # Merge an optional agent-type definition (persona/toolsets/model/provider),
+            # then resolve any per-task model/provider against the delegation creds.
+            eff_context, eff_toolsets, eff_model, eff_provider = _effective_task_fields(
+                t, toolsets, t.get("_agent_def")
+            )
+            child_creds = _task_runtime_override(creds, model=eff_model, provider=eff_provider)
             child = _build_child_agent(
                 task_index=i,
                 goal=t["goal"],
-                context=t.get("context"),
-                toolsets=t.get("toolsets") or toolsets,
-                model=creds["model"],
+                context=eff_context,
+                toolsets=eff_toolsets,
+                model=child_creds["model"],
                 max_iterations=effective_max_iter,
                 task_count=n_tasks,
                 parent_agent=parent_agent,
-                override_provider=creds["provider"],
-                override_base_url=creds["base_url"],
-                override_api_key=creds["api_key"],
-                override_api_mode=creds["api_mode"],
+                override_provider=child_creds["provider"],
+                override_base_url=child_creds["base_url"],
+                override_api_key=child_creds["api_key"],
+                override_api_mode=child_creds["api_mode"],
                 override_acp_command=t.get("acp_command")
                 or acp_command
-                or creds.get("command"),
+                or child_creds.get("command"),
                 override_acp_args=(
                     task_acp_args
                     if task_acp_args is not None
-                    else (acp_args if acp_args is not None else creds.get("args"))
+                    else (acp_args if acp_args is not None else child_creds.get("args"))
                 ),
                 role=effective_role,
             )
             # Override with correct parent tool names (before child construction mutated global)
             child._delegate_saved_tool_names = _parent_tool_names
+            # Stash the EFFECTIVE spec so the background/async path reports the
+            # model/toolsets the child was actually built with (not the raw creds).
+            child._delegate_eff_model = child_creds["model"]
+            child._delegate_eff_toolsets = eff_toolsets
+            child._delegate_eff_context = eff_context
             children.append((i, t, child))
     finally:
         # Authoritative restore: reset global to parent's tool names after all children built
@@ -2304,10 +2332,10 @@ def delegate_task(
 
             dispatch = dispatch_async_delegation(
                 goal=_t["goal"],
-                context=_t.get("context"),
-                toolsets=_t.get("toolsets") or toolsets,
+                context=getattr(child, "_delegate_eff_context", _t.get("context")),
+                toolsets=getattr(child, "_delegate_eff_toolsets", _t.get("toolsets") or toolsets),
                 role=_normalize_role(_t.get("role") or top_role),
-                model=creds["model"],
+                model=getattr(child, "_delegate_eff_model", creds["model"]),
                 session_key=_session_key,
                 runner=_async_runner,
                 interrupt_fn=_async_interrupt,
@@ -2762,6 +2790,62 @@ def _resolve_delegation_credentials(cfg: dict, parent_agent) -> dict:
     }
 
 
+def _task_runtime_override(creds: dict, *, model: Optional[str], provider: Optional[str]) -> dict:
+    """Per-task model/provider override layered on the delegation credentials.
+
+    - Neither requested -> ``creds`` unchanged (child inherits as before).
+    - ``provider`` requested -> re-resolve the full runtime via
+      ``resolve_runtime_provider`` (the same path as _resolve_delegation_credentials),
+      so the child runs model-agnostically against that provider's endpoint.
+    - only ``model`` requested -> swap the model on the existing creds (a
+      same-endpoint model switch, e.g. a cheaper model on the parent's provider).
+    """
+    if not model and not provider:
+        return creds
+    if provider:
+        try:
+            from hermes_cli.runtime_provider import resolve_runtime_provider
+
+            rt = resolve_runtime_provider(requested=provider, target_model=model)
+            return {
+                "model": model or rt.get("model"),
+                "provider": rt.get("provider"),
+                "base_url": rt.get("base_url"),
+                "api_key": rt.get("api_key"),
+                "api_mode": rt.get("api_mode"),
+                "command": rt.get("command"),
+                "args": list(rt.get("args") or []),
+            }
+        except Exception:
+            logger.debug(
+                "delegate: per-task provider re-resolve failed for %r; "
+                "falling back to model-only override", provider, exc_info=True,
+            )
+    out = dict(creds)
+    if model:
+        out["model"] = model
+    return out
+
+
+def _effective_task_fields(task: dict, default_toolsets, agent_def):
+    """Compute ``(context, toolsets, model, provider)`` for one task, merging an
+    optional agent-type definition. Explicit task fields always win over the
+    definition; the definition's body becomes a persona prepended to context."""
+    context = task.get("context")
+    toolsets = task.get("toolsets") or default_toolsets
+    model = task.get("model")
+    provider = task.get("provider")
+    if agent_def is not None:
+        persona = (getattr(agent_def, "prompt", "") or "").strip()
+        if persona:
+            context = (persona + "\n\n" + context) if context else persona
+        if not task.get("toolsets") and getattr(agent_def, "toolsets", None):
+            toolsets = agent_def.toolsets
+        model = model or getattr(agent_def, "model", None)
+        provider = provider or getattr(agent_def, "provider", None)
+    return context, toolsets, model, provider
+
+
 def _load_config() -> dict:
     """Load delegation config from CLI_CONFIG or persistent config.
 
@@ -3009,6 +3093,23 @@ DELEGATE_TASK_SCHEMA = {
                     "['terminal', 'file', 'web'] for full-stack tasks."
                 ),
             },
+            "agent_type": {
+                "type": "string",
+                "description": (
+                    "Optional named agent-type definition to seed this subagent "
+                    "(its persona, toolsets, model). Definitions live in "
+                    ".hermes/agents/*.md or ~/.hermes/agents/*.md. Explicit "
+                    "goal/context/toolsets/model still override the definition."
+                ),
+            },
+            "model": {
+                "type": "string",
+                "description": (
+                    "Optional model override for this subagent (e.g. a cheaper/"
+                    "faster model). Routed model-agnostically; pair with a "
+                    "different provider only if the model isn't on your current one."
+                ),
+            },
             "tasks": {
                 "type": "array",
                 "items": {
@@ -3041,6 +3142,14 @@ DELEGATE_TASK_SCHEMA = {
                             "type": "string",
                             "enum": ["leaf", "orchestrator"],
                             "description": "Per-task role override. See top-level 'role' for semantics.",
+                        },
+                        "agent_type": {
+                            "type": "string",
+                            "description": "Per-task named agent-type definition (see top-level 'agent_type').",
+                        },
+                        "model": {
+                            "type": "string",
+                            "description": "Per-task model override (see top-level 'model').",
                         },
                     },
                     "required": ["goal"],
@@ -3117,6 +3226,8 @@ registry.register(
         acp_command=args.get("acp_command"),
         acp_args=args.get("acp_args"),
         role=args.get("role"),
+        agent_type=args.get("agent_type"),
+        model=args.get("model"),
         background=args.get("background"),
         parent_agent=kw.get("parent_agent"),
     ),

@@ -290,3 +290,51 @@ def test_cli_dispatch_with_agent_type(agents_db, tmp_path, monkeypatch):
     assert captured["toolsets"] == ["read_file"]
     assert "You are a reviewer." in captured["prompt"]
     assert "review the diff" in captured["prompt"]
+
+
+def test_worker_applies_startup_permission_mode(agents_db, monkeypatch):
+    """A teammate/bg session spawned with a permission mode honors it process-wide."""
+    from tools import permission_rules
+
+    monkeypatch.setenv("HERMES_PERMISSION_MODE", "plan")
+    try:
+        applied = worker._apply_startup_permission_mode()
+        assert applied == "plan"
+        assert permission_rules.get_effective_mode() == "plan"
+    finally:
+        permission_rules.set_global_mode(None)
+
+
+def test_worker_no_permission_mode_is_noop(agents_db, monkeypatch):
+    monkeypatch.delenv("HERMES_PERMISSION_MODE", raising=False)
+    assert worker._apply_startup_permission_mode() is None
+
+
+def test_cli_dispatch_agent_forwards_memory_and_permission(agents_db, tmp_path, monkeypatch):
+    monkeypatch.setenv("HERMES_AGENTS_DIR", str(tmp_path))
+    (tmp_path / "rev.md").write_text(
+        "---\nname: reviewer\nmemory: project\npermissionMode: plan\n---\nReview."
+    )
+    captured = {}
+    monkeypatch.setattr(supervisor, "dispatch", lambda prompt, **kw: captured.update(kw) or "bg2")
+    parser = _make_parser()
+    rc = cli.handle(parser.parse_args(["agents", "dispatch", "do it", "--agent", "reviewer", "--cwd", str(tmp_path)]))
+    assert rc == 0
+    env = captured["extra_env"]
+    assert env["HERMES_PERMISSION_MODE"] == "plan"
+    assert env["HERMES_MEMORY_DIR"].endswith("/.hermes/agent-memory/reviewer")
+
+
+def test_plan_mode_actually_blocks_mutating_tool(agents_db, monkeypatch):
+    """Lock the invariant: a worker started in plan mode genuinely blocks a
+    mutating tool (and allows a read-only one) — YOLO must not bypass it."""
+    from tools import permission_rules
+
+    monkeypatch.setenv("HERMES_PERMISSION_MODE", "plan")
+    os.environ.setdefault("HERMES_YOLO_MODE", "1")
+    try:
+        worker._apply_startup_permission_mode()
+        assert permission_rules.pre_tool_block_message("write_file", {}, "") is not None
+        assert permission_rules.pre_tool_block_message("read_file", {}, "") is None
+    finally:
+        permission_rules.set_global_mode(None)

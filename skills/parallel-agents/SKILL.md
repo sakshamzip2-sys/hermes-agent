@@ -87,3 +87,56 @@ not claimable until its dependencies complete).
 - Roles that must talk and reconcile while working → **team**.
 - A quick, in-conversation delegation where only the result matters → the
   built-in `delegate_task` tool (no orchestration overhead).
+
+## Reusable agent-type definitions
+
+Define a specialized agent once and reuse it everywhere. Drop a Markdown file
+with YAML frontmatter at `.hermes/agents/<name>.md` (project) or
+`~/.hermes/agents/<name>.md` (user; project wins on a name clash):
+
+```markdown
+---
+name: code-reviewer
+description: Reviews diffs for bugs and security. Use after edits.
+tools: [read_file, web]        # restricted toolsets (alias: toolsets:)
+model: claude-haiku-4-5        # optional per-agent model (model-agnostic)
+permissionMode: plan           # optional: start read-only (normal|plan|yolo)
+memory: project                # optional: own MEMORY.md (user|project|local)
+---
+You are a meticulous reviewer. Report Critical / Warning / Suggestion.
+```
+
+The body is the agent's system prompt. Use it across all three surfaces (the
+definition seeds persona/toolsets/model; explicit args still win):
+
+```bash
+hermes team defs                                   # list available definitions
+hermes team spawn <team_id> alice "review auth" --agent code-reviewer
+hermes agents dispatch "audit the API" --agent code-reviewer
+```
+
+and the in-conversation `delegate_task` tool accepts `agent_type` (+ a per-call
+`model`) on the top-level call or per task in a batch.
+
+- **`permissionMode: plan`** spawns the teammate read-only (can research, can't
+  mutate) until the lead is satisfied — the headless equivalent of CC's
+  teammate plan-approval gate. Also `hermes team spawn … --permission-mode plan`.
+- **`memory: project`** gives that agent its own `.hermes/agent-memory/<name>/`
+  that persists across runs, so it accumulates patterns over time.
+
+## Team quality gates (hooks)
+
+Agent teams fire veto-capable lifecycle hooks so a plugin or shell script can
+gate work even with no human watching:
+
+| Hook | Fires | Veto effect |
+|---|---|---|
+| `team_task_created` | a teammate adds a task | block → task not created |
+| `team_task_completed` | a teammate marks a task done | block → completion refused, reason fed back |
+| `team_teammate_idle` | a teammate finishes with no claimable work | message → "keep working" nudge |
+
+Veto with the canonical `{"action":"block","message":"…"}` (or Claude-Code's
+`{"decision":"block","reason":"…"}`); a shell hook may also block by exiting 2.
+Use `team_task_completed` to require evidence (a passing test, a log line)
+before a task counts as done. Dry-run a gate script with
+`hermes hooks test team_task_completed`.

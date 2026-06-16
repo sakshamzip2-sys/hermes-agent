@@ -91,3 +91,27 @@ message is independently readable by each member.
 - Roles that must talk and reconcile while working → **team**.
 - A quick in-conversation delegation where only the result matters → the built-in
   `delegate_task` tool.
+
+## Reusable agent-type definitions, quality gates, plan mode, per-agent memory
+
+Beyond the three runners, v2 ports the rest of the Claude-Code subagents/teams
+surface in the v2 idiom (no new always-on core tool):
+
+- **Agent-type definitions** — `.hermes/agents/<name>.md` (project) or
+  `~/.hermes/agents/<name>.md` (user): YAML frontmatter (`name`, `description`,
+  `tools`/`toolsets`, `model`, `provider`, `permissionMode`, `memory`, `effort`,
+  `maxTurns`) + a Markdown body (the system prompt). Reuse one definition across
+  `delegate_task(agent_type=…)`, `hermes team spawn … --agent <name>`, and
+  `hermes agents dispatch … --agent <name>`. List with `hermes team defs`.
+  `delegate_task` also gained an optional per-call `model` (model-agnostic).
+- **Team quality gates** — `oc_teams` fires `team_task_created` /
+  `team_task_completed` / `team_teammate_idle` hooks; a plugin or shell script
+  (exit 2, or `{"action":"block","message":…}`) can veto task completion until
+  evidence is attached — the headless replacement for a human eyeballing results.
+- **Teammate plan mode** — `--agent` with `permissionMode: plan` (or
+  `hermes team spawn … --permission-mode plan`) starts a teammate read-only;
+  honored process-wide via the permission_rules engine.
+- **Per-agent memory** — `memory: project|user|local` gives a spawned agent its
+  own `MEMORY.md` that persists across runs, isolated from global memory.
+
+See the **parallel-agents** skill for examples.

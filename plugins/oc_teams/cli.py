@@ -46,6 +46,9 @@ def setup(subparser) -> None:
     psp.add_argument("--model", default="")
     psp.add_argument("--cwd", default="")
     psp.add_argument("--agent", default="", help="Use a named agent-type definition (see `hermes team defs`)")
+    psp.add_argument("--permission-mode", dest="permission_mode", default="",
+                     choices=["", "normal", "plan", "yolo"],
+                     help="Start the teammate in this permission mode (plan = read-only)")
 
     sub.add_parser("defs", help="List available agent-type definitions")
 
@@ -167,6 +170,7 @@ def _spawn(args) -> int:
             args.team_id, args.member, args.prompt,
             role=args.role, model=args.model, cwd=args.cwd,
             agent_type=getattr(args, "agent", "") or "",
+            permission_mode=getattr(args, "permission_mode", "") or "",
         )
     except Exception as exc:  # noqa: BLE001
         print(f"team: spawn failed: {exc}", file=sys.stderr)

@@ -53,7 +53,15 @@ logger = logging.getLogger(__name__)
 # constant was cached at import time and could go stale if a profile switch
 # happened after the first import.
 def get_memory_dir() -> Path:
-    """Return the profile-scoped memories directory."""
+    """Return the profile-scoped memories directory.
+
+    ``HERMES_MEMORY_DIR`` overrides the location — used to give a spawned agent
+    (e.g. a teammate whose agent-type definition declares a ``memory:`` scope)
+    its own persistent memory directory, isolated from the user's global memory.
+    """
+    override = os.environ.get("HERMES_MEMORY_DIR", "").strip()
+    if override:
+        return Path(override).expanduser()
     return get_hermes_home() / "memories"
 
 ENTRY_DELIMITER = "\n§\n"

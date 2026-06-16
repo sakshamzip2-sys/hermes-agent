@@ -574,3 +574,38 @@ def test_cli_defs_lists_agent_definitions(teams_db, tmp_path, monkeypatch, capsy
     assert rc == 0
     out = capsys.readouterr().out
     assert "reviewer" in out and "reviews code" in out
+
+
+def test_spawn_teammate_forwards_permission_mode_from_def(teams_db, tmp_path, monkeypatch):
+    monkeypatch.setenv("HERMES_AGENTS_DIR", str(tmp_path))
+    (tmp_path / "rev.md").write_text("---\nname: reviewer\npermissionMode: plan\n---\nbody")
+    tid = coordinator.create_team("t")
+    calls = {}
+    coordinator.spawn_teammate(
+        tid, "alice", "x", agent_type="reviewer",
+        dispatch_fn=lambda p, **k: calls.update(k) or "b",
+    )
+    assert calls["extra_env"]["HERMES_PERMISSION_MODE"] == "plan"
+
+
+def test_spawn_teammate_explicit_permission_mode(teams_db, monkeypatch):
+    tid = coordinator.create_team("t")
+    calls = {}
+    coordinator.spawn_teammate(
+        tid, "alice", "x", permission_mode="plan",
+        dispatch_fn=lambda p, **k: calls.update(k) or "b",
+    )
+    assert calls["extra_env"]["HERMES_PERMISSION_MODE"] == "plan"
+
+
+def test_spawn_teammate_forwards_scoped_memory_dir(teams_db, tmp_path, monkeypatch):
+    monkeypatch.setenv("HERMES_AGENTS_DIR", str(tmp_path))
+    (tmp_path / "rev.md").write_text("---\nname: reviewer\nmemory: project\n---\nbody")
+    tid = coordinator.create_team("t")
+    calls = {}
+    coordinator.spawn_teammate(
+        tid, "alice", "x", agent_type="reviewer", cwd=str(tmp_path),
+        dispatch_fn=lambda p, **k: calls.update(k) or "b",
+    )
+    mem = calls["extra_env"]["HERMES_MEMORY_DIR"]
+    assert mem.endswith("/.hermes/agent-memory/reviewer")

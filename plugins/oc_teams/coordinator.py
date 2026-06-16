@@ -62,7 +62,7 @@ def _augment_prompt(team_id: str, member: str, role: str, prompt: str, *, person
 
 def spawn_teammate(
     team_id: str, name: str, prompt: str, *, role: str = "", model: str = "",
-    cwd: str = "", agent_type: str = "", dispatch_fn=None,
+    cwd: str = "", agent_type: str = "", permission_mode: str = "", dispatch_fn=None,
 ) -> str:
     """Register a teammate and launch its background session. Returns the bg session id.
 
@@ -79,6 +79,7 @@ def spawn_teammate(
     persona = ""
     toolsets = None
     provider = ""
+    definition = None
     if agent_type:
         from tools.agent_defs import get_agent_definition
 
@@ -90,12 +91,25 @@ def spawn_teammate(
         provider = definition.provider or ""
         toolsets = definition.toolsets
         persona = definition.prompt
+        permission_mode = permission_mode or (definition.permission_mode or "")
 
     if not db.add_member(team_id, name, role=role, kind=db.MEMBER_TEAMMATE):
         raise ValueError(f"member name '{name}' already exists on team {team_id}")
 
     full_prompt = _augment_prompt(team_id, name, role, prompt, persona=persona)
     extra_env = {"HERMES_TEAM_ID": team_id, "HERMES_TEAM_MEMBER": name}
+    # Forward a permission mode so the teammate's process starts e.g. read-only
+    # in plan mode (honored at worker startup via _apply_startup_permission_mode).
+    if permission_mode:
+        extra_env["HERMES_PERMISSION_MODE"] = permission_mode
+    # Forward a scoped persistent-memory dir so an agent-type with a memory:
+    # scope accumulates learnings across runs (honored via get_memory_dir).
+    if definition is not None:
+        from tools.agent_defs import resolve_memory_dir
+
+        _mem = resolve_memory_dir(definition, cwd=cwd or None)
+        if _mem is not None:
+            extra_env["HERMES_MEMORY_DIR"] = str(_mem)
 
     if dispatch_fn is None:
         from plugins.oc_agents import supervisor

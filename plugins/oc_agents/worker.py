@@ -186,10 +186,31 @@ def _final_text(result: Dict[str, Any]) -> str:
     return ""
 
 
+def _apply_startup_permission_mode():
+    """Honor a permission mode forwarded by the spawner via HERMES_PERMISSION_MODE.
+
+    Lets a teammate (or any background session) start in e.g. ``plan`` mode —
+    read-only until the lead approves — by activating the permission_rules engine
+    process-wide. Returns the applied mode, or None when unset/unavailable.
+    """
+    raw = os.environ.get("HERMES_PERMISSION_MODE", "").strip()
+    if not raw:
+        return None
+    try:
+        from tools.permission_rules import normalize_mode, set_global_mode
+
+        mode = normalize_mode(raw)
+        set_global_mode(mode)
+        return mode
+    except Exception:  # noqa: BLE001 — never let a bad mode wedge the worker
+        return None
+
+
 def run_worker(session_id: str) -> int:
     """Run one background session to completion. Returns a process exit code."""
     os.environ.setdefault("HERMES_YOLO_MODE", "1")
     os.environ.setdefault("HERMES_ACCEPT_HOOKS", "1")
+    _apply_startup_permission_mode()
     logging.disable(logging.CRITICAL)
 
     row = db.get_session(session_id)

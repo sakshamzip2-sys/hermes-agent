@@ -9,6 +9,11 @@ effort, memory scope, preloaded skills) so the same definition can be reused as:
   * an ``oc_teams`` teammate (``hermes team spawn … --agent code-reviewer``), and
   * an ``oc_agents`` background session (``hermes agents dispatch … --agent …``).
 
+Field coverage differs by seam: persona/toolsets/model/provider apply to all
+three. The ``memory`` scope and ``permissionMode`` apply only to the
+spawned-process seams (teams, agents) — in-process ``delegate_task`` children
+run with memory skipped and inherit the parent's live permission mode.
+
 This module is **not a model tool** — the LLM never sees it (the same discipline
 as ``tools/permission_rules.py``). It is a plain loader consumed by the existing
 spawn seams via optional parameters, so the always-on tool schema is unchanged.
@@ -27,11 +32,22 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger("hermes.tools.agent_defs")
+
+# An agent-type name becomes a path component (memory dir) and a tool argument,
+# and definitions are VCS-shareable — so the name MUST be a safe slug. This
+# rejects path separators, ``..``, absolute paths, and whitespace, closing a
+# write-anywhere path-traversal vector from a hostile project definition.
+_SAFE_NAME = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
+
+
+def _is_safe_name(name: str) -> bool:
+    return bool(name) and bool(_SAFE_NAME.match(name))
 
 
 @dataclass
@@ -123,6 +139,9 @@ def parse_agent_definition(text: str, *, source_path: Optional[str] = None) -> O
     if not name:
         return None
     name = name.lower()
+    if not _is_safe_name(name):
+        logger.warning("agent_defs: rejecting unsafe agent name %r (must be a slug)", name)
+        return None
 
     # `toolsets:` is preferred; `tools:` is accepted as the Claude-Code alias.
     toolsets = _as_list(fm.get("toolsets"))
@@ -209,3 +228,37 @@ def get_agent_definition(name: str, dirs: Optional[List[Path]] = None) -> Option
 def list_agent_definitions(dirs: Optional[List[Path]] = None) -> List[AgentDefinition]:
     """Return all loaded definitions, sorted by name."""
     return sorted(load_agent_definitions(dirs).values(), key=lambda d: d.name)
+
+
+def resolve_memory_dir(definition: AgentDefinition, *, cwd=None) -> Optional[Path]:
+    """Return the persistent-memory directory for a definition's ``memory`` scope.
+
+    Mirrors Claude-Code's ``memory: user | project | local``:
+      user    -> <hermes-home>/agent-memory/<name>        (across all projects)
+      project -> <cwd>/.hermes/agent-memory/<name>        (shareable via VCS)
+      local   -> <cwd>/.hermes/agent-memory-local/<name>  (project, not checked in)
+    Returns None when no (or an unknown) scope is declared.
+    """
+    scope = (getattr(definition, "memory", None) or "").strip().lower()
+    if not scope:
+        return None
+    name = definition.name
+    # Defense-in-depth: never let an unsafe name (e.g. a hand-built definition
+    # that bypassed the parser) escape the agent-memory sandbox.
+    if not _is_safe_name(name):
+        logger.warning("agent_defs: refusing memory dir for unsafe agent name %r", name)
+        return None
+    base = Path(cwd) if cwd else Path.cwd()
+    if scope == "user":
+        try:
+            from hermes_constants import get_hermes_home
+
+            root = get_hermes_home()
+        except Exception:  # pragma: no cover
+            root = Path(os.path.expanduser("~/.hermes"))
+        return root / "agent-memory" / name
+    if scope == "project":
+        return base / ".hermes" / "agent-memory" / name
+    if scope == "local":
+        return base / ".hermes" / "agent-memory-local" / name
+    return None

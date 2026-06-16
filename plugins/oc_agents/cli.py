@@ -106,8 +106,9 @@ def _cmd_dispatch(args) -> int:
         toolsets = [t.strip() for t in args.toolsets.split(",") if t.strip()]
     # A named agent-type definition seeds the session; explicit flags win over it.
     agent_type = getattr(args, "agent", "") or ""
+    extra_env: Optional[dict] = None
     if agent_type:
-        from tools.agent_defs import get_agent_definition
+        from tools.agent_defs import get_agent_definition, resolve_memory_dir
 
         d = get_agent_definition(agent_type)
         if d is None:
@@ -119,10 +120,18 @@ def _cmd_dispatch(args) -> int:
             toolsets = d.toolsets
         if d.prompt:
             prompt = d.prompt.strip() + "\n\n" + prompt
+        # Forward permission mode + scoped persistent memory the same way teams do.
+        env: dict = {}
+        if d.permission_mode:
+            env["HERMES_PERMISSION_MODE"] = d.permission_mode
+        _mem = resolve_memory_dir(d, cwd=args.cwd or None)
+        if _mem is not None:
+            env["HERMES_MEMORY_DIR"] = str(_mem)
+        extra_env = env or None
     try:
         sid = supervisor.dispatch(
             prompt, name=args.name, cwd=args.cwd, model=model,
-            provider=provider, toolsets=toolsets,
+            provider=provider, toolsets=toolsets, extra_env=extra_env,
         )
     except Exception as exc:  # noqa: BLE001
         print(f"agents: dispatch failed: {exc}", file=sys.stderr)
