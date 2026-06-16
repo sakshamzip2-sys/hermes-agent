@@ -267,7 +267,14 @@ def run_oneshot(
         real_stderr.flush()
         return 1
 
-    result = result if isinstance(result, dict) else {}
+    # ``_run_agent`` normally returns the full ``run_conversation`` dict, but
+    # accept a bare string too (back-compat: callers/tests that stub
+    # ``_run_agent`` to return the final text directly) — wrap it rather than
+    # discard it, so the text/json paths and exit codes stay correct.
+    if isinstance(result, str):
+        result = {"final_response": result, "failed": not result.strip()}
+    elif not isinstance(result, dict):
+        result = {}
     response = str(result.get("final_response") or "")
     empty = not response.strip()
     # An empty final response is a failure in both modes — a clean exit with no
@@ -520,20 +527,33 @@ def _run_agent(
     # --allowedTools / --disallowedTools map onto the W1 permission engine as
     # runtime allow/deny rules (model-agnostic, enforced at the central tool
     # gate).  Entries are permission-rule strings, e.g. "Bash(npm run *)" or a
-    # bare tool name.  Set just before the run; the oneshot process exits after.
+    # bare tool name.  ``_runtime_rules`` is process-global, so we clear it in a
+    # finally — a oneshot embedded in a long-lived process (CI reusing the
+    # interpreter) must not leak its restrictions into the next call.
     _allow = _split_tool_list(allowed_tools)
     _deny = _split_tool_list(disallowed_tools)
+    _rules_set = False
     if _allow is not None or _deny is not None:
         try:
             from tools.permission_rules import set_runtime_rules
 
             set_runtime_rules(allow=_allow, deny=_deny)
+            _rules_set = True
         except Exception:  # noqa: BLE001 — policy must never break the run
             pass
 
-    result = agent.run_conversation(
-        prompt, system_message=(append_system_prompt or None)
-    )
+    try:
+        result = agent.run_conversation(
+            prompt, system_message=(append_system_prompt or None)
+        )
+    finally:
+        if _rules_set:
+            try:
+                from tools.permission_rules import clear_runtime_rules
+
+                clear_runtime_rules()
+            except Exception:  # noqa: BLE001
+                pass
     if not isinstance(result, dict):
         result = {"final_response": str(result or ""), "failed": False}
     # Surface the (possibly rotated) session id so JSON callers get the live

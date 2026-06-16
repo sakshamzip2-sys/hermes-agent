@@ -379,6 +379,11 @@ def test_termux_fast_cli_launch_oneshot_uses_light_parser(monkeypatch, main_mod)
         "model": "gpt-test",
         "provider": "openai",
         "toolsets": None,
+        "output_format": "text",
+        "append_system_prompt": None,
+        "max_turns": None,
+        "allowed_tools": None,
+        "disallowed_tools": None,
     }
 
 
@@ -617,6 +622,11 @@ def test_main_top_level_oneshot_accepts_toolsets(monkeypatch, main_mod):
         "model": None,
         "provider": None,
         "toolsets": "web,terminal",
+        "output_format": "text",
+        "append_system_prompt": None,
+        "max_turns": None,
+        "allowed_tools": None,
+        "disallowed_tools": None,
     }
 
 
@@ -805,10 +815,11 @@ def test_oneshot_wires_session_db_for_recall(monkeypatch):
             self.suppress_status_output = False
             self.stream_delta_callback = object()
             self.tool_gen_callback = object()
+            self.session_id = "sess-recall"
 
-        def chat(self, prompt):
+        def run_conversation(self, prompt, system_message=None, **_kw):
             captured["prompt"] = prompt
-            return "ok"
+            return {"final_response": "ok", "failed": False}
 
     class FakeSessionDB:
         def __new__(cls):
@@ -852,7 +863,8 @@ def test_oneshot_wires_session_db_for_recall(monkeypatch):
         mod("hermes_cli.tools_config", _get_platform_tools=lambda *_args, **_kwargs: {"session_search"}),
     )
 
-    assert _run_agent("recall this") == "ok"
+    result = _run_agent("recall this")
+    assert result["final_response"] == "ok"
     assert captured["session_db"] is sentinel_db
     assert captured["enabled_toolsets"] == ["session_search"]
     assert captured["prompt"] == "recall this"
