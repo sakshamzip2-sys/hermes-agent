@@ -1,0 +1,5 @@
+name: playbook_synthesizer
+version: 1.0.0
+description: "DREAM→EVOLVE: synthesize recurring patterns into reusable skills (closes the self-evolution loop). Default-OFF, agent-created + versioned."
+author: "OpenComputer v2"
+kind: standalone
