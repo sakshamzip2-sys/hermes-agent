@@ -39,13 +39,22 @@ class RateLimitedError(Exception):
 
 _EXTRACT_SYSTEM = (
     "You curate an AI agent's long-term memory. Given a conversation transcript, "
-    "extract any DURABLE, USER-SPECIFIC facts worth remembering across future "
-    "sessions: stable preferences, ongoing projects, identity/role, recurring "
-    "constraints, important relationships, or decisions. IGNORE ephemeral chatter, "
-    "one-off task details, transient state, and anything the agent said about "
-    "itself. Output ONE fact per line, each a concise third-person statement "
+    "extract any DURABLE facts ABOUT THE USER worth remembering across future "
+    "sessions: their stable preferences, ongoing projects, identity/role, recurring "
+    "constraints, important relationships, or decisions.\n\n"
+    "STRICT RULES:\n"
+    "- Every fact MUST be about the USER (their life, work, preferences, people, "
+    "or things they own/use). A fact you could not phrase as 'The user …' is NOT "
+    "a user fact — drop it.\n"
+    "- NEVER extract general world knowledge, encyclopedic facts, or content the "
+    "assistant merely EXPLAINED in an answer (e.g. company profiles, model/benchmark "
+    "comparisons, definitions, news). Those are answer content, not facts about the user.\n"
+    "- IGNORE ephemeral chatter, one-off task details, transient state, document "
+    "structure (headings, tables, 'Bottom line:' summaries), and anything the agent "
+    "said about itself.\n\n"
+    "Output ONE fact per line, each a concise third-person statement about the user "
     "(e.g. 'Prefers TypeScript over JavaScript for new projects.'). If there is "
-    "nothing durable, output exactly: NONE"
+    "nothing durable about the USER, output exactly: NONE"
 )
 
 _SCORE_SYSTEM = (

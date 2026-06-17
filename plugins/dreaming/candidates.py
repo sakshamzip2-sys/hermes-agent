@@ -137,6 +137,29 @@ _TOOL_NARRATION_RE = re.compile(
 _TABLE_ROW_RE = re.compile(r"^\s*\|.*\|\s*$")
 _TABLE_SEP_RE = re.compile(r"^\s*\|?[\s:|-]*-{2,}[\s:|-]*\|?\s*$")
 
+# Markdown headers (``# H``, ``## 1. Figure AI``) are document STRUCTURE from an
+# assistant's informational answer — never a durable user fact.
+_MARKDOWN_HEADER_RE = re.compile(r"^#{1,6}\s+\S")
+
+# Assistant answer-framing openers ("Here is the structured data…", "Below is the
+# comparison table.") — present only when paired with a data/answer noun, so user
+# statements like "Here is my dog's name: Pixel" are NOT caught.
+_META_ANSWER_RE = re.compile(
+    r"^(?:here\s+is|here'?s|below\s+is|here\s+are|the\s+following\s+is)\b"
+    r".{0,80}?\b(?:data|breakdown|comparison|table|list|summary|structured|"
+    r"details|information|results|companies|options|chart)\b",
+    re.IGNORECASE,
+)
+
+
+def _is_bold_label_fragment(s: str) -> bool:
+    """True for an unbalanced-bold answer-structure fragment ("Bottom line:** …",
+    "Kimi wins** on: …"). An ODD count of ``**`` means a ``**label**`` got split,
+    leaving a stray closer — a reliable signature of answer formatting, NOT a user
+    fact. Balanced emphasis ("I **really** love Rust.") has an even count and survives.
+    """
+    return "**" in s and s.count("**") % 2 == 1
+
 
 def _looks_like_tool_json(line: str) -> bool:
     """True if a line is (or is dominated by) a tool-call / tool-result JSON blob."""
@@ -168,6 +191,12 @@ def _is_noise_line(line: str) -> bool:
     if _TABLE_ROW_RE.match(s) and s.count("|") >= 2:
         return True
     if _TOOL_NARRATION_RE.match(s):
+        return True
+    if _MARKDOWN_HEADER_RE.match(s):
+        return True
+    if _META_ANSWER_RE.match(s):
+        return True
+    if _is_bold_label_fragment(s):
         return True
     return False
 
