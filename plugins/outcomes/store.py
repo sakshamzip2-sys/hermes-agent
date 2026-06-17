@@ -20,10 +20,11 @@ _SCHEMA = """
 CREATE TABLE IF NOT EXISTS turn_outcomes (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     session_id  TEXT NOT NULL,
-    turn        INTEGER NOT NULL,
+    turn        TEXT NOT NULL,
     turn_score  REAL NOT NULL,
     composite   REAL,
     judge       REAL,
+    trajectory  TEXT,
     ts          REAL NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_turn_outcomes_session ON turn_outcomes(session_id);
@@ -47,6 +48,10 @@ class OutcomesStore:
         conn = self._connect()
         try:
             conn.executescript(_SCHEMA)
+            # Migration: add the trajectory column to a pre-existing table that lacks it.
+            cols = {r[1] for r in conn.execute("PRAGMA table_info(turn_outcomes)")}
+            if "trajectory" not in cols:
+                conn.execute("ALTER TABLE turn_outcomes ADD COLUMN trajectory TEXT")
             conn.commit()
         finally:
             conn.close()
@@ -55,22 +60,29 @@ class OutcomesStore:
         self,
         *,
         session_id: str,
-        turn: int,
+        turn,  # str | int — the real hook turn_id is a non-numeric string  # noqa: ANN001
         turn_score: float,
         composite: Optional[float] = None,
         judge: Optional[float] = None,
         ts: float,
+        trajectory: Optional[str] = None,
     ) -> None:
-        """Append one turn's fused score (+ optional component scores)."""
+        """Append one turn's fused score (+ optional component scores + trajectory).
+
+        ``turn`` is stored as TEXT — real hook turn_ids look like
+        ``20260617_164838_86bc83:...:bb2228c6``, not integers. ``trajectory`` is the turn
+        summary the BATCH judge needs (without it the judge has nothing to score).
+        """
         conn = self._connect()
         try:
             conn.execute(
                 "INSERT INTO turn_outcomes "
-                "(session_id, turn, turn_score, composite, judge, ts) "
-                "VALUES (?, ?, ?, ?, ?, ?)",
-                (str(session_id), int(turn), float(turn_score),
+                "(session_id, turn, turn_score, composite, judge, trajectory, ts) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (str(session_id), str(turn), float(turn_score),
                  None if composite is None else float(composite),
                  None if judge is None else float(judge),
+                 None if trajectory is None else str(trajectory),
                  float(ts)),
             )
             conn.commit()
@@ -124,7 +136,7 @@ class OutcomesStore:
         conn = self._connect()
         try:
             cur = conn.execute(
-                "SELECT id, session_id, turn, turn_score, composite "
+                "SELECT id, session_id, turn, turn_score, composite, trajectory "
                 "FROM turn_outcomes WHERE judge IS NULL "
                 "ORDER BY id DESC LIMIT ?",
                 (int(limit),),

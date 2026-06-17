@@ -65,8 +65,11 @@ def make_post_llm_call(engine, *, judge_fn=None):  # noqa: ANN001, ANN201
             # 1) Score the prior staged turn using THIS message as its feedback.
             engine.resolve_pending(session_id, user_followup=user_message, judge_fn=judge_fn)
             # 2) Stage the turn that just finished (scored when the next message arrives).
+            #    The trajectory carries BOTH sides so the batch judge can tell whether the
+            #    response actually answered the request (a response alone is unjudgeable).
             engine.stage_turn(
-                session_id, turn_id, trajectory_summary=_summarize(assistant_response)
+                session_id, turn_id,
+                trajectory_summary=_build_trajectory(user_message, assistant_response),
             )
         except Exception as exc:  # noqa: BLE001 — hooks are fail-open
             logger.debug("outcomes: post_llm_call glue failed (%s)", exc)
@@ -93,3 +96,18 @@ def _summarize(text: str, *, limit: int = 600) -> str:
     """A short, deterministic trajectory summary for the judge."""
     text = " ".join((text or "").split())
     return text[:limit]
+
+
+def _build_trajectory(user_message, assistant_response, *, limit: int = 700) -> str:  # noqa: ANN001
+    """Build a judge-usable trajectory carrying both the request and the response.
+
+    A bare assistant response is unjudgeable (the judge can't tell what was asked); pairing
+    it with the user's message lets the judge assess whether the turn served the request.
+    """
+    user = _summarize(user_message or "", limit=300)
+    asst = _summarize(assistant_response or "", limit=limit)
+    parts = []
+    if user:
+        parts.append(f"User asked: {user}")
+    parts.append(f"Assistant did/said: {asst}")
+    return "\n".join(parts)

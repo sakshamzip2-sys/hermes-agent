@@ -171,10 +171,11 @@ class OutcomesEngine:
         fused = fused_turn_score(composite, judge_score)
         self.store.record(
             session_id=session_id,
-            turn=int(turn),
+            turn=turn,  # str|int — the real hook turn_id is a non-numeric string
             turn_score=fused,
             composite=composite,
             judge=judge_score,
+            trajectory=trajectory_summary or _auto_trajectory(sig),
             ts=float(now if now is not None else time.time()),
         )
         # Reset this session's signals for the next turn.
