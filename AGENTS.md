@@ -1248,6 +1248,21 @@ hash) / `search` (top_k chunks with path, line range, score, snippet) / `list`.
 index exists under the cwd's `.agent/index/`, so it costs zero schema budget when
 unused. No embedding API or external vector DB required.
 
+### Memory: Flat by Default, Real Layer One Config Away (verified)
+
+The core `memory` tool is a **flat** MEMORY.md/USER.md text store (no extraction,
+no vector recall); `session_search` adds FTS5 keyword recall; the `dreaming`
+plugin adds LLM consolidation into that buffer. A **real** memory layer — fact
+storage + cross-session recall + entity linking — exists as the bundled,
+**no-API-key** `holographic` provider (SQLite + FTS5 + HRR vectors). Enable with
+`memory.provider: holographic`. Verified cross-session (store in one session →
+recall in the next), dedup-by-content, and temporal supersession in
+`tests/tools/test_memory_layer_verify.py`. Key-gated alternatives (honcho =
+cross-session user modeling, mem0 = preferences, hindsight = knowledge graph)
+also ship under `plugins/memory/`. The default is left flat (the dreaming
+consolidation already adds intelligence and needs no key); switching providers is
+a one-line config change, not new code.
+
 ---
 
 ## Profiles: Multi-Instance Support
