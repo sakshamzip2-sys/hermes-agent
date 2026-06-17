@@ -123,3 +123,46 @@ def test_starter_suite_loads():
     cases = ev._load_file(str(starter))["cases"]
     assert len(cases) >= 3
     assert all("assertions" in c for c in cases)
+
+
+# --- round-2 red-team fixes: no false passes ---
+
+def test_empty_assertions_case_fails_not_passes():
+    """A case with zero assertions must FAIL (not silently inflate the rate)."""
+    cases = [{"name": "x", "assertions": []}, {"name": "y"}]  # [] and missing
+    traces = [{"case": "x", "output": "anything"}, {"case": "y", "output": "z"}]
+    report = ev.run_eval(cases, traces, threshold=1.0)
+    assert report["gate_passed"] is False
+    assert all(c["passed"] is False for c in report["cases"])
+
+
+def test_unknown_schema_type_fails_closed():
+    """A typo'd json-schema type must reject, not validate everything."""
+    assert ev._validate_schema({"x": 1}, {"type": "objekt"}) is False
+    assert ev._validate_schema("anything", {"type": "strnig"}) is False
+    # null is supported and enforced:
+    assert ev._validate_schema(None, {"type": "null"}) is True
+    assert ev._validate_schema("x", {"type": "null"}) is False
+
+
+def test_hallucinated_tool_fails_when_available_tools_omitted():
+    """Omitting available_tools must FAIL the check (can't be used to hide it)."""
+    cases = [{"name": "x", "assertions": ["no_hallucinated_tool"]}]
+    traces = [{"case": "x", "tool_calls": [{"name": "made_up"}], "output": "z"}]  # no available_tools
+    report = ev.run_eval(cases, traces, threshold=1.0)
+    assert report["gate_passed"] is False
+
+
+def test_malformed_input_returns_gate_failure_not_crash(tmp_path):
+    cases_f = tmp_path / "c.json"
+    cases_f.write_text('{"cases": [{"name": "x", "assertions": ["no_pii"]}]}')
+    bad = tmp_path / "bad.json"
+    bad.write_text("{not valid json")
+    assert ev.main(["--cases", str(cases_f), "--traces", str(bad)]) == 2
+
+
+def test_pii_catches_spaced_ssn_and_ip():
+    findings = ev._check_pii("user 123 45 6789 at 192.168.1.1")
+    assert findings is not None  # caught (either ssn or ipv4)
+    # order number should NOT trip credit_card now:
+    assert ev._check_pii("order number 1234567890123") is None

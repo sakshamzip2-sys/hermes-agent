@@ -111,3 +111,49 @@ def test_skill_md_present_and_valid():
     assert text.startswith("---")
     assert "accessibility-audit" in text
     assert "WCAG 2.2 AA" in text
+
+
+# --- round-2 red-team fixes: no crashes, no false passes ---
+
+def test_malformed_rgb_does_not_crash_whole_audit():
+    """A malformed rgb() must not abort the audit and bury other findings."""
+    page = ('<html><body><p style="color:rgb(1,2);background:#fff">x</p>'
+            '<img src="a.png"></body></html>')
+    findings = audit.audit_html(page)  # must NOT raise
+    # The missing-alt on the same page is still reported.
+    assert any(f["wcag"] == "1.1.1" for f in findings)
+
+
+def test_background_shorthand_contrast_caught():
+    page = '<html lang="en"><body><p style="color:#aaa;background:#fff">low</p></body></html>'
+    findings = audit.audit_html(page)
+    assert any(f["wcag"] == "1.4.3" and "below WCAG AA" in f["message"] for f in findings)
+
+
+def test_rgba_low_alpha_not_false_passed():
+    """A near-transparent text colour shouldn't be reported as opaque-PASS."""
+    # rgba black at 0.1 alpha over white → effectively invisible; we skip the
+    # misleading opaque check (return None) rather than report 21:1 PASS.
+    assert audit._parse_color("rgba(0,0,0,0.1)") is None
+    assert audit._parse_color("rgb(1,2)") is None  # arity-safe
+
+
+def test_inline_only_contrast_limitation_surfaced():
+    """A stylesheet-styled page gets an informational note, not silent 'clean'."""
+    page = ('<html lang="en"><head><style>.t{color:#aaa;background:#fff}</style></head>'
+            '<body><p class="t">text</p></body></html>')
+    findings = audit.audit_html(page)
+    assert any("INLINE styles only" in f["message"] for f in findings)
+
+
+def test_wrapping_label_not_false_positive():
+    """An input wrapped in <label> is labeled — must not flag as unlabeled."""
+    page = '<html lang="en"><body><label>Email <input type="text"></label></body></html>'
+    findings = audit.audit_html(page)
+    assert not any(f["wcag"] == "1.3.1/4.1.2" for f in findings)
+
+
+def test_contrast_math_correct_boundary():
+    # #767676 on white ≈ 4.54 (passes AA); #777 on white ≈ 4.48 (fails).
+    assert audit._contrast_ratio((118, 118, 118), (255, 255, 255)) > 4.5
+    assert audit._contrast_ratio((119, 119, 119), (255, 255, 255)) < 4.5

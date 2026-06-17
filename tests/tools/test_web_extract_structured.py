@@ -57,6 +57,17 @@ def test_structured_extraction_against_schema(patched_backends):
     assert r["schema_valid"] is True
 
 
+def test_schema_valid_is_real_validation_not_just_parsed():
+    """schema_valid must reflect SCHEMA CONFORMANCE, not merely 'parsed as JSON'."""
+    from tools.web_extract_structured_tool import _validate_schema
+    schema = {"type": "object", "required": ["name", "price"],
+              "properties": {"price": {"type": "number"}}}
+    assert _validate_schema({"name": "x", "price": 5}, schema) is True
+    assert _validate_schema({"price": 5}, schema) is False        # missing required
+    assert _validate_schema([1, 2, 3], schema) is False           # wrong shape
+    assert _validate_schema({"x": 1}, {"type": "objekt"}) is False  # typo fails closed
+
+
 def test_markdown_when_no_schema(patched_backends):
     out = json.loads(_run(web_extract_structured_tool({"url": "https://example.com/a"})))
     assert out["format"] == "markdown"

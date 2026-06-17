@@ -248,12 +248,20 @@ _SENSITIVE_READ_TARGET = (
     rf'(?:{_PRIVATE_KEY_FILE}|{_CREDENTIAL_FILES}|{_CLOUD_CRED_FILE})'
 )
 # Common file-reading commands an agent uses to dump file contents. Includes
-# text processors (awk/sed/grep/cut/tr) since pointing them at a private key is
-# the same exfil read — they only fire when a SENSITIVE target follows.
+# text processors (awk/sed/grep/cut/tr), editors/pagers (a model can read a key
+# by opening it in vim), and ssh-add — all only fire when a SENSITIVE target
+# follows, so benign use is unaffected.
 _READ_CMD = (
     r'(?:cat|bat|tac|less|more|head|tail|nl|xxd|od|strings|base64|'
-    r'awk|sed|grep|cut|tr|gpg)'
+    r'awk|sed|grep|cut|tr|gpg|'
+    r'vim|vi|view|nvim|nano|emacs|pico|ed|'
+    r'ssh-add|openssl|ssh-keygen)'
 )
+# Interpreters that can read a file via a one-liner (python -c "open('…id_rsa')").
+# Here the path sits inside nested quotes, not adjacent to whitespace, so these
+# match the SENSITIVE target appearing ANYWHERE after the interpreter, not just
+# right after a space.
+_INTERP_CMD = r'(?:python[23]?|perl|ruby|node|php|lua|tclsh)'
 
 # =========================================================================
 # Hardline (unconditional) blocklist
@@ -576,6 +584,10 @@ DANGEROUS_PATTERNS = [
      "openssl/ssh-keygen reading a private key"),
     (rf'\bdd\b[^;|&\n]*\bif=["\']?{_SENSITIVE_READ_TARGET}',
      "dd reading a sensitive credential/key file"),
+    # Interpreter one-liner reading a key (python -c "open('~/.ssh/id_rsa')…").
+    # The path is inside nested quotes, so match it anywhere after the interpreter.
+    (rf'\b{_INTERP_CMD}\b[^;|&\n]*{_SENSITIVE_READ_TARGET}',
+     "interpreter one-liner reading a sensitive credential/key file"),
 ]
 
 

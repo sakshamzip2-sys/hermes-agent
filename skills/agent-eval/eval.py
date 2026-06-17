@@ -37,9 +37,12 @@ from typing import Any, Dict, List, Optional, Tuple
 # PII heuristics (US-centric + email) — enough to catch obvious leaks.
 _PII_PATTERNS = [
     ("email", re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")),
-    ("ssn", re.compile(r"\b\d{3}-\d{2}-\d{4}\b")),
-    ("credit_card", re.compile(r"\b(?:\d[ -]?){13,16}\b")),
+    ("ssn", re.compile(r"\b\d{3}[ -]\d{2}[ -]\d{4}\b")),  # dash OR space separated
+    # 13-16 digit groups in card-like 4-4-4-4 / spaced / dashed shapes, requiring
+    # at least one separator so a bare order-number doesn't false-positive.
+    ("credit_card", re.compile(r"\b\d{4}[ -]\d{4}[ -]\d{4}[ -]\d{1,4}\b")),
     ("phone", re.compile(r"\b\(?\d{3}\)?[ -]?\d{3}[ -]?\d{4}\b")),
+    ("ipv4", re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b")),
 ]
 
 
@@ -63,9 +66,24 @@ def _check_pii(text: str) -> Optional[str]:
     return None
 
 
-def _validate_schema(value: Any, schema: Dict[str, Any]) -> bool:
-    """Minimal JSON-schema validation (type + required + properties)."""
+_KNOWN_SCHEMA_TYPES = {"object", "array", "string", "number", "integer", "boolean", "null"}
+
+
+def _validate_schema(value: Any, schema: Any) -> bool:
+    """Minimal JSON-schema validation (type + required + properties).
+
+    Fails CLOSED on a malformed/unknown schema: a typo'd or unsupported ``type``
+    must not validate everything (that would let a malformed-output regression
+    pass). Use a real jsonschema library for full coverage; this is the
+    dependency-free subset.
+    """
+    if not isinstance(schema, dict):
+        return False
     t = schema.get("type")
+    if t == "null":
+        return value is None
+    if t is not None and t not in _KNOWN_SCHEMA_TYPES:
+        return False  # unknown/typo'd type → fail closed
     if t == "object":
         if not isinstance(value, dict):
             return False
@@ -87,7 +105,8 @@ def _validate_schema(value: Any, schema: Dict[str, Any]) -> bool:
         return isinstance(value, (int, float)) and not isinstance(value, bool)
     if t == "boolean":
         return isinstance(value, bool)
-    return True  # unknown type → don't fail
+    # type omitted entirely → only structural checks above apply; accept.
+    return True
 
 
 def evaluate_assertion(assertion: Any, trace: Dict[str, Any]) -> Tuple[bool, str]:
@@ -129,10 +148,14 @@ def evaluate_assertion(assertion: Any, trace: Dict[str, Any]) -> Tuple[bool, str
             return False, "output_json_schema: output not JSON"
         return _validate_schema(parsed, val), "output_json_schema"
     if key == "no_hallucinated_tool":
-        # Every called tool must be in the run's available_tools list.
-        available = set(trace.get("available_tools", []))
-        if not available:
-            return True, "no_hallucinated_tool: no tool list in trace (skipped)"
+        # Every called tool must be in the run's available_tools list. If the
+        # assertion is DECLARED but the trace omits available_tools, that's
+        # insufficient evidence to confirm no tool was hallucinated → FAIL
+        # (fail-closed). Silently passing here lets a trace hide the very
+        # regression this checks by just not recording its tool list.
+        if "available_tools" not in trace:
+            return False, "no_hallucinated_tool: trace omits available_tools (cannot verify)"
+        available = set(trace.get("available_tools") or [])
         bad = [t for t in tools if t not in available]
         return (not bad), f"no_hallucinated_tool: not-available={bad}"
     return False, f"unknown assertion type: {key}"
@@ -140,6 +163,10 @@ def evaluate_assertion(assertion: Any, trace: Dict[str, Any]) -> Tuple[bool, str
 
 def run_eval(cases: List[Dict[str, Any]], traces: List[Dict[str, Any]],
              threshold: float = 1.0) -> Dict[str, Any]:
+    if not isinstance(cases, list) or not all(isinstance(c, dict) for c in cases):
+        raise ValueError("cases must be a list of objects")
+    if not isinstance(traces, list) or not all(isinstance(t, dict) for t in traces):
+        raise ValueError("traces must be a list of objects")
     by_name = {t.get("case"): t for t in traces}
     results = []
     total_assertions = passed_assertions = 0
@@ -152,8 +179,17 @@ def run_eval(cases: List[Dict[str, Any]], traces: List[Dict[str, Any]],
             case_result["passed"] = False
             results.append(case_result)
             continue
+        assertions = case.get("assertions") or []
+        # A case that evaluates ZERO assertions must NOT silently pass — that's
+        # how a dropped/typo'd assertions list inflates the gate to green while
+        # testing nothing. Treat it as a failed (mis-authored) case.
+        if not assertions:
+            case_result["error"] = "case has no assertions (nothing verified)"
+            case_result["passed"] = False
+            results.append(case_result)
+            continue
         case_passed = True
-        for a in case.get("assertions", []):
+        for a in assertions:
             ok, detail = evaluate_assertion(a, trace)
             total_assertions += 1
             passed_assertions += 1 if ok else 0
@@ -182,14 +218,20 @@ def main(argv: Optional[List[str]] = None) -> int:
     ap.add_argument("--json", action="store_true", help="Emit JSON report.")
     args = ap.parse_args(argv)
 
-    cases = _load_file(args.cases)
-    if isinstance(cases, dict):
-        cases = cases.get("cases", [])
-    traces = _load_file(args.traces)
-    if isinstance(traces, dict):
-        traces = traces.get("traces", [])
-
-    report = run_eval(cases, traces, args.threshold)
+    try:
+        cases = _load_file(args.cases)
+        if isinstance(cases, dict):
+            cases = cases.get("cases", [])
+        traces = _load_file(args.traces)
+        if isinstance(traces, dict):
+            traces = traces.get("traces", [])
+        report = run_eval(cases, traces, args.threshold)
+    except (ValueError, OSError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2  # malformed input fails the gate, not a silent pass
+    except Exception as exc:  # noqa: BLE001 — never crash CI with a raw traceback
+        print(f"error: failed to parse cases/traces: {exc}", file=sys.stderr)
+        return 2
 
     if args.json:
         print(json.dumps(report, indent=2))

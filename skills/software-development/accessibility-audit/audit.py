@@ -37,8 +37,11 @@ class _A11yParser(HTMLParser):
         self._open_label_for: List[str] = []
         self._input_ids_with_label: set = set()
         self._inputs: List[Dict] = []
+        self._saw_inline_color = False
+        self._label_depth = 0  # >0 while inside a <label> (wraps its control)
+        self._has_style_or_link = False  # a <style> block or stylesheet <link>
 
-    def handle_starttag(self, tag: str, attrs_list):
+    def handle_starttag(self, tag, attrs_list):  # noqa: D401 — html.parser signature
         attrs = {k: (v or "") for k, v in attrs_list}
         line = self.getpos()[0]
 
@@ -61,10 +64,18 @@ class _A11yParser(HTMLParser):
             if itype in ("hidden", "submit", "button", "image"):
                 pass
             else:
-                self._inputs.append({"attrs": attrs, "line": line})
+                # A control nested inside <label>…</label> is labeled by wrapping
+                # even without a for= — don't false-positive on it.
+                self._inputs.append({"attrs": attrs, "line": line,
+                                     "wrapped": self._label_depth > 0})
 
-        if tag == "label" and attrs.get("for"):
-            self._input_ids_with_label.add(attrs["for"])
+        if tag == "label":
+            self._label_depth += 1
+            if attrs.get("for"):
+                self._input_ids_with_label.add(attrs["for"])
+
+        if tag == "style" or (tag == "link" and "stylesheet" in attrs.get("rel", "").lower()):
+            self._has_style_or_link = True
 
         if tag in ("h1", "h2", "h3", "h4", "h5", "h6"):
             self.heading_levels.append((int(tag[1]), line))
@@ -81,10 +92,13 @@ class _A11yParser(HTMLParser):
             self._add("minor", "2.1.1", line,
                       "<a> without href is not keyboard-focusable; use a <button>.")
 
-        # Inline-style contrast check (best effort): color + background-color.
+        # Inline-style contrast check (best effort): color + background[-color].
         style = attrs.get("style", "")
+        if style:
+            self._saw_inline_color = self._saw_inline_color or ("color" in style.lower())
         fg = _css_color(style, "color")
-        bg = _css_color(style, "background-color")
+        # Accept both `background-color:` and the `background:` shorthand.
+        bg = _css_color(style, "background-color") or _css_color(style, "background")
         if fg and bg:
             ratio = _contrast_ratio(fg, bg)
             if ratio is not None and ratio < 4.5:
@@ -92,15 +106,20 @@ class _A11yParser(HTMLParser):
                           f"text contrast {ratio:.2f}:1 is below WCAG AA 4.5:1 "
                           f"({_rgb_hex(fg)} on {_rgb_hex(bg)}).")
 
+    def handle_endtag(self, tag):
+        if tag == "label" and self._label_depth > 0:
+            self._label_depth -= 1
+
     def _add(self, severity: str, wcag: str, line: int, message: str) -> None:
         self.findings.append({"severity": severity, "wcag": wcag,
                               "line": line, "message": message})
 
     def finalize(self) -> None:
-        # Unlabeled inputs (no for= label, no aria-label/aria-labelledby/title).
+        # Unlabeled inputs (no for= label, no wrapping <label>, no aria/title).
         for item in self._inputs:
             a = item["attrs"]
-            has_name = (a.get("id") in self._input_ids_with_label
+            has_name = (item.get("wrapped")
+                        or a.get("id") in self._input_ids_with_label
                         or a.get("aria-label", "").strip()
                         or a.get("aria-labelledby", "").strip()
                         or a.get("title", "").strip())
@@ -121,6 +140,13 @@ class _A11yParser(HTMLParser):
                 self._add("moderate", "1.3.1", ln,
                           f"heading level jumps from h{prev} to h{lvl} (skipped a level).")
             prev = lvl
+        # Surface the contrast-coverage limitation so a clean result on a
+        # stylesheet-styled page isn't mistaken for "contrast is fine".
+        if self._has_style_or_link and not self._saw_inline_color:
+            self._add("minor", "1.4.3", 1,
+                      "contrast checked on INLINE styles only — this page uses "
+                      "<style>/<link> CSS that was not evaluated; verify contrast "
+                      "manually or with a rendering-based tool.")
 
 
 # --- color / contrast helpers (WCAG relative luminance) ---
@@ -149,11 +175,25 @@ def _parse_color(val: str) -> Optional[Tuple[int, int, int]]:
         return tuple(int(h[i:i + 2], 16) for i in (0, 2, 4))  # type: ignore
     m = re.match(r"rgba?\(([^)]+)\)", val)
     if m:
-        parts = [p.strip() for p in m.group(1).split(",")]
+        parts = [p.strip() for p in m.group(1).replace("/", " ").split(",")]
+        # Require at least 3 numeric channels — a malformed rgb(1,2) must return
+        # None, NEVER a short tuple (which crashed the whole audit when unpacked).
+        if len(parts) < 3:
+            return None
         try:
-            return tuple(int(float(p)) for p in parts[:3])  # type: ignore
+            rgb = tuple(int(float(p)) for p in parts[:3])
         except ValueError:
             return None
+        # If there's an alpha < ~0.5, the effective contrast is much lower than
+        # the opaque colour suggests — skip the (misleading) opaque check rather
+        # than report a false PASS.
+        if len(parts) >= 4:
+            try:
+                if float(parts[3]) < 0.5:
+                    return None
+            except ValueError:
+                pass
+        return rgb  # type: ignore
     return None
 
 
@@ -177,8 +217,13 @@ def _rgb_hex(rgb: Tuple[int, int, int]) -> str:
 
 def audit_html(html: str) -> List[Dict]:
     p = _A11yParser()
-    p.feed(html)
-    p.finalize()
+    try:
+        p.feed(html)
+        p.finalize()
+    except Exception as exc:  # noqa: BLE001 — one malformed page must not abort
+        # the whole run (and bury real findings). Report what we have + a note.
+        p.findings.append({"severity": "minor", "wcag": "parse", "line": 0,
+                           "message": f"partial audit — parser error: {exc}"})
     return sorted(p.findings, key=lambda f: (SEVERITY_ORDER.get(f["severity"], 9), f["line"]))
 
 

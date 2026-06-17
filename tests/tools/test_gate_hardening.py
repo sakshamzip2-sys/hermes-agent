@@ -42,6 +42,12 @@ from tools import gate_audit
     "openssl rsa -in ~/.ssh/id_rsa",   # key-specific tool
     "ssh-keygen -y -f ~/.ssh/id_rsa",  # key-specific tool
     "dd if=~/.ssh/id_rsa of=/tmp/k",   # dd
+    # round-2: editors / ssh-add / interpreter one-liners
+    "vim ~/.ssh/id_rsa",
+    "nano ~/.aws/credentials",
+    "emacs ~/.netrc",
+    "ssh-add ~/.ssh/id_ed25519",
+    'python3 -c "open(\'/root/.ssh/id_rsa\')"',
 ])
 def test_credential_reads_are_flagged(command):
     dangerous, _key, desc = detect_dangerous_command(command)

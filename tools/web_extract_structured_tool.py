@@ -71,11 +71,55 @@ async def _extract_one(url: str, content: str, schema: Dict[str, Any],
     except Exception as exc:  # noqa: BLE001
         return {"url": url, "error": f"extraction LLM call failed: {exc}"}
 
-    data, valid = _parse_json_payload(raw)
-    if data is None:
+    data, parsed = _parse_json_payload(raw)
+    if data is None or not parsed:
         return {"url": url, "error": "extractor did not return valid JSON",
                 "raw": raw[:500]}
-    return {"url": url, "data": data, "schema_valid": valid}
+    # Actually validate against the caller's schema — ``schema_valid`` must mean
+    # "conforms to the schema", not merely "parsed as JSON" (a downstream
+    # consumer trusting it should be able to). Web-extracted data is untrusted.
+    schema_valid = _validate_schema(data, schema)
+    return {"url": url, "data": data, "schema_valid": schema_valid}
+
+
+_KNOWN_SCHEMA_TYPES = {"object", "array", "string", "number", "integer", "boolean", "null"}
+
+
+def _validate_schema(value: Any, schema: Any) -> bool:
+    """Minimal, dependency-free JSON-Schema check (type/required/properties/items).
+
+    Fails CLOSED on an unknown/typo'd ``type`` so attacker-controlled extracted
+    data can't be stamped ``schema_valid: true`` by slipping past validation.
+    """
+    if not isinstance(schema, dict):
+        return False
+    t = schema.get("type")
+    if t == "null":
+        return value is None
+    if t is not None and t not in _KNOWN_SCHEMA_TYPES:
+        return False
+    if t == "object":
+        if not isinstance(value, dict):
+            return False
+        for req in schema.get("required", []) or []:
+            if req not in value:
+                return False
+        for k, sub in (schema.get("properties") or {}).items():
+            if k in value and not _validate_schema(value[k], sub):
+                return False
+        return True
+    if t == "array":
+        if not isinstance(value, list):
+            return False
+        items = schema.get("items")
+        return all(_validate_schema(v, items) for v in value) if items else True
+    if t == "string":
+        return isinstance(value, str)
+    if t in ("number", "integer"):
+        return isinstance(value, (int, float)) and not isinstance(value, bool)
+    if t == "boolean":
+        return isinstance(value, bool)
+    return True
 
 
 def _parse_json_payload(raw: str):
