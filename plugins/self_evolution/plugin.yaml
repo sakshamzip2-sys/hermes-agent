@@ -1,0 +1,5 @@
+name: self_evolution
+version: 1.0.0
+description: "The unified self-evolution loop — fires SENSE→DREAM→ENRICH→EVOLVE (outcomes→dreaming→Honcho/GBrain→playbook) as one flow. Command always works; scheduled trigger is opt-in."
+author: "OpenComputer v2"
+kind: standalone

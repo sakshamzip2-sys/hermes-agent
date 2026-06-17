@@ -1920,6 +1920,33 @@ DEFAULT_CONFIG = {
     # (apiKey, workspace, peerName, sessions, enabled) comes from the global config.
     "honcho": {},
 
+    # Unified dreaming — the dream_orchestrator plugin connects v2's three
+    # separate dreamers (local plugins.dreaming, the Honcho memory server, and
+    # the gbrain serve process) behind one `hermes dream-all` / `/dream-all`
+    # command. Everything that writes state defaults OFF / dry-run; the command
+    # works on-demand regardless of `enabled`.
+    "dream_orchestrator": {
+        # Master switch for the background self-scheduled cron job. The
+        # on-demand command works whether this is true or false.
+        "enabled": False,
+        # Cron schedule for the background tick ("" = no scheduled job).
+        # e.g. "every 6 hours" or "0 */6 * * *".
+        "schedule": "",
+        # Which dreamers the orchestrator drives. A disabled/unreachable target
+        # is skipped cleanly, never fatal.
+        "targets": {"local": True, "honcho": True, "gbrain": True},
+        # Phase 2 — one-way cross-feed (Honcho -> GBrain -> local). Pulls NEW
+        # high-confidence upstream conclusions/facts into MEMORY.md candidates,
+        # provenance-tagged and run through the local diversity gate. Defaults to
+        # OFF, and dry_run so the first runs only preview.
+        "cross_feed": {
+            "enabled": False,
+            "dry_run": True,
+            "confidence_floor": "high",   # low | medium | high
+            "max_imports_per_run": 20,
+        },
+    },
+
     # IANA timezone (e.g. "Asia/Kolkata", "America/New_York").
     # Empty string means use server-local time.
     "timezone": "",

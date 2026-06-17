@@ -1,0 +1,263 @@
+"""Phase 2 — one-way cross-feed: pull upstream dreamer outputs into local MEMORY.md.
+
+Topology is strictly **one-way: Honcho -> GBrain -> local**. Nothing flows back
+upward. We pull NEW, high-confidence, provenance-bearing outputs from the upstream
+dreamers and offer them as MEMORY.md *candidates*:
+
+* Honcho conclusions  (REST ``/v3/workspaces/<ws>/conclusions/list``)
+* GBrain facts         (HTTP MCP ``recall`` over the ``facts`` table, ``kind='fact'``)
+
+Each candidate is:
+
+1. **Namespaced + provenance-tagged** — ``(dreamed YYYY-MM-DD · honcho#<id> · conf=high) <text>``
+   so its origin is always legible in MEMORY.md.
+2. **Run through the EXISTING local diversity gate** (``plugins.dreaming``) before
+   promotion — never bypasses the gate that keeps MEMORY.md de-duplicated.
+3. **Capped** by ``max_imports_per_run`` and floored at ``confidence_floor``.
+
+HARD INVARIANT (no recursion -> no model collapse): every imported/derived line is
+recorded in the orchestrator's ``imported`` ledger AND carries the provenance
+marker. :func:`is_derived_line` recognises that marker so the LOCAL dreamer can
+exclude these lines from its own candidate pool on subsequent runs. Imported facts
+therefore never feed back into the dreamer that would re-dream and amplify them.
+
+DEFAULT ``cross_feed.dry_run: true`` — the first runs only preview; nothing is
+written until a user opts in.
+"""
+
+from __future__ import annotations
+
+import datetime as _dt
+import hashlib
+import logging
+import re
+from dataclasses import dataclass, field
+
+logger = logging.getLogger("hermes.plugins.dream_orchestrator.importer")
+
+# Provenance marker that tags an imported/derived MEMORY.md line. The LOCAL
+# dreamer excludes any candidate matching this so derived facts never recurse.
+# Example: "(dreamed 2026-06-17 · honcho#abc123 · conf=high) The user ..."
+_PROVENANCE_RE = re.compile(
+    r"\(dreamed\s+\d{4}-\d{2}-\d{2}\s*·\s*(?:honcho|gbrain)#[^\s·)]+\s*·\s*conf=\w+\)",
+    re.IGNORECASE,
+)
+
+_CONF_RANK = {"low": 0, "medium": 1, "high": 2}
+
+
+def is_derived_line(text: str) -> bool:
+    """True if *text* is a cross-fed (imported) MEMORY.md line.
+
+    Used to enforce the no-recursion invariant: the local dreamer must EXCLUDE
+    these from its candidate pool so an imported conclusion is never re-dreamed.
+    """
+    return bool(_PROVENANCE_RE.search(text or ""))
+
+
+@dataclass
+class ImportCandidate:
+    source: str          # "honcho" | "gbrain"
+    ref: str             # upstream id, for the provenance tag + ledger key
+    text: str            # the bare fact/conclusion text
+    confidence: str = "high"
+
+    @property
+    def import_id(self) -> str:
+        norm = " ".join((self.text or "").lower().split())
+        return hashlib.sha256(f"{self.source}|{self.ref}|{norm}".encode()).hexdigest()[:16]
+
+    def provenance_line(self) -> str:
+        today = _dt.date.today().isoformat()
+        return f"(dreamed {today} · {self.source}#{self.ref} · conf={self.confidence}) {self.text.strip()}"
+
+
+@dataclass
+class ImportSummary:
+    previewed: list[str] = field(default_factory=list)   # provenance lines (dry-run or pre-gate)
+    promoted: list[str] = field(default_factory=list)    # actually written to MEMORY.md
+    skipped_existing: int = 0                             # already imported (ledger) or in MEMORY
+    dropped_diversity: int = 0                            # failed local diversity gate
+    dry_run: bool = True
+
+    def to_dict(self) -> dict:
+        return {
+            "previewed": self.previewed,
+            "promoted": self.promoted,
+            "skipped_existing": self.skipped_existing,
+            "dropped_diversity": self.dropped_diversity,
+            "dry_run": self.dry_run,
+        }
+
+
+# ---------------------------------------------------------------------------
+# Upstream fetchers (best-effort; return [] on any failure)
+# ---------------------------------------------------------------------------
+def fetch_honcho_conclusions(limit: int = 50) -> list[ImportCandidate]:
+    try:
+        import httpx
+
+        from .targets import _honcho_config
+
+        base_url, ws, _peer, api_key, enabled = _honcho_config()
+        if not base_url or not enabled:
+            return []
+        url = f"{base_url}/v3/workspaces/{ws}/conclusions/list"
+        headers = {"Content-Type": "application/json"}
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
+        r = httpx.post(url, json={}, headers=headers, timeout=30.0)
+        if r.status_code != 200:
+            logger.debug("honcho conclusions/list HTTP %s", r.status_code)
+            return []
+        items = (r.json() or {}).get("items", [])
+        out: list[ImportCandidate] = []
+        for it in items[:limit]:
+            text = (it.get("content") or "").strip()
+            cid = str(it.get("id") or "")
+            if text and cid:
+                # Honcho conclusions are server-derived; treat as high-confidence.
+                out.append(ImportCandidate("honcho", cid, text, "high"))
+        return out
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("honcho conclusions fetch failed: %s", exc)
+        return []
+
+
+def fetch_gbrain_facts(limit: int = 50) -> list[ImportCandidate]:
+    try:
+        from .targets import _gbrain_rpc, _gbrain_token
+
+        token = _gbrain_token()
+        if not token:
+            return []
+        obj = _gbrain_rpc("tools/call",
+                          {"name": "recall", "arguments": {"limit": min(limit, 100)}},
+                          token=token, timeout=30.0)
+        if "error" in obj:
+            return []
+        content = obj.get("result", {}).get("content", [])
+        if not content:
+            return []
+        import json as _json
+
+        try:
+            payload = _json.loads(content[0].get("text", "{}"))
+        except (TypeError, ValueError):
+            return []
+        facts = payload.get("facts", []) if isinstance(payload, dict) else []
+        out: list[ImportCandidate] = []
+        for f in facts[:limit]:
+            text = (f.get("text") or f.get("content") or "").strip()
+            fid = str(f.get("id") or f.get("fact_id") or "")
+            if text and fid:
+                conf = str(f.get("confidence") or "high").lower()
+                if conf not in _CONF_RANK:
+                    conf = "high"
+                out.append(ImportCandidate("gbrain", fid, text, conf))
+        return out
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("gbrain facts fetch failed: %s", exc)
+        return []
+
+
+# ---------------------------------------------------------------------------
+# Cross-feed driver
+# ---------------------------------------------------------------------------
+def run_cross_feed(cfg, store) -> ImportSummary:
+    """Pull upstream outputs -> namespace -> diversity-gate -> (optionally) promote.
+
+    *cfg* is a :class:`~plugins.dream_orchestrator.config.CrossFeedConfig`.
+    *store* is the :class:`~plugins.dream_orchestrator.store.OrchestratorStore`
+    (for the import idempotency ledger).
+    """
+    summary = ImportSummary(dry_run=cfg.dry_run)
+    floor = _CONF_RANK.get(str(cfg.confidence_floor).lower(), 2)
+
+    # Topology order: honcho first, then gbrain (one-way honcho -> gbrain -> local).
+    candidates = fetch_honcho_conclusions() + fetch_gbrain_facts()
+
+    already = store.imported_ids()
+    # Local MEMORY.md corpus for the diversity gate (markers stripped).
+    try:
+        from plugins.dreaming import memory_io
+
+        existing = memory_io.read_memory_facts()
+    except Exception:  # noqa: BLE001
+        memory_io = None  # type: ignore[assignment]
+        existing = []
+
+    selected: list[ImportCandidate] = []
+    for c in candidates:
+        if _CONF_RANK.get(c.confidence, 0) < floor:
+            continue
+        if c.import_id in already:
+            summary.skipped_existing += 1
+            continue
+        # Don't re-import a fact whose bare text already lives in MEMORY.md.
+        if any(c.text.strip() == e.strip() for e in existing):
+            summary.skipped_existing += 1
+            continue
+        selected.append(c)
+        if len(selected) >= cfg.max_imports_per_run:
+            break
+
+    if not selected:
+        return summary
+
+    # Diversity gate: reuse the local dreamer's embedding + threshold so imports
+    # don't duplicate existing memories. Degrades to "novel" if embeddings are
+    # unavailable (same posture as the local dreamer).
+    diversity_threshold, embed_fn = _local_diversity()
+
+    for c in selected:
+        line = c.provenance_line()
+        summary.previewed.append(line)
+        if memory_io is None:
+            continue
+        try:
+            keep = _passes_diversity(c.text, existing, embed_fn, diversity_threshold)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("diversity check failed (%s); treating as novel", exc)
+            keep = True
+        if not keep:
+            summary.dropped_diversity += 1
+            # Still ledger it so we don't re-evaluate a known-duplicate each run.
+            if not cfg.dry_run:
+                store.mark_imported(c.import_id, source=c.source, ref=c.ref)
+            continue
+        if cfg.dry_run:
+            continue
+        # Promote the PROVENANCE LINE verbatim (promote_raw, NOT promote) so the
+        # marker travels intact into MEMORY.md (the local dreamer excludes it
+        # later) WITHOUT promote() prepending a second "(dreamed …)" prefix.
+        memory_io.promote_raw(line)
+        existing.append(c.text)  # keep the in-run corpus current
+        store.mark_imported(c.import_id, source=c.source, ref=c.ref)
+        summary.promoted.append(line)
+
+    return summary
+
+
+def _local_diversity():
+    """Return ``(diversity_threshold, embed_fn)`` from the local dreamer."""
+    try:
+        from plugins.dreaming import llm
+        from plugins.dreaming.config import load_dreaming_config
+
+        cfg = load_dreaming_config()
+        return cfg.engine.diversity_threshold, llm.semantic_embed
+    except Exception:  # noqa: BLE001
+        return 0.8, None
+
+
+def _passes_diversity(text: str, existing: list[str], embed_fn, threshold: float) -> bool:
+    """True if *text* is NOT a near-duplicate of any existing MEMORY.md entry."""
+    import asyncio
+
+    from plugins.dreaming.engine import best_match_against
+
+    if not existing or embed_fn is None:
+        return True
+    diversity, _idx = asyncio.run(best_match_against(text, existing, embed_fn=embed_fn))
+    return diversity < threshold

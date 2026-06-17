@@ -1,0 +1,5 @@
+name: dream_orchestrator
+version: 1.0.0
+description: "Unified dreaming: one command runs the local, Honcho, and GBrain dreamers and reports a combined summary."
+author: "OpenComputer v2"
+kind: standalone
