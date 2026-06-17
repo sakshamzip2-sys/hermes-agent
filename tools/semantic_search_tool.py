@@ -49,9 +49,23 @@ _TEXT_EXTS = {".md", ".markdown", ".rst", ".txt", ".yaml", ".yml", ".json", ".to
 _INDEXABLE_EXTS = _CODE_EXTS | _TEXT_EXTS
 
 
+class IndexSecurityError(Exception):
+    """A name or path that would escape the index root / cwd confinement."""
+
+
 def _index_dir(name: str, root: Optional[str] = None) -> Path:
+    # Collapse path separators and any other unsafe char to '_'. Crucially also
+    # neutralize '.' / '..' segments, which the previous regex preserved (a name
+    # of '..' escaped .agent/index/ and clobbered .agent/).
     safe = re.sub(r"[^A-Za-z0-9_.-]", "_", name or "default")
-    base = Path(root or os.getcwd()) / _INDEX_ROOT / safe
+    if safe in (".", "..") or not safe.strip("."):
+        raise IndexSecurityError(f"unsafe index name {name!r}")
+    root_p = Path(root or os.getcwd()).resolve()
+    index_root = (root_p / _INDEX_ROOT).resolve()
+    base = (index_root / safe).resolve()
+    # Defense in depth: the resolved dir MUST stay under .agent/index/.
+    if index_root != base and index_root not in base.parents:
+        raise IndexSecurityError(f"index name {name!r} escapes the index root")
     return base
 
 
@@ -75,13 +89,58 @@ def _file_hash(path: Path) -> str:
     return h.hexdigest()[:16]
 
 
+def _atomic_write_text(path: Path, text: str) -> None:
+    """Write then os.replace, so a crash never leaves a torn file."""
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(text, encoding="utf-8")
+    os.replace(tmp, path)
+
+
+def _atomic_save_npy(path: Path, arr) -> None:
+    import tempfile
+    import numpy as np
+    # mkstemp gives a concrete temp file; saving to the open handle avoids
+    # np.save's habit of appending ".npy" to a path argument.
+    fd, tmpname = tempfile.mkstemp(suffix=".npy", dir=str(path.parent))
+    try:
+        with os.fdopen(fd, "wb") as fh:
+            np.save(fh, arr)
+        os.replace(tmpname, path)
+    except Exception:
+        try:
+            os.unlink(tmpname)
+        except OSError:
+            pass
+        raise
+
+
+def _within_root(path: Path, root_resolved: Path) -> bool:
+    """True only when ``path`` resolves to inside (or equal to) the cwd root."""
+    try:
+        rp = path.resolve()
+    except OSError:
+        return False
+    return rp == root_resolved or root_resolved in rp.parents
+
+
 def _iter_files(paths: List[str], root: str) -> List[Path]:
-    """Expand path/glob inputs into a deduplicated list of indexable files."""
+    """Expand path/glob inputs into a deduplicated list of indexable files.
+
+    SECURITY: every resulting file MUST resolve to inside the cwd. Absolute
+    inputs and ``..`` traversal are rejected — otherwise indexing
+    ``/etc/passwd`` or ``../../.aws/credentials`` would make their content
+    returnable via search (data exfiltration). The index is a project-local
+    facility, confined to the project tree.
+    """
     out: List[Path] = []
     seen = set()
     root_p = Path(root)
+    root_resolved = root_p.resolve()
     for raw in paths:
-        # Support globs and directories and plain files, relative to root.
+        # Reject absolute paths outright — `Path(cwd) / "/etc/x"` == "/etc/x".
+        if os.path.isabs(raw):
+            logger.warning("semantic_search: refusing absolute path %r (cwd-confined)", raw)
+            continue
         candidates: List[Path] = []
         if any(ch in raw for ch in "*?["):
             candidates = [root_p / m for m in _glob(root_p, raw)]
@@ -95,6 +154,10 @@ def _iter_files(paths: List[str], root: str) -> List[Path]:
             if c.suffix.lower() not in _INDEXABLE_EXTS:
                 continue
             if "/.git/" in str(c) or "/node_modules/" in str(c) or "/.agent/" in str(c):
+                continue
+            # The crucial confinement check: drop anything that escapes the cwd.
+            if not _within_root(c, root_resolved):
+                logger.warning("semantic_search: refusing %r (escapes cwd)", str(c))
                 continue
             try:
                 if c.stat().st_size > _MAX_FILE_BYTES:
@@ -190,8 +253,6 @@ def _embed_query(query: str, vocab: Dict[str, int], idf) -> Any:
 
 
 def _do_index(args: dict) -> str:
-    import numpy as np
-
     name = args.get("name") or "default"
     paths = args.get("paths") or args.get("globs")
     if isinstance(paths, str):
@@ -204,21 +265,31 @@ def _do_index(args: dict) -> str:
         return tool_error("No indexable files matched (supported: code + markdown/text).")
 
     idx_dir = _index_dir(name, root)
-    # Incremental: load prior manifest to skip unchanged files.
+    # Incremental: reuse cached chunks for files whose hash is unchanged so we
+    # don't re-read/re-chunk them (the TF-IDF matrix still rebuilds from all
+    # chunks because IDF is corpus-global, but file I/O is genuinely skipped).
     prior_hashes: Dict[str, str] = {}
+    prior_chunks_by_path: Dict[str, List[Dict[str, Any]]] = {}
     manifest_path = idx_dir / "manifest.json"
     if manifest_path.exists():
         try:
             prior_hashes = json.loads(manifest_path.read_text()).get("files", {})
+            for ch in json.loads((idx_dir / "chunks.json").read_text()):
+                prior_chunks_by_path.setdefault(ch["path"], []).append(ch)
         except Exception:
-            prior_hashes = {}
+            prior_hashes, prior_chunks_by_path = {}, {}
 
     file_hashes: Dict[str, str] = {}
     chunks: List[Dict[str, Any]] = []
+    reused = 0
     for f in files:
         rel = str(f.relative_to(root)) if str(f).startswith(root) else str(f)
         h = _file_hash(f)
         file_hashes[rel] = h
+        if prior_hashes.get(rel) == h and rel in prior_chunks_by_path:
+            chunks.extend(prior_chunks_by_path[rel])  # unchanged → reuse, no re-read
+            reused += 1
+            continue
         for ch in _chunk_file(f):
             ch["path"] = rel
             chunks.append(ch)
@@ -229,17 +300,18 @@ def _do_index(args: dict) -> str:
     vocab, idf, mat = _build_tfidf([c["text"] for c in chunks])
 
     idx_dir.mkdir(parents=True, exist_ok=True)
-    (idx_dir / "chunks.json").write_text(json.dumps(chunks, ensure_ascii=False))
-    (idx_dir / "vocab.json").write_text(json.dumps(vocab, ensure_ascii=False))
-    np.save(idx_dir / "idf.npy", idf)
-    np.save(idx_dir / "matrix.npy", mat)
+    # Atomic-ish: write to temp paths then replace, so a crash mid-write can't
+    # leave vocab/matrix out of sync (the shape-mismatch the reviewer flagged).
+    _atomic_write_text(idx_dir / "chunks.json", json.dumps(chunks, ensure_ascii=False))
+    _atomic_write_text(idx_dir / "vocab.json", json.dumps(vocab, ensure_ascii=False))
+    _atomic_save_npy(idx_dir / "idf.npy", idf)
+    _atomic_save_npy(idx_dir / "matrix.npy", mat)
     manifest = {
         "name": name, "mode": "tfidf", "files": file_hashes,
         "chunk_count": len(chunks), "vocab_size": len(vocab),
-        "reused_unchanged": sum(1 for r, h in file_hashes.items()
-                                if prior_hashes.get(r) == h),
+        "reused_unchanged": reused,
     }
-    (idx_dir / "manifest.json").write_text(json.dumps(manifest, ensure_ascii=False))
+    _atomic_write_text(idx_dir / "manifest.json", json.dumps(manifest, ensure_ascii=False))
 
     return tool_result({
         "indexed": True, "name": name,
@@ -263,19 +335,23 @@ def _do_search(args: dict) -> str:
     if not (idx_dir / "manifest.json").exists():
         return tool_error(f"No index named {name!r}. Build one first with action=index.")
 
+    # Wrap the load AND the matmul: a vocab/matrix shape mismatch (torn write,
+    # version skew) raises during ``mat @ qvec``, not during load, so the
+    # try/except must span both to return a clean "corrupt index" error.
     try:
         chunks = json.loads((idx_dir / "chunks.json").read_text())
         vocab = json.loads((idx_dir / "vocab.json").read_text())
         idf = np.load(idx_dir / "idf.npy")
         mat = np.load(idx_dir / "matrix.npy")
+        if mat.ndim != 2 or mat.shape[1] != len(vocab):
+            raise ValueError(f"matrix {mat.shape} inconsistent with vocab {len(vocab)}")
+        qvec = _embed_query(query, vocab, idf)
+        if mat.size == 0 or float(np.linalg.norm(qvec)) == 0.0:
+            return tool_result({"query": query, "name": name, "results": []})
+        scores = mat @ qvec  # cosine (both sides L2-normalized)
     except Exception as exc:
         return tool_error(f"Index {name!r} is unreadable/corrupt: {exc}")
 
-    qvec = _embed_query(query, vocab, idf)
-    if mat.size == 0 or float(np.linalg.norm(qvec)) == 0.0:
-        return tool_result({"query": query, "name": name, "results": []})
-
-    scores = mat @ qvec  # cosine (both sides L2-normalized)
     order = np.argsort(-scores)
     results = []
     for i in order:
@@ -318,12 +394,15 @@ def _do_list(args: dict) -> str:
 
 def semantic_search_tool(args: dict, **_kw) -> str:
     action = str(args.get("action", "search")).strip().lower()
-    if action == "index":
-        return _do_index(args)
-    if action == "search":
-        return _do_search(args)
-    if action == "list":
-        return _do_list(args)
+    try:
+        if action == "index":
+            return _do_index(args)
+        if action == "search":
+            return _do_search(args)
+        if action == "list":
+            return _do_list(args)
+    except IndexSecurityError as exc:
+        return tool_error(f"Refused for safety: {exc}")
     return tool_error(f"Unknown action {action!r}. Use index | search | list.")
 
 

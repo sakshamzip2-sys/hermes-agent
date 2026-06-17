@@ -842,12 +842,16 @@ class CheckpointManager:
         if self.task_state_restorer is not None and not file_path:
             try:
                 # Resolve a possibly-short hash to the full sha the sidecar uses.
+                # Require rev-parse to succeed — falling back to the raw short
+                # hash would look up the wrong (or no) sidecar and silently skip
+                # the restore, diverging files from todos.
                 ok_full, full_sha, _ = _run_git(
-                    ["rev-parse", commit_hash], store, abs_dir,
+                    ["rev-parse", "--verify", f"{commit_hash}^{{commit}}"],
+                    store, abs_dir, allowed_returncodes={128},
                 )
-                sha = full_sha.strip() if ok_full and full_sha else commit_hash
-                sidecar = _task_state_path(store, dir_hash, sha)
-                if sidecar.exists():
+                sha = full_sha.strip() if ok_full and full_sha else None
+                sidecar = _task_state_path(store, dir_hash, sha) if sha else None
+                if sidecar is not None and sidecar.exists():
                     payload = json.loads(sidecar.read_text(encoding="utf-8"))
                     self.task_state_restorer(payload.get("todos"))
                     result["task_state_restored"] = True
@@ -1076,6 +1080,43 @@ class CheckpointManager:
                 allowed_returncodes={128},
             )
 
+    def _reconcile_task_state(self, store: Path, dir_hash: str, cwd: str,
+                              sha_map: Optional[Dict[str, str]] = None) -> None:
+        """Keep the task-state sidecar dir in sync with the live ref.
+
+        Pruning rewrites commit SHAs and drops old commits, which would orphan
+        the per-checkpoint task-state sidecars (keyed by SHA). This migrates each
+        kept commit's sidecar to its new SHA (``sha_map``) and deletes any
+        sidecar no longer reachable from the ref — so todos survive a prune and
+        the sidecar dir can't grow without bound. Best-effort; never raises.
+        """
+        try:
+            ts_dir = _task_state_path(store, dir_hash, "x").parent
+            if not ts_dir.exists():
+                return
+            # 1. Migrate old→new for kept commits.
+            for old, new in (sha_map or {}).items():
+                old_p, new_p = ts_dir / f"{old}.json", ts_dir / f"{new}.json"
+                if old_p.exists() and not new_p.exists():
+                    try:
+                        os.replace(old_p, new_p)
+                    except OSError:
+                        pass
+            # 2. Drop any sidecar not reachable from the current ref.
+            ref = _ref_name(dir_hash)
+            ok, out, _ = _run_git(["rev-list", ref], store, cwd,
+                                  allowed_returncodes={128})
+            live = set(out.split()) if ok and out else set()
+            live |= set((sha_map or {}).values())
+            for f in ts_dir.glob("*.json"):
+                if f.stem not in live:
+                    try:
+                        f.unlink()
+                    except OSError:
+                        pass
+        except Exception as exc:  # pragma: no cover - bookkeeping must never break prune
+            logger.debug("task-state reconcile failed: %s", exc)
+
     def _prune(self, store: Path, working_dir: str, ref: str) -> None:
         """Keep only the last ``max_snapshots`` commits on the per-project ref.
 
@@ -1107,8 +1148,11 @@ class CheckpointManager:
         commits = list_out.splitlines()
         keep = commits[-self.max_snapshots:]
 
-        # Rebuild a linear chain off keep[0]'s tree.
+        # Rebuild a linear chain off keep[0]'s tree. Pruning produces NEW commit
+        # SHAs, so track old→new to migrate the task-state sidecars (otherwise a
+        # kept checkpoint's todos become unreachable after the first prune).
         new_parent: Optional[str] = None
+        sha_map: Dict[str, str] = {}
         for sha in keep:
             ok_tree, tree_sha, _ = _run_git(
                 ["rev-parse", f"{sha}^{{tree}}"], store, working_dir,
@@ -1126,11 +1170,16 @@ class CheckpointManager:
             ok_commit, new_sha, _ = _run_git(args, store, working_dir)
             if not ok_commit or not new_sha:
                 return
+            sha_map[sha] = new_sha
             new_parent = new_sha
 
         if new_parent is None:
             return
         _run_git(["update-ref", ref, new_parent], store, working_dir)
+
+        # Migrate + reconcile task-state sidecars: rename each kept commit's
+        # sidecar old→new, then drop any sidecar not reachable from the new ref.
+        self._reconcile_task_state(store, _project_hash(working_dir), working_dir, sha_map)
 
         # Reclaim objects from the dropped commits.
         _run_git(
@@ -1193,6 +1242,7 @@ class CheckpointManager:
                 keep = commits[1:]  # drop oldest
                 new_parent: Optional[str] = None
                 fail = False
+                size_sha_map: Dict[str, str] = {}
                 for sha in keep:
                     ok_tree, tree_sha, _ = _run_git(
                         ["rev-parse", f"{sha}^{{tree}}"], store, str(store.parent),
@@ -1212,10 +1262,15 @@ class CheckpointManager:
                     if not ok_commit or not new_sha:
                         fail = True
                         break
+                    size_sha_map[sha] = new_sha
                     new_parent = new_sha
                 if fail or new_parent is None:
                     continue
                 _run_git(["update-ref", ref, new_parent], store, str(store.parent))
+                # Migrate/clean task-state sidecars for this ref (same SHA-rewrite
+                # issue as _prune). dir_hash is the ref's last path segment.
+                self._reconcile_task_state(
+                    store, ref.rsplit("/", 1)[-1], str(store.parent), size_sha_map)
                 any_dropped = True
             if not any_dropped:
                 break

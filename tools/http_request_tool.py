@@ -128,11 +128,21 @@ def http_request(args: dict, **_kw) -> str:
         with httpx.Client(follow_redirects=follow_redirects,
                           timeout=timeout_s,
                           event_hooks={"response": [_ssrf_redirect_guard]}) as client:
-            resp = client.request(method, url, **req_kwargs)
-            # Cap the body — read raw bytes and truncate before decoding.
-            raw = resp.content
-            truncated = len(raw) > max_bytes
-            body_bytes = raw[:max_bytes] if truncated else raw
+            # STREAM the body and stop at max_bytes — never buffer the full
+            # response first (a 5GB or chunked-lie body would OOM the agent
+            # before any truncation could apply).
+            with client.stream(method, url, **req_kwargs) as resp:
+                chunks: list[bytes] = []
+                total = 0
+                truncated = False
+                for chunk in resp.iter_bytes():
+                    if total + len(chunk) > max_bytes:
+                        chunks.append(chunk[:max_bytes - total])
+                        truncated = True
+                        break
+                    chunks.append(chunk)
+                    total += len(chunk)
+                body_bytes = b"".join(chunks)
             try:
                 body_text = body_bytes.decode(resp.encoding or "utf-8", errors="replace")
             except (LookupError, TypeError):

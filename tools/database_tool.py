@@ -25,6 +25,7 @@ from __future__ import annotations
 import logging
 import os
 import re
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import urlsplit
 
@@ -76,11 +77,41 @@ def _config_allows_writes() -> bool:
         return False
 
 
+def _sqlite_path_within_cwd(conn_str: str) -> bool:
+    """For a sqlite:// URL, return True only if the DB file is under the cwd."""
+    raw = conn_str[len("sqlite://"):]
+    if conn_str.startswith("sqlite:///"):
+        raw = "/" + conn_str[len("sqlite:///"):]
+    elif raw.startswith("/"):
+        raw = raw.lstrip("/")
+    if raw in ("", ":memory:"):
+        return True
+    try:
+        target = Path(raw).resolve()
+        root = Path(os.getcwd()).resolve()
+    except OSError:
+        return False
+    return target == root or root in target.parents
+
+
 def _resolve_connection(connection: Optional[str]) -> Tuple[Optional[str], Optional[str]]:
-    """Return (conn_string, error). ``connection`` may be a URL or a named ref."""
+    """Return (conn_string, error). ``connection`` may be a URL or a named ref.
+
+    A per-call raw URL (vs a name configured by the operator) is untrusted: for
+    sqlite it could point at any file on disk (sqlite:////etc/passwd), so confine
+    those to the cwd. Operator-configured connections are trusted as-is.
+    """
     conns = _configured_connections()
     if connection and "://" in connection:
-        return connection, None  # explicit URL
+        # Untrusted per-call URL. Allow if it matches a configured value;
+        # otherwise restrict a sqlite path to the project tree.
+        if connection not in conns.values():
+            scheme = urlsplit(connection).scheme.lower()
+            if scheme == "sqlite" and not _sqlite_path_within_cwd(connection):
+                return None, ("Refused: a per-call sqlite path must stay within "
+                              "the project directory. Configure it under "
+                              "database.connections to use an out-of-tree file.")
+        return connection, None
     if not connection:
         if "default" in conns:
             return conns["default"], None
@@ -93,13 +124,71 @@ def _resolve_connection(connection: Optional[str]) -> Tuple[Optional[str], Optio
     return None, f"Unknown connection {connection!r}. Configured: {sorted(conns)}"
 
 
+def _strip_sql_comments(sql: str) -> str:
+    """Remove -- line comments and /* */ block comments (outside string literals)."""
+    out = []
+    i, n = 0, len(sql)
+    in_s = in_d = False
+    while i < n:
+        ch = sql[i]
+        two = sql[i:i + 2]
+        if in_s:
+            out.append(ch)
+            if ch == "'":
+                in_s = False
+            i += 1
+        elif in_d:
+            out.append(ch)
+            if ch == '"':
+                in_d = False
+            i += 1
+        elif ch == "'":
+            in_s = True; out.append(ch); i += 1
+        elif ch == '"':
+            in_d = True; out.append(ch); i += 1
+        elif two == "--":
+            while i < n and sql[i] != "\n":
+                i += 1
+        elif two == "/*":
+            i += 2
+            while i < n and sql[i:i + 2] != "*/":
+                i += 1
+            i += 2
+        else:
+            out.append(ch)
+            i += 1
+    return "".join(out)
+
+
+# Write keywords that, appearing ANYWHERE in a statement, make it data-modifying
+# even if the leading keyword is a read prefix (WITH ... AS (DELETE...), etc.).
+_WRITE_TOKENS_RE = re.compile(
+    r"\b(insert|update|delete|merge|replace|create|drop|alter|truncate|"
+    r"grant|revoke|attach|vacuum)\b", re.IGNORECASE)
+
+
 def _classify_sql(sql: str) -> str:
-    """Return 'read' | 'write' | 'unknown' for the leading statement keyword."""
-    stripped = sql.strip().lstrip("(").lower()
+    """Return 'read' | 'write' | 'unknown'.
+
+    Token-aware: a leading read keyword is NOT trusted on its own — a
+    data-modifying CTE (``WITH x AS (DELETE ... RETURNING) SELECT``) and
+    ``EXPLAIN ANALYZE <write>`` both *execute* the write on Postgres/MySQL, so we
+    scan the whole (comment-stripped) statement for write keywords.
+    """
+    clean = _strip_sql_comments(sql)
+    stripped = clean.strip().lstrip("(").lower()
     first = stripped.split(None, 1)[0] if stripped else ""
+
+    # EXPLAIN ANALYZE actually runs the statement → classify by its inner verb.
+    if first == "explain" and re.search(r"\banalyze\b", stripped):
+        return "write" if _WRITE_TOKENS_RE.search(stripped) else "read"
+
     if first in _READ_ONLY_PREFIXES:
-        # PRAGMA can write (e.g. PRAGMA journal_mode=...); only allow read forms.
-        if first == "pragma" and "=" in sql:
+        if first == "pragma" and "=" in clean:  # writing PRAGMA
+            return "write"
+        # A read-prefixed statement that contains a write keyword (CTE write) is
+        # a write. Guard SELECT/WITH/EXPLAIN specifically.
+        if first in ("with", "select", "explain") and _WRITE_TOKENS_RE.search(stripped):
             return "write"
         return "read"
     if first in _WRITE_PREFIXES:

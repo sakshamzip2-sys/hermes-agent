@@ -113,3 +113,39 @@ def test_task_state_provider_failure_does_not_break_checkpoint(work_dir, checkpo
     mgr = CheckpointManager(enabled=True, task_state_provider=_boom)
     # The file checkpoint still succeeds despite the provider raising.
     assert mgr.ensure_checkpoint(str(work_dir), "s") is True
+
+
+def test_sidecar_survives_prune_and_orphans_cleaned(work_dir, checkpoint_base):
+    """After pruning (which rewrites SHAs), surviving checkpoints keep their
+    todos AND dropped-commit sidecars are deleted (no unbounded leak)."""
+    store = _store_path(checkpoint_base)
+    dir_hash = _project_hash(str(work_dir))
+    todos = {"items": [{"id": "1", "content": "task", "status": "pending"}]}
+    cur = {"v": list(todos["items"])}
+    mgr = CheckpointManager(
+        enabled=True, max_snapshots=2,
+        task_state_provider=lambda: cur["v"],
+    )
+    # Take 5 checkpoints, each with a distinct file change → distinct commits.
+    for i in range(5):
+        (work_dir / "main.py").write_text(f"v{i}\n")
+        cur["v"] = [{"id": "1", "content": f"task {i}", "status": "pending"}]
+        mgr.new_turn()
+        mgr.ensure_checkpoint(str(work_dir), f"snap-{i}")
+
+    ts_dir = store / "task_state" / dir_hash
+    sidecars = list(ts_dir.glob("*.json")) if ts_dir.exists() else []
+    # max_snapshots=2 → at most ~2 sidecars survive (NOT 5 — orphans cleaned).
+    assert len(sidecars) <= 3, f"sidecars leaked: {len(sidecars)}"
+
+    # And the surviving checkpoints' todos are still restorable (SHA migration).
+    cps = mgr.list_checkpoints(str(work_dir))
+    assert cps
+    restored = CheckpointManager(
+        enabled=True,
+        task_state_restorer=lambda t: cur.update(v=t),
+    )
+    result = restored.restore(str(work_dir), cps[0]["hash"])
+    assert result["success"] is True
+    # task_state_restored True means the sidecar survived the prune SHA-rewrite.
+    assert result.get("task_state_restored") is True

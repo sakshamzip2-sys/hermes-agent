@@ -118,6 +118,57 @@ def test_search_missing_index_errors(repo):
     assert "error" in res
 
 
+# --- SECURITY: path confinement (red-team fixes) ---
+
+def test_absolute_path_not_indexed(repo, tmp_path):
+    """An absolute path outside the cwd must be refused (exfil prevention)."""
+    secret = tmp_path.parent / "outside_secret.py"
+    secret.write_text("SECRET_KEY = 'exfil-me-12345'\n")
+    res = _call({"action": "index", "name": "x", "paths": [str(secret)]})
+    # Either no files matched, or the index has zero chunks from the secret.
+    if "error" not in res:
+        s = _call({"action": "search", "name": "x", "query": "exfil-me-12345"})
+        assert all("exfil-me-12345" not in r["snippet"] for r in s.get("results", []))
+
+
+def test_dotdot_traversal_not_indexed(repo, tmp_path):
+    """`../` escaping the cwd must not index parent-tree files."""
+    (tmp_path.parent / "parent_secret.md").write_text("aws_secret_access_key here\n")
+    res = _call({"action": "index", "name": "x", "paths": ["../parent_secret.md"]})
+    if "error" not in res:
+        s = _call({"action": "search", "name": "x", "query": "aws_secret_access_key"})
+        assert all("aws_secret_access_key" not in r["snippet"] for r in s.get("results", []))
+
+
+@pytest.mark.parametrize("bad_name", ["..", ".", "../../etc"])
+def test_unsafe_index_name_refused(repo, bad_name):
+    res = _call({"action": "index", "name": bad_name, "paths": ["."]})
+    # ".." / "." are refused; "../../etc" is sanitized to a safe single segment.
+    if bad_name in ("..", "."):
+        assert "error" in res and "safety" in res["error"].lower()
+
+
+def test_corrupt_matrix_shape_returns_clean_error(repo):
+    """A vocab/matrix shape mismatch returns a clean 'corrupt' error, not a crash."""
+    import numpy as np
+    _call({"action": "index", "name": "repo", "paths": ["."]})
+    # Corrupt the matrix to a wrong shape.
+    mat_path = repo / ".agent/index/repo/matrix.npy"
+    np.save(mat_path, np.zeros((2, 99999), dtype="float32"))
+    res = _call({"action": "search", "name": "repo", "query": "anything"})
+    assert "error" in res
+    assert "corrupt" in res["error"].lower()
+
+
+def test_incremental_actually_reuses(repo):
+    """Re-indexing unchanged files reuses cached chunks (incremental is real)."""
+    _call({"action": "index", "name": "repo", "paths": ["."]})
+    r2 = _call({"action": "index", "name": "repo", "paths": ["."]})
+    manifest = json.loads((repo / ".agent/index/repo/manifest.json").read_text())
+    # All files unchanged → all reused.
+    assert manifest["reused_unchanged"] == r2["files"]
+
+
 def test_unknown_action_errors(repo):
     res = _call({"action": "frobnicate"})
     assert "error" in res

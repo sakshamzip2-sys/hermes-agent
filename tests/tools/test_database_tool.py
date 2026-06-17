@@ -113,9 +113,32 @@ def test_row_cap_and_truncation_flag(db, monkeypatch):
     ("update t set x=1", "write"),
     ("DROP TABLE t", "write"),
     ("VACUUM", "write"),
+    # red-team bypasses — must be classified WRITE:
+    ("WITH x AS (DELETE FROM t RETURNING *) SELECT * FROM x", "write"),  # CTE write
+    ("with t as (insert into a values(1) returning id) select * from t", "write"),
+    ("EXPLAIN ANALYZE DELETE FROM t", "write"),  # EXPLAIN ANALYZE executes
+    ("explain analyze select 1", "read"),        # ...but a read EXPLAIN ANALYZE is read
+    ("SELECT * FROM t /* harmless */", "read"),  # comment doesn't flip it
+    ("/* c */ DELETE FROM t", "write"),          # comment-prefixed write still caught
 ])
 def test_classify_sql(sql, kind):
     assert _classify_sql(sql) == kind
+
+
+def test_cte_write_blocked_at_runtime(db):
+    """A data-modifying CTE must hit the write gate, not slip through as read."""
+    r = _call({"action": "query",
+               "sql": "WITH x AS (DELETE FROM users RETURNING id) SELECT * FROM x"})
+    assert "error" in r
+    assert "allow_writes" in r["error"] or "write" in r["error"].lower()
+
+
+def test_per_call_sqlite_path_confined(db, monkeypatch):
+    """A per-call sqlite URL pointing outside the cwd is refused (no arbitrary file read)."""
+    r = json.loads(database_tool({"action": "query", "connection": "sqlite:////etc/hosts",
+                                  "sql": "SELECT 1"}))
+    assert "error" in r
+    assert "project directory" in r["error"] or "Refused" in r["error"]
 
 
 def test_multiple_statement_detection_ignores_semicolons_in_strings():
