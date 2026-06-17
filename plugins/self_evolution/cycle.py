@@ -35,11 +35,22 @@ async def _maybe_await(result):
 
 
 # --- default step implementations (each lazily resolved + fail-soft) ---------
-def _default_outcomes_step() -> dict:
-    try:
-        from plugins.outcomes import run_cycle
+async def _default_outcomes_step() -> dict:
+    """SENSE rollup + (when enabled) the async batch judge.
 
-        return {"ok": True, "data": run_cycle()}
+    We're already inside an event loop here, so we await the rejudge directly rather than
+    calling the sync ``outcomes.run_cycle`` (which nests asyncio.run and would skip the
+    judge — the exact 'rejudge skipped, running loop' bug seen in the first live cycle)."""
+    try:
+        from plugins.outcomes import _get_engine
+        from plugins.outcomes.config import load_outcomes_config
+
+        eng = _get_engine()
+        data = eng.run_cycle()
+        cfg = load_outcomes_config()
+        if cfg.judge_enabled:
+            data["rejudged"] = await eng.rejudge_recent(standing_orders=cfg.standing_orders)
+        return {"ok": True, "data": data}
     except Exception as exc:  # noqa: BLE001
         return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
 
