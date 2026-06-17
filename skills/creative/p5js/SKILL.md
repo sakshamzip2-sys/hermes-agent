@@ -1,6 +1,6 @@
 ---
 name: p5js
-description: "p5.js sketches: gen art, shaders, interactive, 3D."
+description: "p5.js coding toolkit: shaders (GLSL), WEBGL/3D, interactive sketches, and the p5.js API itself. For generative/algorithmic art (flow fields, particle systems, seeded randomness), prefer the algorithmic-art skill."
 version: 1.0.0
 platforms: [linux, macos, windows]
 metadata:
