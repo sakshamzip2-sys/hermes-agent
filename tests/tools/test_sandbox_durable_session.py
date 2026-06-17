@@ -398,6 +398,33 @@ def test_restore_registers_under_resolved_container_key(monkeypatch):
         terminal_tool._active_environments.pop("default", None)
 
 
+def test_durable_roundtrip_through_default_key(db, monkeypatch):
+    """True end-to-end: top-level env cached under 'default' → persist on close →
+    handle in DB → process 'restart' (clear cache) → resume restores under
+    'default' (where terminal() will find it). Exercises the real resolved-key
+    path, not just register/lookup under the same key."""
+    class _Env:
+        handle = {"backend": "docker", "task_id": "default", "container_id": "c9"}
+
+    terminal_tool.register_active_environment("default", _Env())
+    db.create_session("sess-e2e", "api_server")
+    try:
+        # close path: persist by session_id must find the 'default'-keyed env
+        assert terminal_tool.persist_sandbox_handle("sess-e2e", db) is True
+        assert db.get_session_sandbox_handle("sess-e2e") == {
+            "backend": "docker", "task_id": "default", "container_id": "c9",
+        }
+        # simulate process restart — in-memory cache is gone
+        terminal_tool._active_environments.pop("default", None)
+        # resume path: reattach + re-register under 'default'
+        sentinel = object()
+        monkeypatch.setattr(terminal_tool, "reconnect_environment", lambda h, **k: sentinel)
+        assert terminal_tool.restore_sandbox_for_session("sess-e2e", db, cwd="/w") is sentinel
+        assert terminal_tool._active_environments.get("default") is sentinel
+    finally:
+        terminal_tool._active_environments.pop("default", None)
+
+
 def test_restore_sandbox_reconnect_fails_returns_none(monkeypatch):
     db = MagicMock()
     db.get_session_sandbox_handle.return_value = {

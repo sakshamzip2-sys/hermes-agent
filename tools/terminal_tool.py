@@ -1540,6 +1540,30 @@ def register_active_environment(task_id: str, env) -> None:
         _last_activity[task_id] = time.time()
 
 
+_DURABLE_WARNED: set = set()
+
+
+def _warn_durable_unsupported() -> None:
+    """Warn once per backend that an isolated backend can't reattach on resume.
+
+    docker/e2b implement reconnect; modal/singularity/daytona are isolated but
+    have no reconnect path, so a resumed session silently gets a FRESH sandbox.
+    Surface that once so it isn't a silent surprise."""
+    backend = (os.getenv("TERMINAL_ENV") or "").strip().lower()
+    if (
+        backend in ISOLATED_BACKENDS
+        and backend not in _RECONNECT_BACKENDS
+        and backend not in _DURABLE_WARNED
+    ):
+        _DURABLE_WARNED.add(backend)
+        logger.warning(
+            "durable session resume is not supported for terminal backend %r "
+            "(isolated but no reconnect) — a fresh sandbox will be created on "
+            "resume. Use docker or e2b for durable resume.",
+            backend,
+        )
+
+
 def persist_sandbox_handle(session_id: str, db, *, task_id: Optional[str] = None) -> bool:
     """Persist the live sandbox's reconnect handle for *session_id* via *db*.
 
@@ -1562,6 +1586,12 @@ def persist_sandbox_handle(session_id: str, db, *, task_id: Optional[str] = None
         )
     handle = getattr(env, "handle", None) if env is not None else None
     if not handle:
+        if env is not None:
+            # An env exists but exposes no reconnect token: surface (once per
+            # backend) that durable resume silently won't work for isolated
+            # backends that lack reconnect support (modal/singularity/daytona),
+            # so operators aren't surprised by a fresh sandbox on resume.
+            _warn_durable_unsupported()
         return False
     try:
         db.set_session_sandbox_handle(session_id, handle)
