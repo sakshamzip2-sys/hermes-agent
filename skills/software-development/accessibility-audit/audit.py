@@ -160,7 +160,23 @@ def _css_color(style: str, prop: str) -> Optional[Tuple[int, int, int]]:
     m = re.search(rf"(?<![-\w]){re.escape(prop)}\s*:\s*([^;]+)", style, re.I)
     if not m:
         return None
-    return _parse_color(m.group(1).strip())
+    value = m.group(1).strip()
+    # The `background` shorthand carries more than a color
+    # (`background: #fff url(x) no-repeat`). Pull the first color-like token
+    # rather than trying to parse the whole value.
+    if prop == "background":
+        return _first_color_token(value)
+    return _parse_color(value)
+
+
+def _first_color_token(value: str) -> Optional[Tuple[int, int, int]]:
+    """Extract the first parseable color from a (possibly multi-part) CSS value."""
+    # Try functional colors first (rgb/rgba/hsl spans), then hex, then names.
+    for m in re.finditer(r"(rgba?\([^)]*\)|#[0-9a-fA-F]{3,8}|[a-zA-Z]+)", value):
+        c = _parse_color(m.group(1))
+        if c is not None:
+            return c
+    return None
 
 
 def _parse_color(val: str) -> Optional[Tuple[int, int, int]]:

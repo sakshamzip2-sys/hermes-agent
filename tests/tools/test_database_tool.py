@@ -125,6 +125,27 @@ def test_classify_sql(sql, kind):
     assert _classify_sql(sql) == kind
 
 
+@pytest.mark.parametrize("sql,kind", [
+    # round-3: write keyword inside a STRING LITERAL must NOT classify as write
+    ("SELECT * FROM t WHERE col = 'delete'", "read"),
+    ('SELECT "update" FROM t', "read"),
+    ("SELECT 'INSERT INTO x' AS note", "read"),
+    ("SELECT * FROM updates", "read"),       # table name contains 'update'
+    # ...but a real CTE write is still caught
+    ("WITH x AS (DELETE FROM t RETURNING id) SELECT * FROM x", "write"),
+    ("UPDATE t SET note = 'select'", "write"),
+])
+def test_string_literal_not_misclassified(sql, kind):
+    assert _classify_sql(sql) == kind
+
+
+def test_null_byte_sqlite_path_refused_cleanly():
+    """A null-byte path must be refused, not crash with ValueError."""
+    from tools.database_tool import _resolve_connection
+    conn, err = _resolve_connection("sqlite://foo\x00/etc/passwd")
+    assert conn is None and err is not None
+
+
 def test_cte_write_blocked_at_runtime(db):
     """A data-modifying CTE must hit the write gate, not slip through as read."""
     r = _call({"action": "query",

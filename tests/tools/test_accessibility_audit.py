@@ -130,6 +130,14 @@ def test_background_shorthand_contrast_caught():
     assert any(f["wcag"] == "1.4.3" and "below WCAG AA" in f["message"] for f in findings)
 
 
+def test_background_shorthand_with_url_extracts_color():
+    """round-3: `background:#fff url(...)` must still yield the color, not None."""
+    assert audit._css_color("background:#fff url(x.png) no-repeat", "background") == (255, 255, 255)
+    assert audit._css_color("background: red url(x)", "background") == (255, 0, 0)
+    # and background-color must NOT leak into the `color` lookup:
+    assert audit._css_color("background-color:#000", "color") is None
+
+
 def test_rgba_low_alpha_not_false_passed():
     """A near-transparent text colour shouldn't be reported as opaque-PASS."""
     # rgba black at 0.1 alpha over white → effectively invisible; we skip the

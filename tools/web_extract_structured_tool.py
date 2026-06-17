@@ -94,6 +94,12 @@ def _validate_schema(value: Any, schema: Any) -> bool:
     if not isinstance(schema, dict):
         return False
     t = schema.get("type")
+    # JSON Schema allows a list of types (["string","null"]); OpenAPI uses
+    # `nullable: true`. Honor both so valid schemas aren't falsely rejected.
+    if isinstance(t, list):
+        return any(_validate_schema(value, {**schema, "type": one}) for one in t)
+    if value is None and schema.get("nullable") is True:
+        return True
     if t == "null":
         return value is None
     if t is not None and t not in _KNOWN_SCHEMA_TYPES:

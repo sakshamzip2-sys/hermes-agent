@@ -89,7 +89,7 @@ def _sqlite_path_within_cwd(conn_str: str) -> bool:
     try:
         target = Path(raw).resolve()
         root = Path(os.getcwd()).resolve()
-    except OSError:
+    except (OSError, ValueError):  # ValueError: embedded null byte
         return False
     return target == root or root in target.parents
 
@@ -167,28 +167,57 @@ _WRITE_TOKENS_RE = re.compile(
     r"grant|revoke|attach|vacuum)\b", re.IGNORECASE)
 
 
+def _strip_string_literals(sql: str) -> str:
+    """Blank out '...' and "..." contents so a write keyword inside a string or
+    quoted identifier (``WHERE col = 'delete'``) isn't mistaken for a real verb.
+    Handles doubled-quote escapes ('' / "")."""
+    out = []
+    i, n = 0, len(sql)
+    while i < n:
+        ch = sql[i]
+        if ch in ("'", '"'):
+            q = ch
+            i += 1
+            while i < n:
+                if sql[i] == q:
+                    if i + 1 < n and sql[i + 1] == q:  # doubled escape
+                        i += 2
+                        continue
+                    i += 1
+                    break
+                i += 1
+            out.append(" ")  # replace the whole literal with a space
+        else:
+            out.append(ch)
+            i += 1
+    return "".join(out)
+
+
 def _classify_sql(sql: str) -> str:
     """Return 'read' | 'write' | 'unknown'.
 
     Token-aware: a leading read keyword is NOT trusted on its own — a
     data-modifying CTE (``WITH x AS (DELETE ... RETURNING) SELECT``) and
     ``EXPLAIN ANALYZE <write>`` both *execute* the write on Postgres/MySQL, so we
-    scan the whole (comment-stripped) statement for write keywords.
+    scan the whole statement for write keywords. Comments AND string literals are
+    stripped first so a keyword inside a string (``WHERE x = 'delete'``) doesn't
+    over-classify a legit read as a write.
     """
     clean = _strip_sql_comments(sql)
+    scan = _strip_string_literals(clean).lower()  # write-keyword scan target
     stripped = clean.strip().lstrip("(").lower()
     first = stripped.split(None, 1)[0] if stripped else ""
 
     # EXPLAIN ANALYZE actually runs the statement → classify by its inner verb.
-    if first == "explain" and re.search(r"\banalyze\b", stripped):
-        return "write" if _WRITE_TOKENS_RE.search(stripped) else "read"
+    if first == "explain" and re.search(r"\banalyze\b", scan):
+        return "write" if _WRITE_TOKENS_RE.search(scan) else "read"
 
     if first in _READ_ONLY_PREFIXES:
         if first == "pragma" and "=" in clean:  # writing PRAGMA
             return "write"
         # A read-prefixed statement that contains a write keyword (CTE write) is
         # a write. Guard SELECT/WITH/EXPLAIN specifically.
-        if first in ("with", "select", "explain") and _WRITE_TOKENS_RE.search(stripped):
+        if first in ("with", "select", "explain") and _WRITE_TOKENS_RE.search(scan):
             return "write"
         return "read"
     if first in _WRITE_PREFIXES:

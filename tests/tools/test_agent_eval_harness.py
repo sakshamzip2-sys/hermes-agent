@@ -145,6 +145,25 @@ def test_unknown_schema_type_fails_closed():
     assert ev._validate_schema("x", {"type": "null"}) is False
 
 
+def test_list_typed_schema_is_valid_not_a_crash():
+    """JSON-Schema `type: [string, null]` must validate, not raise (round-3 regression)."""
+    schema = {"type": ["string", "null"]}
+    assert ev._validate_schema("x", schema) is True
+    assert ev._validate_schema(None, schema) is True
+    assert ev._validate_schema(5, schema) is False
+    # OpenAPI nullable too:
+    assert ev._validate_schema(None, {"type": "string", "nullable": True}) is True
+
+
+def test_list_typed_schema_through_full_gate(tmp_path):
+    """A valid list-typed output must PASS the gate, not be reported as a crash."""
+    cases = [{"name": "c", "assertions": [
+        {"output_json_schema": {"type": ["string", "null"]}}]}]
+    traces = [{"case": "c", "output": '"hello"'}]
+    report = ev.run_eval(cases, traces, threshold=1.0)
+    assert report["gate_passed"] is True
+
+
 def test_hallucinated_tool_fails_when_available_tools_omitted():
     """Omitting available_tools must FAIL the check (can't be used to hide it)."""
     cases = [{"name": "x", "assertions": ["no_hallucinated_tool"]}]
