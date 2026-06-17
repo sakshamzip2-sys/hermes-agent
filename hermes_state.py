@@ -1348,6 +1348,58 @@ class SessionDB:
             conn.execute("UPDATE sessions SET cwd = ? WHERE id = ?", (cwd, session_id))
 
         self._execute_write(_do)
+
+    def set_session_sandbox_handle(
+        self, session_id: str, handle: Optional[Dict[str, Any]]
+    ) -> None:
+        """Persist (or clear) the live sandbox reconnect token for a session.
+
+        Stored under ``model_config.$._sandbox_handle`` (the same namespaced-JSON
+        pattern used by ``$._branched_from`` / ``$._delegate_from``) so a resumed
+        session can reattach to the SAME sandbox — preserving its filesystem,
+        installed packages, and background processes — instead of spawning a fresh
+        one.  ``handle=None`` removes the key without disturbing sibling
+        model_config entries.  No schema migration is required.
+        """
+        if not session_id:
+            return
+
+        def _do(conn):
+            if handle is None:
+                conn.execute(
+                    "UPDATE sessions SET model_config = "
+                    "json_remove(COALESCE(model_config, '{}'), '$._sandbox_handle') "
+                    "WHERE id = ?",
+                    (session_id,),
+                )
+            else:
+                conn.execute(
+                    "UPDATE sessions SET model_config = "
+                    "json_set(COALESCE(model_config, '{}'), '$._sandbox_handle', json(?)) "
+                    "WHERE id = ?",
+                    (json.dumps(handle), session_id),
+                )
+
+        self._execute_write(_do)
+
+    def get_session_sandbox_handle(
+        self, session_id: str
+    ) -> Optional[Dict[str, Any]]:
+        """Return the persisted sandbox reconnect token for a session, or None."""
+        if not session_id:
+            return None
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT json_extract(model_config, '$._sandbox_handle') "
+                "FROM sessions WHERE id = ?",
+                (session_id,),
+            ).fetchone()
+        if not row or row[0] is None:
+            return None
+        try:
+            return json.loads(row[0])
+        except (TypeError, ValueError):
+            return None
     # ──────────────────────────────────────────────────────────────────────
     # Compression locks
     # ──────────────────────────────────────────────────────────────────────

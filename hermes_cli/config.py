@@ -1780,6 +1780,12 @@ DEFAULT_CONFIG = {
                                  # "low", "minimal", "none" (empty = inherit parent's level)
         "max_concurrent_children": 3,  # max parallel children per batch; floor of 1 enforced, no ceiling
         "max_async_children": 3,  # max concurrent background (background=true) subagents; new dispatches rejected at capacity
+        # Sandbox isolation for delegated children. "shared" (default): children
+        # share the parent's one long-lived container (one /workspace, one set of
+        # installed packages). "isolated": each child gets its OWN sandbox via the
+        # active isolatable backend (docker/modal/daytona/e2b); no-op on the
+        # 'local' backend (which cannot isolate).
+        "subagent_sandbox": "shared",  # "shared" | "isolated"
         # Orchestrator role controls (see tools/delegate_tool.py:_get_max_spawn_depth
         # and _get_orchestrator_enabled).  Floored at 1, no upper ceiling —
         # raise deliberately, each level multiplies API cost.

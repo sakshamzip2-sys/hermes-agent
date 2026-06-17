@@ -37,6 +37,7 @@ from toolsets import TOOLSETS
 # Must match hermes_cli.runtime_provider.RUNTIME_PROVIDER_TYPE_CUSTOM.
 _RUNTIME_PROVIDER_CUSTOM = "custom"
 from tools import file_state
+from tools.sandbox_resolver import ISOLATED_BACKENDS, resolve_terminal_backend
 from tools.terminal_tool import set_approval_callback as _set_subagent_approval_cb
 from utils import base_url_hostname, is_truthy_value
 
@@ -185,6 +186,86 @@ def _register_subagent(record: Dict[str, Any]) -> None:
 def _unregister_subagent(subagent_id: str) -> None:
     with _active_subagents_lock:
         _active_subagents.pop(subagent_id, None)
+    # If this child ran in its OWN isolated sandbox, tear it down so per-child
+    # containers/sandboxes don't accumulate. Shared-mode children registered no
+    # override and leave the parent's sandbox untouched.
+    try:
+        from tools.terminal_tool import (
+            _task_env_overrides,
+            cleanup_vm,
+            clear_task_env_overrides,
+        )
+
+        if subagent_id in _task_env_overrides:
+            clear_task_env_overrides(subagent_id)
+            try:
+                # force_remove: an isolated child sandbox is per-task and should
+                # be destroyed regardless of the global persist preference.
+                cleanup_vm(subagent_id, force_remove=True)
+            except Exception as exc:  # noqa: BLE001
+                logger.debug(
+                    "isolated subagent %s sandbox teardown failed: %s",
+                    subagent_id,
+                    exc,
+                )
+    except Exception:  # noqa: BLE001 — never let cleanup break unregister
+        pass
+
+
+_DEFAULT_SUBAGENT_SANDBOX = "shared"
+
+
+def _get_subagent_sandbox_mode() -> str:
+    """Return ``'isolated'`` or ``'shared'`` (default) from
+    ``delegation.subagent_sandbox``."""
+    cfg = _load_config()
+    val = cfg.get("subagent_sandbox")
+    if isinstance(val, str) and val.strip().lower() == "isolated":
+        return "isolated"
+    return _DEFAULT_SUBAGENT_SANDBOX
+
+
+def _resolve_isolatable_backend() -> Optional[str]:
+    """Resolve the active terminal backend to a concrete *isolatable* backend.
+
+    Returns the backend name (``'docker'``/``'modal'``/``'daytona'``/...,
+    eventually ``'e2b'``) when it provides real kernel/sandbox isolation, else
+    ``None`` (e.g. ``'local'`` cannot isolate).
+    """
+    raw = os.getenv("TERMINAL_ENV") or "auto"
+    try:
+        backend = resolve_terminal_backend(raw)
+    except Exception:  # noqa: BLE001 — probe failure ⇒ cannot guarantee isolation
+        return None
+    return backend if backend in ISOLATED_BACKENDS else None
+
+
+def _maybe_isolate_child_sandbox(subagent_id: str) -> bool:
+    """Give a delegated child its OWN sandbox when
+    ``delegation.subagent_sandbox == 'isolated'`` and the active backend can
+    isolate.
+
+    Reuses the existing per-task override hook: registering an ``env_type``
+    override makes :func:`terminal_tool._resolve_container_task_id` return the
+    child's own id instead of collapsing it to the shared ``'default'``
+    container.  Returns ``True`` iff isolation was applied.
+    """
+    if _get_subagent_sandbox_mode() != "isolated":
+        return False
+    backend = _resolve_isolatable_backend()
+    if backend is None:
+        logger.warning(
+            "delegation.subagent_sandbox=isolated but the active terminal backend "
+            "cannot isolate (e.g. 'local'); subagent %s will share the parent "
+            "sandbox. Set terminal.backend to docker/modal/daytona/e2b to isolate.",
+            subagent_id,
+        )
+        return False
+    from tools.terminal_tool import register_task_env_overrides
+
+    register_task_env_overrides(subagent_id, {"env_type": backend})
+    logger.info("subagent %s isolated in its own %s sandbox", subagent_id, backend)
+    return True
 
 
 def interrupt_subagent(subagent_id: str) -> bool:
@@ -1024,6 +1105,11 @@ def _build_child_agent(
     subagent_id = f"sa-{task_index}-{_uuid.uuid4().hex[:8]}"
     parent_subagent_id = getattr(parent_agent, "_subagent_id", None)
     tui_depth = max(0, child_depth - 1)  # 0 = first-level child for the UI
+
+    # Optionally give this child its OWN sandbox (delegation.subagent_sandbox:
+    # isolated). No-op in the default 'shared' mode, so existing behavior — all
+    # children sharing the parent container — is unchanged unless opted in.
+    _maybe_isolate_child_sandbox(subagent_id)
 
     delegation_cfg = _load_config()
 

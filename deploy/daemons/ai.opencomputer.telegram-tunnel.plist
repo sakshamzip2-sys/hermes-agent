@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  OpenComputer Telegram SOCKS tunnel.
+
+  The local network DPI-blocks Telegram's Bot API (/bot<token>/... times out),
+  so the gateway routes Telegram through TELEGRAM_PROXY=socks5://127.0.0.1:1080
+  (set in ~/.hermes/.env). This job keeps that SOCKS5 endpoint alive by holding
+  an `ssh -N -D 1080` tunnel through a Hetzner VM in Germany (agent-0ef24345,
+  100.124.164.84) which is NOT blocked. KeepAlive=true relaunches it if the
+  link drops; ServerAliveInterval detects dead links fast.
+
+  Install:
+    cp ai.opencomputer.telegram-tunnel.plist ~/Library/LaunchAgents/
+    launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/ai.opencomputer.telegram-tunnel.plist
+    launchctl kickstart -k gui/$(id -u)/ai.opencomputer.telegram-tunnel
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>ai.opencomputer.telegram-tunnel</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/bin/ssh</string>
+        <string>-N</string>
+        <string>-D</string>
+        <string>127.0.0.1:1080</string>
+        <string>-o</string>
+        <string>BatchMode=yes</string>
+        <string>-o</string>
+        <string>ExitOnForwardFailure=yes</string>
+        <string>-o</string>
+        <string>StrictHostKeyChecking=accept-new</string>
+        <string>-o</string>
+        <string>ServerAliveInterval=30</string>
+        <string>-o</string>
+        <string>ServerAliveCountMax=3</string>
+        <string>root@100.124.164.84</string>
+    </array>
+
+    <!-- Relaunch whenever the tunnel exits (network drop, VM reboot, sleep). -->
+    <key>KeepAlive</key>
+    <true/>
+    <key>RunAtLoad</key>
+    <true/>
+    <!-- Back off so a hard-down VM doesn't spin ssh in a tight loop. -->
+    <key>ThrottleInterval</key>
+    <integer>15</integer>
+
+    <key>StandardOutPath</key>
+    <string>/Users/saksham/Library/Logs/opencomputer/telegram-tunnel.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/saksham/Library/Logs/opencomputer/telegram-tunnel.err.log</string>
+</dict>
+</plist>

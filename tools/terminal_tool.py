@@ -1449,6 +1449,46 @@ def _create_environment(env_type: str, image: str, cwd: str, timeout: int,
         )
 
 
+# ---------------------------------------------------------------------------
+# Durable-session reconnect (resumable sandboxes)
+# ---------------------------------------------------------------------------
+#
+# Maps a persisted handle's ``backend`` to the environment class that knows how
+# to reattach to it (see ``BaseEnvironment.handle`` / ``.reconnect``).  Only
+# backends that own a *durable* sandbox and override ``reconnect`` register here;
+# ephemeral ``local`` never does.  New backends (e.g. e2b) register themselves.
+_RECONNECT_BACKENDS: Dict[str, Any] = {
+    "docker": _DockerEnvironment,
+}
+
+
+def reconnect_environment(
+    handle: Optional[Dict[str, Any]],
+    *,
+    cwd: str = "~",
+    timeout: int = 120,
+    env: Optional[Dict[str, Any]] = None,
+):
+    """Reattach to the sandbox described by a persisted *handle*.
+
+    Returns a live environment bound to the original sandbox, or ``None`` when
+    the handle is empty/unknown, the backend cannot reconnect, or the sandbox no
+    longer exists.  Never raises — callers fall back to creating a fresh
+    environment via :func:`_create_environment`.
+    """
+    if not isinstance(handle, dict):
+        return None
+    backend = handle.get("backend")
+    cls = _RECONNECT_BACKENDS.get(backend) if backend else None
+    if cls is None:
+        return None
+    try:
+        return cls.reconnect(handle, cwd=cwd, timeout=timeout, env=env)
+    except Exception as exc:  # noqa: BLE001 — reconnect must degrade gracefully
+        logger.warning("reconnect_environment(%s) failed: %s", backend, exc)
+        return None
+
+
 def _cleanup_inactive_envs(lifetime_seconds: int = 300):
     """Clean up environments that have been inactive for longer than lifetime_seconds."""
     current_time = time.time()

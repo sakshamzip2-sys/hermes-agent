@@ -500,6 +500,30 @@ def _ensure_docker_available() -> None:
             )
 
 
+def _docker_container_alive(container_id: str) -> bool:
+    """Return True if a container with *container_id* is currently running.
+
+    Used by :meth:`DockerEnvironment.reconnect` to decide whether a persisted
+    sandbox handle can be reattached or has been stopped/reaped in the meantime.
+    Never raises — a probe failure is treated as "not alive".
+    """
+    if not container_id:
+        return False
+    docker = find_docker() or "docker"
+    try:
+        out = subprocess.run(
+            [docker, "ps", "-q", "--no-trunc", "--filter", f"id={container_id}"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            stdin=subprocess.DEVNULL,  # Docker Desktop (macOS) can hang on stdin
+        )
+    except Exception as e:  # noqa: BLE001 — probe failure ⇒ treat as dead
+        logger.debug("docker liveness probe for %s failed: %s", container_id[:12], e)
+        return False
+    return bool(out.stdout.strip())
+
+
 class DockerEnvironment(BaseEnvironment):
     """Hardened Docker container execution with resource limits and persistence.
 
@@ -531,6 +555,7 @@ class DockerEnvironment(BaseEnvironment):
         run_as_host_user: bool = False,
         extra_args: list = None,
         persist_across_processes: bool = True,
+        reuse_container_id: Optional[str] = None,
     ):
         if cwd == "~":
             cwd = "/root"
@@ -825,7 +850,24 @@ class DockerEnvironment(BaseEnvironment):
         # false`` (or run ``docker rm -f`` against the labeled container) to
         # force a clean start.
         reused = False
-        if persist_across_processes:
+        if reuse_container_id:
+            # Durable-session resume: reattach to a SPECIFIC, known container by
+            # id — bypass the label probe + `docker run` entirely. This closes
+            # the TOCTOU window where a container that died between the caller's
+            # liveness check and here would otherwise fall through to a
+            # `docker run` with the placeholder image. We re-verify liveness and
+            # fail closed (raise) rather than silently create a new container.
+            if not _docker_container_alive(reuse_container_id):
+                raise RuntimeError(
+                    f"cannot reattach: container {reuse_container_id[:12]} is not running"
+                )
+            self._container_id = reuse_container_id
+            reused = True
+            logger.info(
+                "Reattached to container %s (durable resume, task=%s)",
+                reuse_container_id[:12], task_label,
+            )
+        elif persist_across_processes:
             existing = self._find_reusable_container(task_label, profile_name)
             if existing is not None:
                 container_id, state = existing
@@ -1176,6 +1218,55 @@ class DockerEnvironment(BaseEnvironment):
             if state == "running" and running is None:
                 running = (cid, state)
         return running or first
+
+    @property
+    def handle(self):
+        """Reconnect token for cross-process reattachment to this container.
+
+        Only meaningful while the container persists across processes (the
+        default).  A non-persistent container is torn down on cleanup, so there
+        is nothing to reattach to and we return ``None``.
+        """
+        if not getattr(self, "_container_id", None):
+            return None
+        if not getattr(self, "_persist_across_processes", False):
+            return None
+        return {
+            "backend": "docker",
+            "task_id": getattr(self, "_task_id", "default"),
+            "container_id": self._container_id,
+        }
+
+    @classmethod
+    def reconnect(cls, handle, *, cwd, timeout, env=None):
+        """Reattach to the persistent container named in *handle*, or ``None``.
+
+        Verifies the container is still running, then reconstructs a
+        ``DockerEnvironment`` with the original ``task_id`` so the label-keyed
+        reuse path in ``__init__`` rebinds to the SAME container — its
+        filesystem, installed packages, and background processes intact.
+        Returns ``None`` if the container has been stopped/reaped so the caller
+        can fall back to a fresh sandbox.  Never raises.
+        """
+        container_id = handle.get("container_id")
+        if not container_id:
+            return None
+        if not _docker_container_alive(container_id):
+            return None
+        task_id = handle.get("task_id", "default")
+        try:
+            return cls(
+                image="",
+                cwd=cwd,
+                timeout=timeout,
+                task_id=task_id,
+                env=env,
+                persist_across_processes=True,
+                reuse_container_id=container_id,
+            )
+        except Exception as exc:  # noqa: BLE001 — reattach must fail closed, not raise
+            logger.debug("docker reattach to %s failed: %s", container_id[:12], exc)
+            return None
 
     def cleanup(self, *, force_remove: bool = False):
         """Tear down the container according to persist mode and *force_remove*.

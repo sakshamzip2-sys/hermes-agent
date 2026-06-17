@@ -345,6 +345,44 @@ class BaseEnvironment(ABC):
         ...
 
     # ------------------------------------------------------------------
+    # Durable-session reconnect seam (resumable sandboxes)
+    # ------------------------------------------------------------------
+
+    @property
+    def handle(self) -> "dict | None":
+        """A JSON-serializable token identifying this live sandbox for later
+        reattachment, or ``None`` if this backend cannot be reconnected to.
+
+        The session layer persists this (see
+        ``SessionDB.set_session_sandbox_handle``) so a resumed session can
+        reattach to the *same* sandbox — preserving its filesystem, installed
+        packages, and background processes — instead of spawning a fresh one.
+        Ephemeral backends (local) keep the default ``None``; durable backends
+        (docker, modal, e2b, ...) override this to return e.g.
+        ``{"backend": "docker", "task_id": ..., "container_id": ...}``.
+        """
+        return None
+
+    @classmethod
+    def reconnect(
+        cls,
+        handle: dict,
+        *,
+        cwd: str,
+        timeout: int,
+        env: "dict | None" = None,
+    ) -> "BaseEnvironment | None":
+        """Reattach to an existing sandbox previously described by ``handle``.
+
+        Returns a live environment bound to the original sandbox, or ``None`` if
+        the sandbox no longer exists or this backend cannot reconnect.  The
+        default cannot reconnect; durable backends override this.  Implementations
+        MUST NOT raise on a missing/stale sandbox — return ``None`` so the caller
+        falls back to creating a fresh environment.
+        """
+        return None
+
+    # ------------------------------------------------------------------
     # Session snapshot (init_session)
     # ------------------------------------------------------------------
 
