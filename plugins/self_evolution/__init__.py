@@ -92,6 +92,8 @@ def _handle_slash(raw_args: str):
             return cycle.render(run(force=force))
         except Exception as exc:  # noqa: BLE001
             return f"self-evolve run failed: {type(exc).__name__}: {exc}"
+    if sub == "schedule":
+        return schedule_background_job()
     return _render_status(_status())
 
 
@@ -102,6 +104,9 @@ def _cli_setup(subparser) -> None:
     p_run.add_argument("--force", action="store_true", help="bypass dreaming debounce")
     p_run.set_defaults(func=lambda a: _cli_run(force=getattr(a, "force", False)))
     sub.add_parser("plan", help="dry-run").set_defaults(func=lambda a: _cli_plan())
+    p_sched = sub.add_parser("schedule", help="register the nightly cron from config")
+    p_sched.add_argument("--cron", default=None, help="override the cron expression")
+    p_sched.set_defaults(func=lambda a: _cli_schedule(getattr(a, "cron", None)))
     subparser.set_defaults(func=lambda a: _cli_status())
 
 
@@ -117,6 +122,11 @@ def _cli_plan() -> int:
 
 def _cli_run(*, force: bool) -> int:
     print(cycle.render(run(force=force)))
+    return 0
+
+
+def _cli_schedule(cron: str | None) -> int:
+    print(schedule_background_job(schedule=cron))
     return 0
 
 
@@ -150,12 +160,30 @@ def schedule_background_job(*, schedule: str | None = None) -> str:
     try:
         from cron.jobs import create_job
 
+        # Idempotent: drop any prior self-evolve-tick job so re-registering (e.g. after a
+        # schedule change) replaces rather than duplicates it.
+        try:
+            from cron.jobs import list_jobs, remove_job
+
+            for j in list_jobs(include_disabled=True):
+                if j.get("name") == "self-evolve-tick":
+                    remove_job(j.get("id") or "self-evolve-tick")
+        except Exception as exc:  # noqa: BLE001 — best-effort dedup
+            logger.debug("self_evolution: could not dedup prior cron jobs (%s)", exc)
+
         home = _home_dir()
         home.mkdir(parents=True, exist_ok=True)
         script = home / "self_evolve_tick.py"
+        # The tick prints a one-line summary so the cron's local delivery shows what
+        # the nightly cycle did; failures are surfaced (not silently swallowed) but
+        # never raise out of the tick.
         script.write_text(
-            "try:\n    from plugins.self_evolution import run\n    run(force=False)\n"
-            "except Exception:\n    pass\n",
+            "from plugins.self_evolution import run\n"
+            "from plugins.self_evolution import cycle as _cycle\n"
+            "try:\n"
+            "    print(_cycle.render(run(force=False)))\n"
+            "except Exception as _exc:\n"
+            "    print(f'self-evolution tick failed: {type(_exc).__name__}: {_exc}')\n",
             encoding="utf-8",
         )
         job = create_job(prompt=None, schedule=sched, name="self-evolve-tick",
