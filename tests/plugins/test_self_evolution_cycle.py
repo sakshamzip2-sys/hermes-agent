@@ -29,6 +29,10 @@ def _steps(order, *, dream_facts=("fact A",), fail=None):
         order.append("cross_engine")
         return {"ok": True, "data": {"targets": []}}
 
+    async def feed_up():
+        order.append("feed_up")
+        return {"ok": True, "skipped": "test"}
+
     async def playbook(facts):
         order.append(("playbook", tuple(facts)))
         return {"ok": True, "data": {"created": list(facts)}}
@@ -40,15 +44,15 @@ def _steps(order, *, dream_facts=("fact A",), fail=None):
         except Exception as exc:  # noqa: BLE001
             return {"ok": False, "error": str(exc)}
 
-    return {"outcomes": outcomes_safe, "dream": dream,
-            "cross_engine": cross_engine, "playbook": playbook}
+    return {"outcomes": outcomes_safe, "dream": dream, "cross_engine": cross_engine,
+            "feed_up": feed_up, "playbook": playbook}
 
 
 def test_steps_run_in_dependency_order() -> None:
     order = []
     _run(cycle.run_cycle(steps=_steps(order)))
     names = [o if isinstance(o, str) else o[0] for o in order]
-    assert names == ["outcomes", "dream", "cross_engine", "playbook"]
+    assert names == ["outcomes", "dream", "cross_engine", "feed_up", "playbook"]
 
 
 def test_dream_facts_flow_into_playbook() -> None:

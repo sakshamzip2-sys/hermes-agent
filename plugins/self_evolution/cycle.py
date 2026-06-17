@@ -86,10 +86,33 @@ async def _default_playbook_step(facts: list) -> dict:
         return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
 
 
+async def _default_feed_up_step() -> dict:
+    """ENRICH↑ : push per-session outcome scores up to GBrain. Gated + fail-soft.
+
+    Off unless ``self_evolution.feed_up`` is true — it writes to an external engine, so it's
+    opt-in. Runs on a worker thread (the GBrain RPC is sync httpx)."""
+    import asyncio
+
+    try:
+        from .config import load_self_evolution_config
+
+        if not getattr(load_self_evolution_config(), "feed_up", False):
+            return {"ok": True, "skipped": "feed_up disabled"}
+        from plugins.outcomes.store import OutcomesStore, default_db_path
+        from plugins.self_evolution.feed_up import feed_up
+
+        path = default_db_path()
+        scores = OutcomesStore(path).recent_session_scores(limit=20) if path.exists() else []
+        return await asyncio.to_thread(feed_up, scores)
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
+
+
 _DEFAULT_STEPS = {
     "outcomes": _default_outcomes_step,
     "dream": _default_dream_step,
     "cross_engine": _default_cross_engine_step,
+    "feed_up": _default_feed_up_step,
     "playbook": _default_playbook_step,
 }
 
@@ -114,8 +137,10 @@ async def run_cycle(*, force: bool = False, plan: bool = False, steps: Optional[
     dream = await _maybe_await(s["dream"](force=force))
     summary["steps"]["dream"] = dream
     promoted_facts = dream.get("promoted_facts", []) if isinstance(dream, dict) else []
-    # 3. ENRICH (cross-engine)
+    # 3. ENRICH ↓ (cross-engine: trigger Honcho/GBrain dreams + consume their facts)
     summary["steps"]["cross_engine"] = await _maybe_await(s["cross_engine"](force=force))
+    # 3b. ENRICH ↑ (feed local outcomes UP to GBrain so it weights high-signal sessions)
+    summary["steps"]["feed_up"] = await _maybe_await(s["feed_up"]())
     # 4. EVOLVE (turn recurring promoted patterns into skills)
     summary["steps"]["playbook"] = await _maybe_await(s["playbook"](promoted_facts))
 

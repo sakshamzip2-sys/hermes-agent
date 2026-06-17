@@ -17,6 +17,9 @@ logger = logging.getLogger("hermes.plugins.self_evolution.config")
 class SelfEvolutionConfig:
     enabled: bool = False
     schedule: str = ""
+    feed_up: bool = False
+    """ENRICH↑: push per-session outcome scores up to GBrain each cycle. Opt-in —
+    it writes to an external engine."""
 
 
 def load_self_evolution_config(block: dict | None = None) -> SelfEvolutionConfig:
@@ -33,4 +36,5 @@ def load_self_evolution_config(block: dict | None = None) -> SelfEvolutionConfig
     return SelfEvolutionConfig(
         enabled=bool(block.get("enabled", False)),
         schedule=str(block.get("schedule", "") or ""),
+        feed_up=bool(block.get("feed_up", False)),
     )
