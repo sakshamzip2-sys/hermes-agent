@@ -1195,6 +1195,16 @@ class APIServerAdapter(BasePlatformAdapter):
             _profile = "default"
 
         runtime = read_runtime_status() or {}
+        # Active execution sandbox so the UI can show "Docker sandbox" vs "Host".
+        # Read the (already-resolved) TERMINAL_ENV without probing — sandbox_resolver
+        # writes the concrete backend back here after first use; "auto" means it
+        # resolves on the first agent terminal call.
+        _term_backend = (os.getenv("TERMINAL_ENV") or "auto").strip().lower()
+        try:
+            from tools.sandbox_resolver import ISOLATED_BACKENDS as _ISO
+            _sandboxed = _term_backend in _ISO
+        except Exception:
+            _sandboxed = False
         return web.json_response({
             "status": "ok",
             "platform": "open-computer",
@@ -1206,6 +1216,8 @@ class APIServerAdapter(BasePlatformAdapter):
             "exit_reason": runtime.get("exit_reason"),
             "updated_at": runtime.get("updated_at"),
             "pid": os.getpid(),
+            "terminal_backend": _term_backend,
+            "sandboxed": _sandboxed,
         })
 
     async def _handle_models(self, request: "web.Request") -> "web.Response":
@@ -1525,6 +1537,29 @@ class APIServerAdapter(BasePlatformAdapter):
             "offset": offset,
             "has_more": len(sessions) == limit,
         })
+
+    async def _handle_get_memory(self, request: "web.Request") -> "web.Response":
+        """GET /api/memory — unified read-only view of the three memory planes
+        (local Markdown, Honcho, GBrain) that powers the frontend Memory tab."""
+        auth_err = self._check_auth(request)
+        if auth_err:
+            return auth_err
+        try:
+            from gateway.platforms.memory_aggregator import build_memory_payload
+            from hermes_constants import get_hermes_home
+
+            payload = await build_memory_payload(get_hermes_home())
+            return web.json_response(payload)
+        except Exception as e:  # never 500 the dashboard
+            logger.warning("memory aggregation failed: %s", e)
+            return web.json_response(
+                {
+                    "local": {"enabled": False, "error": str(e)},
+                    "honcho": {"enabled": False, "error": str(e)},
+                    "gbrain": {"enabled": False, "error": str(e)},
+                },
+                status=200,
+            )
 
     async def _handle_create_session(self, request: "web.Request") -> "web.Response":
         """POST /api/sessions — create an empty OpenComputer session row."""
@@ -4681,6 +4716,7 @@ class APIServerAdapter(BasePlatformAdapter):
             self._app.router.add_post("/api/jobs/{job_id}/run", self._handle_run_job)
             # Parallel-agents read-only surface (oc_flow / oc_agents / oc_teams plugins)
             self._app.router.add_get("/api/parallel-agents", self._handle_parallel_agents)
+            self._app.router.add_get("/api/memory", self._handle_get_memory)
             # Authenticated passthrough to the on-box Open Design daemon so the
             # workspace "Open Design" panel reaches it over the agent's existing
             # tunnel without exposing the daemon publicly.

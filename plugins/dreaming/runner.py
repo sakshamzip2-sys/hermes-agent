@@ -126,6 +126,12 @@ async def run_dream_cycle(
             norm = " ".join(fact.lower().split())
             if not norm or norm in seen_facts:
                 continue
+            # No-recursion invariant: never re-dream a cross-fed/imported line.
+            # A derived fact (provenance-tagged by the orchestrator's importer)
+            # must be excluded from the candidate pool so it can't loop back
+            # through extraction -> promotion -> re-extraction (model collapse).
+            if candmod.is_derived_fact(fact):
+                continue
             seen_facts.add(norm)
             cid = _candidate_id(norm, fact)
             fact_by_id[cid] = fact
@@ -223,6 +229,8 @@ async def _rescore_dreams(cfg, sdb: Path, existing_facts: list[str]) -> DreamRun
     for f in dreams_facts:
         norm = " ".join(f.lower().split())
         if not norm or norm in seen:
+            continue
+        if candmod.is_derived_fact(f):  # no-recursion invariant (see above)
             continue
         seen.add(norm)
         cid = _candidate_id(norm, f)
