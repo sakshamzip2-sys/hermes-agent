@@ -1263,6 +1263,20 @@ also ship under `plugins/memory/`. The default is left flat (the dreaming
 consolidation already adds intelligence and needs no key); switching providers is
 a one-line config change, not new code.
 
+### `database` — parameterized SQL (GATED, read-only default)
+
+`tools/database_tool.py` runs parameterized SQL against SQLite / Postgres
+(psycopg3) / MySQL (pymysql), dialect inferred from the connection-string scheme.
+`action=query` (one statement, params bound separately — never interpolated) /
+`schema` (list tables or describe one). **Read-only by default**: writes
+(INSERT/UPDATE/DELETE/DDL, plus writing PRAGMAs) are refused unless BOTH
+`allow_writes:true` on the call AND `database.allow_writes:true` in config — the
+non-overridable switch — and every write decision is recorded to the gate audit
+log. Stacked statements are rejected, rows are capped + flagged, and connection
+credentials are redacted from logs. **Gated**: `check_fn` hides the tool unless a
+connection is configured (`DATABASE_URL` / `DATABASE_URL_<NAME>` env or
+`database.connections` in config.yaml).
+
 ---
 
 ## Profiles: Multi-Instance Support
