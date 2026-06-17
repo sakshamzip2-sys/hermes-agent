@@ -1561,30 +1561,6 @@ class APIServerAdapter(BasePlatformAdapter):
                 status=200,
             )
 
-    async def _handle_get_self_evolution(self, request: "web.Request") -> "web.Response":
-        """GET /api/self-evolution — read-only view of the self-evolution flywheel
-        (turn_score trend, dream promotions, review queue, synthesized skills)."""
-        auth_err = self._check_auth(request)
-        if auth_err:
-            return auth_err
-        try:
-            from gateway.platforms.self_evolution_aggregator import (
-                build_self_evolution_payload,
-            )
-            from hermes_constants import get_hermes_home
-
-            payload = build_self_evolution_payload(get_hermes_home())
-            return web.json_response(payload)
-        except Exception as e:  # never 500 the dashboard
-            logger.warning("self-evolution aggregation failed: %s", e)
-            return web.json_response(
-                {"outcomes": {"enabled": False, "error": str(e)},
-                 "dreaming": {"enabled": False, "error": str(e)},
-                 "review": {"enabled": False, "error": str(e)},
-                 "skills": {"enabled": False, "error": str(e)}},
-                status=200,
-            )
-
     async def _handle_create_session(self, request: "web.Request") -> "web.Response":
         """POST /api/sessions — create an empty OpenComputer session row."""
         auth_err = self._check_auth(request)
@@ -4741,9 +4717,6 @@ class APIServerAdapter(BasePlatformAdapter):
             # Parallel-agents read-only surface (oc_flow / oc_agents / oc_teams plugins)
             self._app.router.add_get("/api/parallel-agents", self._handle_parallel_agents)
             self._app.router.add_get("/api/memory", self._handle_get_memory)
-            self._app.router.add_get(
-                "/api/self-evolution", self._handle_get_self_evolution
-            )
             # Authenticated passthrough to the on-box Open Design daemon so the
             # workspace "Open Design" panel reaches it over the agent's existing
             # tunnel without exposing the daemon publicly.
