@@ -282,6 +282,35 @@ async def _gbrain_jsonrpc(cx: Any, base: str, token: Optional[str],
         return None
 
 
+def _cycle_timestamp(value: Any) -> Optional[str]:
+    """Normalize a GBrain dream-cycle field to a STRING (or None).
+
+    GBrain's ``get_status_snapshot`` may return ``cycle.last_full`` either as a plain ISO
+    timestamp (older shape) or as a full run-report object
+    (``{name, status, duration_ms, totals, finished_at}``). The frontend renders this value
+    directly, so a non-string would crash the whole Memory tab. We extract a timestamp from
+    an object (``finished_at``/``ended_at``/``at``), fall back to a readable status string,
+    and never let a raw object/list through.
+    """
+    if value is None:
+        return None
+    if isinstance(value, str):
+        return value
+    if isinstance(value, dict):
+        for k in ("finished_at", "ended_at", "completed_at", "at", "ts", "last_run_at"):
+            v = value.get(k)
+            if isinstance(v, str) and v:
+                return v
+        status = value.get("status")
+        name = value.get("name")
+        if isinstance(status, str):
+            return f"{name + ': ' if isinstance(name, str) else ''}{status}"
+        return None
+    if isinstance(value, (int, float)):
+        return str(value)
+    return None
+
+
 async def _gbrain_section(base: str, token: Optional[str]) -> Dict[str, Any]:
     if httpx is None:
         return {"enabled": False, "error": "httpx unavailable"}
@@ -339,9 +368,11 @@ async def _gbrain_section(base: str, token: Optional[str]) -> Dict[str, Any]:
                 out["source_count"] = len(sources)
                 out["last_sync_at"] = first.get("last_sync_at")
                 cycle = snapshot.get("cycle") or {}
+                # GBrain may return these as report OBJECTS, not timestamps — normalize to
+                # strings so the frontend never tries to render an object (Memory-tab crash).
                 out["dream_cycle"] = {
-                    "last_full": cycle.get("last_full"),
-                    "last_targeted": cycle.get("last_targeted"),
+                    "last_full": _cycle_timestamp(cycle.get("last_full")),
+                    "last_targeted": _cycle_timestamp(cycle.get("last_targeted")),
                 }
             # Health is up but BOTH MCP tool calls failed → reachable-but-unusable
             # (almost always a bad/missing GBRAIN_MCP_TOKEN). Flag degraded so the
