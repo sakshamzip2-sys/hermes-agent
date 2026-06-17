@@ -68,6 +68,16 @@ async def run_dream_cycle(
         logger.debug("dreaming: disabled; skipping")
         return DreamRunSummary()
 
+    # SENSE → DREAM: nudge the promotion bar by recent turn-outcomes (fail-soft; the
+    # base threshold is returned unchanged when the outcomes plugin is absent/empty).
+    import dataclasses as _dc
+
+    from .outcome_link import adjusted_score_threshold
+
+    tuned = adjusted_score_threshold(cfg.engine.score_threshold)
+    if tuned != cfg.engine.score_threshold:
+        cfg = _dc.replace(cfg, engine=_dc.replace(cfg.engine, score_threshold=tuned))
+
     sdb = db_path or candmod.default_state_db_path()
     if sdb is None:
         logger.debug("dreaming: no state.db resolvable; skipping")
