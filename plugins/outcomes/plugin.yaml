@@ -1,0 +1,9 @@
+name: outcomes
+version: 1.0.0
+description: "Per-turn quality scoring (turn_score) — the SENSE organ of the self-evolution loop. Ported from OpenComputer v1's outcome stack."
+author: "OpenComputer v1 (original), ported to v2"
+kind: standalone
+hooks:
+  - post_tool_call
+  - post_llm_call
+  - on_session_end
