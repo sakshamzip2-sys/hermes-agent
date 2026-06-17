@@ -77,6 +77,25 @@ def run(candidates=None, *, creator_fn=None, exists_fn=None, config=None) -> dic
     return summary
 
 
+async def synthesize_from_facts(
+    facts, *, chat_fn=None, creator_fn=None, exists_fn=None, config=None,  # noqa: ANN001
+) -> dict:
+    """DREAM→EVOLVE bridge: extract playbook candidates from recent dreaming facts and
+    synthesize skills. This is what the nightly cycle calls right after a dream run.
+
+    Fail-soft + default-OFF: returns a disabled/empty summary when not enabled or when the
+    extractor finds nothing.
+    """
+    from .config import load_playbook_config
+    from .extractor import extract_candidates
+
+    cfg = config or load_playbook_config()
+    if not cfg.enabled:
+        return {"enabled": False, "created": [], "skipped": [], "reason": "disabled"}
+    candidates = await extract_candidates(list(facts or []), chat_fn=chat_fn)
+    return run(candidates, creator_fn=creator_fn, exists_fn=exists_fn, config=cfg)
+
+
 # --- slash + CLI ------------------------------------------------------------
 def _render_status() -> str:
     from .config import load_playbook_config
