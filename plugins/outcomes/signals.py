@@ -15,14 +15,15 @@ import re
 from dataclasses import dataclass
 
 # Clear, unambiguous correction phrasings (precision over recall).
+# IMPORTANT: the "not X" forms must require a CORRECTIVE object — bare "that's not …"
+# falsely matches mild praise like "that's not bad" / "that's not a problem".
 _CORRECTION_PATTERNS = (
-    r"\bno,?\s+(that|this|it)('|i)?s?\b",          # "no, that's ...", "no that is ..."
-    r"\bthat'?s\s+(not|wrong|incorrect)\b",        # "that's not ...", "that's wrong"
-    r"\bnot\s+what\s+i\s+(asked|wanted|meant|said)\b",
-    r"\byou\s+(misunderstood|got\s+it\s+wrong|misread)\b",
-    r"\bactually,?\s+(you|that|this|no)\b",         # corrective "actually, you ..."
-    r"\bthat'?s\s+incorrect\b",
-    r"\bwrong\b.*\b(answer|approach|file|fix)\b",
+    r"\bthat'?s\s+(wrong|incorrect|mistaken)\b",           # "that's wrong/incorrect"
+    r"\bthat'?s\s+not\s+(right|correct|it|what|how|the\s+right)\b",  # "that's not right/correct/what/how"
+    r"\bnot\s+what\s+i\s+(asked|wanted|meant|said|expected)\b",
+    r"\byou\s+(misunderstood|got\s+it\s+wrong|misread|missed)\b",
+    r"\bactually,?\s+(you|that'?s\s+not|no\b)\b",           # corrective "actually, you/no/that's not"
+    r"\bwrong\s+(answer|approach|file|fix|direction)\b",
 )
 
 # Clear affirmations.

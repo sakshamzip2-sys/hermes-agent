@@ -21,6 +21,8 @@ DEFAULTS = {
     "standing_orders": "",
 }
 
+_STANDING_ORDERS_MAX = 2000  # hard cap on the judge-prompt standing-orders text
+
 
 @dataclass
 class OutcomesPluginConfig:
@@ -50,8 +52,16 @@ def load_outcomes_config(block: dict | None = None) -> OutcomesPluginConfig:
         except (TypeError, ValueError):
             return bool(DEFAULTS[key])
 
+    # standing_orders feeds the judge prompt — coerce to a bounded string so a malformed
+    # or oversized config value can't bloat the prompt or smuggle structure.
+    raw_orders = block.get("standing_orders", DEFAULTS["standing_orders"])
+    standing_orders = raw_orders if isinstance(raw_orders, str) else str(raw_orders or "")
+    if len(standing_orders) > _STANDING_ORDERS_MAX:
+        logger.warning("outcomes: standing_orders > %d chars; truncating", _STANDING_ORDERS_MAX)
+        standing_orders = standing_orders[:_STANDING_ORDERS_MAX]
+
     return OutcomesPluginConfig(
         enabled=_b("enabled"),
         judge_enabled=_b("judge_enabled"),
-        standing_orders=str(block.get("standing_orders", DEFAULTS["standing_orders"]) or ""),
+        standing_orders=standing_orders,
     )

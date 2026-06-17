@@ -9,7 +9,9 @@ unit-testable with no network.
 from __future__ import annotations
 
 import logging
+import threading
 import time
+from collections import OrderedDict
 from typing import Callable, Optional
 
 from .composite import compute_composite_score
@@ -21,27 +23,49 @@ logger = logging.getLogger("hermes.plugins.outcomes.engine")
 # A judge callable: (*, trajectory_summary, composite_score, standing_orders) -> float | None
 JudgeFn = Callable[..., Optional[float]]
 
+# Cap on tracked live/pending sessions so a long-running gateway can't leak memory via
+# abandoned sessions (one that never reaches on_session_end). Oldest are evicted (LRU).
+DEFAULT_MAX_SESSIONS = 1024
+
 
 class OutcomesEngine:
-    """Per-session signal accumulation + per-turn fused scoring into the store."""
+    """Per-session signal accumulation + per-turn fused scoring into the store.
+
+    NOT inherently thread-safe at the data level, but the engine is a process-wide
+    singleton shared across gateway sessions, so mutating ops take a coarse RLock. The
+    live/pending session maps are LRU-bounded (``max_sessions``) so abandoned sessions
+    cannot grow memory without bound.
+    """
 
     def __init__(self, store, *, judge_enabled: bool = False) -> None:  # noqa: ANN001
         self.store = store
         self.judge_enabled = judge_enabled
-        self._signals: dict[str, TurnSignals] = {}
+        self.max_sessions = DEFAULT_MAX_SESSIONS
+        self._signals: "OrderedDict[str, TurnSignals]" = OrderedDict()
         # session_id -> (turn, signals_snapshot, trajectory_summary) for the delayed model
-        self._pending: dict[str, tuple] = {}
+        self._pending: "OrderedDict[str, tuple]" = OrderedDict()
+        self._lock = threading.RLock()
+
+    @staticmethod
+    def _evict(od: "OrderedDict", cap: int) -> None:
+        while len(od) > max(1, cap):
+            od.popitem(last=False)  # drop the oldest (LRU)
 
     def signals_for(self, session_id: str) -> TurnSignals:
-        sig = self._signals.get(session_id)
-        if sig is None:
-            sig = TurnSignals()
-            self._signals[session_id] = sig
-        return sig
+        with self._lock:
+            sig = self._signals.get(session_id)
+            if sig is None:
+                sig = TurnSignals()
+                self._signals[session_id] = sig
+                self._evict(self._signals, self.max_sessions)
+            else:
+                self._signals.move_to_end(session_id)
+            return sig
 
     def record_tool(self, session_id: str, *, success: bool) -> None:
         """``post_tool_call`` feeds this — accumulate tool outcome for the live turn."""
-        self.signals_for(session_id).record_tool(success=success)
+        with self._lock:
+            self.signals_for(session_id).record_tool(success=success)
 
     def finalize_turn(
         self,
@@ -78,12 +102,14 @@ class OutcomesEngine:
         Resets live signals so the next turn accumulates fresh. If a prior turn is still
         pending (no feedback arrived), it is flushed first so nothing is lost.
         """
-        if session_id in self._pending:
-            # No feedback came for the prior staged turn; flush it as-is.
-            self.flush_pending(session_id)
-        sig = self.signals_for(session_id)
-        self._signals.pop(session_id, None)
-        self._pending[session_id] = (turn, sig, trajectory_summary)
+        with self._lock:
+            if session_id in self._pending:
+                # No feedback came for the prior staged turn; flush it as-is.
+                self.flush_pending(session_id)
+            sig = self.signals_for(session_id)
+            self._signals.pop(session_id, None)
+            self._pending[session_id] = (turn, sig, trajectory_summary)
+            self._evict(self._pending, self.max_sessions)
 
     def resolve_pending(
         self, session_id: str, *,
@@ -93,7 +119,8 @@ class OutcomesEngine:
         now: Optional[float] = None,
     ) -> Optional[float]:
         """Score the pending turn using ``user_followup`` (its feedback). None if none pending."""
-        pend = self._pending.pop(session_id, None)
+        with self._lock:
+            pend = self._pending.pop(session_id, None)
         if pend is None:
             return None
         turn, sig, trajectory = pend
@@ -167,6 +194,44 @@ class OutcomesEngine:
             "recent_n": len(recent),
             "mean_recent": mean_recent,
         }
+
+    async def rejudge_recent(
+        self, *,
+        limit: int = 150,
+        chat_fn=None,  # noqa: ANN001
+        standing_orders: str = "",
+        now: Optional[float] = None,
+    ) -> int:
+        """Batch-apply the aux-LLM judge to recently-recorded composite-only turns.
+
+        Per-turn scoring stays composite-only (free, synchronous, hot-path-safe). The
+        judge — which is async and costs tokens — runs HERE, in the consolidation cycle,
+        re-scoring un-judged turns and fusing the verdict in. This is naturally
+        cost-bounded (once per cycle, not per turn) and matches Anthropic's batch
+        Outcomes model. No-op when ``judge_enabled`` is False. Returns #turns re-judged.
+        """
+        if not self.judge_enabled:
+            return 0
+        from .judge import score_turn_via_judge
+
+        rows = self.store.recent_unjudged_rows(limit=limit)
+        rejudged = 0
+        for row in rows:
+            composite = row.get("composite")
+            if composite is None:
+                composite = row.get("turn_score", 0.5)
+            verdict = await score_turn_via_judge(
+                trajectory_summary=row.get("trajectory", "") or "",
+                composite_score=float(composite),
+                standing_orders=standing_orders,
+                chat_fn=chat_fn,
+            )
+            if verdict is None:
+                continue
+            fused = fused_turn_score(float(composite), verdict.judge_score)
+            self.store.update_judged(row["id"], judge=verdict.judge_score, turn_score=fused)
+            rejudged += 1
+        return rejudged
 
 
 def _auto_trajectory(sig: TurnSignals) -> str:

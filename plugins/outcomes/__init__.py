@@ -40,13 +40,28 @@ def _get_engine():
     return _ENGINE
 
 
+_ENABLED_CACHE: tuple[bool, float] = (False, 0.0)
+_ENABLED_TTL = 30.0  # seconds — avoid a config-file read on every per-tool-call hook
+
+
 def _enabled() -> bool:
+    """Cached read of ``outcomes.enabled`` (post_tool_call fires per tool call, so a
+    fresh config read each time would hammer the disk on the hot path)."""
+    global _ENABLED_CACHE
+    import time as _t
+
+    val, ts = _ENABLED_CACHE
+    now = _t.monotonic()
+    if now - ts < _ENABLED_TTL:
+        return val
     try:
         from .config import load_outcomes_config
 
-        return load_outcomes_config().enabled
+        val = load_outcomes_config().enabled
     except Exception:  # noqa: BLE001
-        return False
+        val = False
+    _ENABLED_CACHE = (val, now)
+    return val
 
 
 # --- slash + CLI rendering --------------------------------------------------
@@ -93,8 +108,29 @@ def _handle_slash(raw_args: str):
 
 
 def run_cycle() -> dict:
-    """Nightly-deployment entrypoint (the seam Session-B's deployment sequences first)."""
-    return _get_engine().run_cycle()
+    """Nightly-deployment entrypoint (the seam Session-B's deployment sequences first).
+
+    Runs the lightweight rollup, then — when the judge is enabled — re-scores recent
+    composite-only turns with the aux-LLM judge in one bounded batch pass (the judge is
+    async + costs tokens, so it lives HERE, not on the per-turn hot path).
+    """
+    eng = _get_engine()
+    summary = eng.run_cycle()
+    rejudged = 0
+    try:
+        from .config import load_outcomes_config
+
+        if load_outcomes_config().judge_enabled:
+            import asyncio
+
+            standing = load_outcomes_config().standing_orders
+            rejudged = asyncio.run(eng.rejudge_recent(standing_orders=standing))
+    except RuntimeError as exc:  # already inside an event loop — skip (hook path is sync)
+        logger.debug("outcomes: rejudge skipped, running loop (%s)", exc)
+    except Exception as exc:  # noqa: BLE001 — judge must never break the cycle
+        logger.debug("outcomes: rejudge failed (%s)", exc)
+    summary["rejudged"] = rejudged
+    return summary
 
 
 def _cli_setup(subparser) -> None:

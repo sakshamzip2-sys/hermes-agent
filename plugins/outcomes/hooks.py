@@ -17,7 +17,10 @@ import logging
 
 logger = logging.getLogger("hermes.plugins.outcomes.hooks")
 
-_FAILURE_STATUSES = {"error", "failed", "failure", "denied", "blocked", "cancelled", "canceled"}
+_FAILURE_STATUSES = {
+    "error", "failed", "failure", "denied", "blocked", "cancelled", "canceled",
+    "timeout", "timed_out", "skipped", "incomplete", "aborted",
+}
 
 
 def tool_call_succeeded(*, status=None, error_type=None) -> bool:  # noqa: ANN001

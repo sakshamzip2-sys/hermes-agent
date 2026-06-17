@@ -116,6 +116,36 @@ class OutcomesStore:
         finally:
             conn.close()
 
+    def recent_unjudged_rows(self, limit: int = 150) -> list[dict]:
+        """Recent rows scored composite-only (judge IS NULL), newest-first.
+
+        Used by the batch judge pass (``OutcomesEngine.rejudge_recent``).
+        """
+        conn = self._connect()
+        try:
+            cur = conn.execute(
+                "SELECT id, session_id, turn, turn_score, composite "
+                "FROM turn_outcomes WHERE judge IS NULL "
+                "ORDER BY id DESC LIMIT ?",
+                (int(limit),),
+            )
+            cols = [c[0] for c in cur.description]
+            return [dict(zip(cols, row)) for row in cur.fetchall()]
+        finally:
+            conn.close()
+
+    def update_judged(self, row_id: int, *, judge: float, turn_score: float) -> None:
+        """Fold a batch judge verdict into an existing row (id-addressed)."""
+        conn = self._connect()
+        try:
+            conn.execute(
+                "UPDATE turn_outcomes SET judge = ?, turn_score = ? WHERE id = ?",
+                (float(judge), float(turn_score), int(row_id)),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
 
 def default_db_path() -> Path:
     """``$HERMES_HOME/dreaming/outcomes.db`` (co-located with the dreaming stores)."""

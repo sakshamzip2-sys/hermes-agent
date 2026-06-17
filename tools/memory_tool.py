@@ -68,6 +68,43 @@ ENTRY_DELIMITER = "\n§\n"
 
 
 # ---------------------------------------------------------------------------
+# Immutable versioning — snapshot every committed memory mutation so the
+# self-evolution loop's autonomous writes are auditable + reversible
+# (owner-locked posture). Fail-soft: a versioning error must NEVER break a
+# memory write. Gated by ``memory.versioning_enabled`` (default ON).
+# ---------------------------------------------------------------------------
+_VERSIONING_ENABLED: Optional[bool] = None
+
+
+def _versioning_enabled() -> bool:
+    """Cached read of ``memory.versioning_enabled`` (default True)."""
+    global _VERSIONING_ENABLED
+    if _VERSIONING_ENABLED is None:
+        try:
+            from hermes_cli.config import load_config
+
+            block = (load_config() or {}).get("memory", {})
+            _VERSIONING_ENABLED = bool(block.get("versioning_enabled", True)) if isinstance(block, dict) else True
+        except Exception:  # noqa: BLE001 — default ON if config unavailable
+            _VERSIONING_ENABLED = True
+    return _VERSIONING_ENABLED
+
+
+def _record_memory_version(path: "Path", content: str, *, op: str = "write", actor: str = "memory_tool") -> None:
+    """Snapshot ``content`` as an immutable version of the memory file. Fail-soft."""
+    if not _versioning_enabled():
+        return
+    try:
+        from agent.memory_versioning import MemoryVersionLog, default_versions_root
+
+        MemoryVersionLog(default_versions_root()).record_version(
+            Path(path).name, content, op=op, actor=actor, ts=time.time()
+        )
+    except Exception as exc:  # noqa: BLE001 — versioning must never break a write
+        logger.debug("memory_tool: versioning skipped (%s)", exc)
+
+
+# ---------------------------------------------------------------------------
 # Memory content scanning — lightweight check for injection/exfiltration
 # in content that gets injected into the system prompt.
 #
@@ -278,7 +315,18 @@ class MemoryStore:
     def save_to_disk(self, target: str):
         """Persist entries to the appropriate file. Called after every mutation."""
         get_memory_dir().mkdir(parents=True, exist_ok=True)
-        self._write_file(self._path_for(target), self._entries_for(target))
+        path = self._path_for(target)
+        entries = self._entries_for(target)
+        self._write_file(path, entries)
+        # Snapshot the committed state as an immutable version (audit + rollback).
+        # Defense-in-depth: even a bug in the recorder must never fail the write,
+        # which has already been committed to disk above.
+        try:
+            _record_memory_version(
+                path, ENTRY_DELIMITER.join(entries) if entries else "", op="write"
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("memory_tool: version recording failed post-write (%s)", exc)
 
     def _entries_for(self, target: str) -> List[str]:
         if target == "user":
