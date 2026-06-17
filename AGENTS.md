@@ -1212,6 +1212,19 @@ do **not** add a redundant browser:
   (`tools/browser_tool.py`, plugins under `plugins/browser/{browser_use,
   browserbase,firecrawl}`). Set `browser.cloud_provider` to pin one.
 
+### `web_extract_structured` — schema extraction (LAZY tool)
+
+`tools/web_extract_structured_tool.py` extracts a page into a **caller-specified
+JSON Schema** (or clean markdown when no schema is given), filling the gap
+between `web_search` (find pages) and `web_extract` (markdown only). It reuses
+the `web_extract` fetch backend and runs one auxiliary-LLM extraction pass
+(model resolved from user config — model-agnostic). Registered under the
+non-core `web_research` toolset, so it is **lazy** (surfaced via `tool_search`,
+not loaded on every call). The *agentic multi-source* research workflow (plan →
+fan-out → verify → cited synthesis) lives in the `deep-research` skill/command,
+not a core tool; meaning-ranked search is available via the Exa `web_search`
+provider when `EXA_API_KEY` is set.
+
 ---
 
 ## Profiles: Multi-Instance Support
