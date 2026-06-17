@@ -1225,6 +1225,17 @@ fan-out → verify → cited synthesis) lives in the `deep-research` skill/comma
 not a core tool; meaning-ranked search is available via the Exa `web_search`
 provider when `EXA_API_KEY` is set.
 
+### Context7 live-docs MCP (catalog entry, lazy)
+
+`optional-mcps/context7/manifest.yaml` adds Context7 to the Nous-approved MCP
+catalog — install with `oc mcp install official/context7`. It injects current,
+version-pinned library docs at query time (kills stale-API hallucinations);
+prefer it over `web_search` for library/framework API questions. Remote HTTP
+(`https://mcp.context7.com/mcp`), works keyless (optional `CONTEXT7_API_KEY` for
+higher limits). MCP tools are **lazy** in v2 (deferred behind the
+`tool_search`/`tool_describe`/`tool_call` bridges), so it never enters the
+per-call core schema.
+
 ---
 
 ## Profiles: Multi-Instance Support

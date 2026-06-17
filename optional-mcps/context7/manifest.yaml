@@ -1,0 +1,48 @@
+# Nous-approved MCP catalog entry.
+# Presence in this directory = approval. Merged via PR review.
+manifest_version: 1
+
+name: context7
+description: Inject current, version-pinned library/framework docs at query time (kills stale-API hallucinations). Prefer over web_search for library API questions.
+source: https://github.com/upstash/context7
+
+# Context7 ships a remote MCP server over Streamable HTTP. OpenComputer's MCP
+# client connects directly — nothing to install locally. The server works
+# without credentials at a reduced rate limit; add a free CONTEXT7_API_KEY
+# (https://context7.com/dashboard) for higher limits (see post_install).
+transport:
+  type: http
+  url: https://mcp.context7.com/mcp
+
+# No credentials required for basic use — the server resolves library docs
+# anonymously. Higher rate limits are unlocked with an optional API key,
+# configured post-install (see below) rather than at install time so the
+# server is usable out of the box.
+auth:
+  type: none
+
+# MCP tools are LAZY in OpenComputer: they are deferred behind the
+# tool_search / tool_describe / tool_call bridges and never injected into the
+# per-call tool schema (see tools/tool_search.py). So Context7's two tools
+# (resolve-library-id, query-docs / get-library-docs) cost nothing on calls
+# that don't use them — exactly the "install lazy, not core" posture the
+# upgrade plan asks for.
+
+post_install: |
+  Context7 is now available (lazily, via tool_search). Ask the agent a
+  version-specific library question (e.g. "how do I stream responses with the
+  current Anthropic Python SDK?") and it will resolve the library and inject
+  the matching docs instead of guessing from training data.
+
+  Prefer Context7 over web_search for library/framework API questions — it
+  returns version-pinned docs, not blog posts.
+
+  Optional — higher rate limits:
+    1. Get a free key at https://context7.com/dashboard
+    2. Append it to the server URL in ~/.hermes/config.yaml under
+       mcp_servers.context7.url, e.g.
+         url: https://mcp.context7.com/mcp?api_key=YOUR_KEY
+    3. Restart your OpenComputer session.
+
+  Re-run the tool checklist any time with:
+    opencomputer mcp configure context7
