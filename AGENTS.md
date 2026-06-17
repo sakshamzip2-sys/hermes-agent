@@ -1236,6 +1236,18 @@ higher limits). MCP tools are **lazy** in v2 (deferred behind the
 `tool_search`/`tool_describe`/`tool_call` bridges), so it never enters the
 per-call core schema.
 
+### `semantic_search` — meaning-ranked corpus retrieval (GATED)
+
+`tools/semantic_search_tool.py` indexes files into a local TF-IDF vector store
+(`.agent/index/<name>/`, pure numpy, persistence-safe via a stored vocab+IDF) and
+retrieves chunks by cosine relevance. Prefer it over grep/LSP for conceptual
+"find the code that does X" queries where you don't know the exact words; use
+grep for exact strings and LSP for symbols. `action=index` (incremental by file
+hash) / `search` (top_k chunks with path, line range, score, snippet) / `list`.
+**Gated**: `check_fn` (`_any_index_exists`) hides the tool entirely until an
+index exists under the cwd's `.agent/index/`, so it costs zero schema budget when
+unused. No embedding API or external vector DB required.
+
 ---
 
 ## Profiles: Multi-Instance Support
