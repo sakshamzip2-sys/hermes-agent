@@ -47,6 +47,9 @@ _IS_WINDOWS = platform.system() == "Windows"
 from typing import Any, Dict, List, Optional
 
 from tools.thread_context import propagate_context_to_thread
+# Single source of truth for isolated (remote-RPC) backends — keeps execute_code's
+# backend dispatch in lockstep with the rest of the sandbox stack.
+from tools.sandbox_resolver import ISOLATED_BACKENDS as _ISOLATED_BACKENDS
 
 # Availability gate.  On Windows we fall back to loopback TCP for the
 # sandbox RPC transport (AF_UNIX is unreliable on Windows Python) — see
@@ -643,13 +646,15 @@ def _get_or_create_env(task_id: str):
             image = overrides.get("modal_image") or config["modal_image"]
         elif env_type == "daytona":
             image = overrides.get("daytona_image") or config["daytona_image"]
+        elif env_type == "e2b":
+            image = overrides.get("e2b_template") or config.get("e2b_template") or "base"
         else:
             image = ""
 
         cwd = overrides.get("cwd") or config["cwd"]
 
         container_config = None
-        if env_type in {"docker", "singularity", "modal", "daytona"}:
+        if env_type in _ISOLATED_BACKENDS:
             container_config = {
                 "container_cpu": config.get("container_cpu", 1),
                 "container_memory": config.get("container_memory", 5120),

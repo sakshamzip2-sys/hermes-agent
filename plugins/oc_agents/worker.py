@@ -210,6 +210,11 @@ def run_worker(session_id: str) -> int:
     """Run one background session to completion. Returns a process exit code."""
     os.environ.setdefault("HERMES_YOLO_MODE", "1")
     os.environ.setdefault("HERMES_ACCEPT_HOOKS", "1")
+    # Sandbox-by-default: this background runner auto-approves, so it must NOT run
+    # model-authored code on the host. 'auto' resolves to docker/modal when present
+    # and only downgrades to local with a logged warning. An inherited TERMINAL_ENV
+    # (e.g. gateway-resolved docker) wins via setdefault.
+    os.environ.setdefault("TERMINAL_ENV", "auto")
     _apply_startup_permission_mode()
     logging.disable(logging.CRITICAL)
 

@@ -56,7 +56,7 @@ logger = logging.getLogger(__name__)
 # long-running subprocesses immediately instead of blocking until timeout.
 # ---------------------------------------------------------------------------
 from tools.interrupt import is_interrupted, _interrupt_event  # noqa: F401 — re-exported
-from tools.sandbox_resolver import resolve_terminal_backend
+from tools.sandbox_resolver import ISOLATED_BACKENDS, resolve_terminal_backend
 # display_hermes_home imported lazily at call site (stale-module safety during hermes update)
 
 
@@ -829,6 +829,10 @@ from tools.environments.local import LocalEnvironment as _LocalEnvironment
 from tools.environments.singularity import SingularityEnvironment as _SingularityEnvironment
 from tools.environments.ssh import SSHEnvironment as _SSHEnvironment
 from tools.environments.docker import DockerEnvironment as _DockerEnvironment
+# Safe at module load: e2b.py imports the `e2b` SDK only inside __init__, never
+# at module level. KEEP IT THAT WAY — a module-level `import e2b` here would make
+# importing terminal_tool require the (optional) E2B SDK for everyone.
+from tools.environments.e2b import E2BEnvironment as _E2BEnvironment
 from tools.environments.modal import ModalEnvironment as _ModalEnvironment
 from tools.environments.managed_modal import ManagedModalEnvironment as _ManagedModalEnvironment
 from tools.managed_tool_gateway import is_managed_tool_gateway_ready
@@ -1112,24 +1116,47 @@ def _is_safe_auto_mount_dir(path: str) -> bool:
     home_real = os.path.realpath(os.path.expanduser("~"))
     home_abs = os.path.abspath(os.path.expanduser("~"))
 
+    def _same_dir(a: str, b: str) -> bool:
+        """True if a and b are the SAME directory — by inode (device+ino) when
+        both exist, else a case-insensitive string compare. Inode comparison is
+        the only correct check on case-insensitive filesystems (macOS/Windows),
+        where "/USERS/NAME" and "/Users/name" are the same dir but compare
+        unequal as strings (os.path.normcase is a no-op on POSIX)."""
+        try:
+            return os.path.samefile(a, b)
+        except OSError:
+            return a.casefold() == b.casefold()
+
     # Shallow system / shared roots that contain many users' data or are a
-    # parent of home. os.path.dirname(home) blocks e.g. /Users and /home. We
-    # check BOTH the symlink-resolved path and the literal path, because on
-    # macOS /etc, /tmp, /var are symlinks into /private/* — realpath alone would
-    # let a literal "/etc" slip past the denylist.
-    denylist = {
+    # parent of home. Includes the macOS /private/* mirrors of /etc,/var,/tmp.
+    denylist = [
         os.sep, "/Users", "/home", "/root", "/etc", "/var", "/usr",
         "/tmp", "/opt", "/mnt", "/media", "/srv", "/private",
         "/private/etc", "/private/var", "/private/tmp",
         os.path.dirname(home_real), os.path.dirname(home_abs),
-    }
+        home_real, home_abs,
+    ]
+    # Sensitive dirs that frequently live directly under home and hold secrets
+    # or are too broad to auto-mount. Matched by basename, case-insensitively.
+    sensitive_basenames = {b.casefold() for b in (
+        ".ssh", ".aws", ".gnupg", ".gpg", ".config", ".kube", ".docker",
+        ".azure", ".gcloud", ".netrc", ".password-store", ".secrets",
+        "Desktop", "Documents", "Downloads", "Library",
+    )}
+
     for candidate in (expanded, real):
-        if candidate == os.sep or candidate in denylist:
+        # Same-dir (inode-aware) check against every denylisted root + home.
+        for deny in denylist:
+            if _same_dir(candidate, deny):
+                return False
+        # Refuse a DIRECT child of home (~/.ssh, ~/Desktop, ~/.aws …).
+        if _same_dir(os.path.dirname(candidate), home_real) or \
+           _same_dir(os.path.dirname(candidate), home_abs):
             return False
-        if candidate in (home_real, home_abs):
+        if os.path.basename(candidate).casefold() in sensitive_basenames:
             return False
-        # Require at least two path segments below root (e.g. /Users/<name>/<proj>
-        # or /home/<name>/<proj>), so a bare top-level dir is never auto-mounted.
+        # Require at least two path segments below root (e.g. /Users/<name>/<proj>),
+        # so a bare top-level dir is never auto-mounted.
         if len([s for s in candidate.split(os.sep) if s]) < 2:
             return False
     return True
@@ -1146,7 +1173,7 @@ def _get_env_config() -> Dict[str, Any]:
     # subagents in the in-process thread pool each get the right mount decision.
     raw_env_type = os.getenv("TERMINAL_ENV", "auto")
     env_type, was_auto = resolve_terminal_backend(raw_env_type)
-    auto_sandboxed = was_auto and env_type in {"docker", "singularity", "modal", "daytona"}
+    auto_sandboxed = was_auto and env_type in ISOLATED_BACKENDS
 
     mount_docker_cwd = os.getenv("TERMINAL_DOCKER_MOUNT_CWD_TO_WORKSPACE", "false").lower() in {"true", "1", "yes"}
     # When WE auto-selected a sandbox (the user didn't explicitly pick docker),
@@ -1170,7 +1197,7 @@ def _get_env_config() -> Dict[str, Any]:
                 "the sandbox. Set TERMINAL_DOCKER_MOUNT_CWD_TO_WORKSPACE=true to "
                 "mount it explicitly.", candidate_cwd,
             )
-    container_backend = env_type in {"docker", "singularity", "modal", "daytona"}
+    container_backend = env_type in ISOLATED_BACKENDS
     docker_backend = env_type == "docker"
 
     # Docker/container-only env vars may be bridged from config.yaml even when
@@ -1225,7 +1252,7 @@ def _get_env_config() -> Dict[str, Any]:
         ):
             host_cwd = candidate
             cwd = "/workspace"
-    elif env_type in {"modal", "docker", "singularity", "daytona"} and cwd:
+    elif env_type in {"modal", "docker", "singularity", "daytona", "e2b"} and cwd:
         # Host paths and relative paths that won't work inside containers
         is_host_path = any(cwd.startswith(p) for p in host_prefixes)
         is_relative = not os.path.isabs(cwd)  # e.g. "." or "src/"
@@ -1243,6 +1270,8 @@ def _get_env_config() -> Dict[str, Any]:
         "singularity_image": os.getenv("TERMINAL_SINGULARITY_IMAGE", f"docker://{default_image}"),
         "modal_image": os.getenv("TERMINAL_MODAL_IMAGE", default_image),
         "daytona_image": os.getenv("TERMINAL_DAYTONA_IMAGE", default_image),
+        "e2b_template": os.getenv("TERMINAL_E2B_TEMPLATE", "base"),
+        "e2b_sandbox_timeout": int(os.getenv("TERMINAL_E2B_SANDBOX_TIMEOUT", "3600")),
         "cwd": cwd,
         "host_cwd": host_cwd,
         "docker_mount_cwd_to_workspace": mount_docker_cwd,
@@ -1430,6 +1459,14 @@ def _create_environment(env_type: str, image: str, cwd: str, timeout: int,
             persistent_filesystem=persistent, task_id=task_id,
         )
 
+    elif env_type == "e2b":
+        return _E2BEnvironment(
+            image=image or "base", cwd=cwd, timeout=timeout,
+            task_id=task_id,
+            persistent_filesystem=persistent,
+            sandbox_timeout=int(cc.get("e2b_sandbox_timeout", 3600)),
+        )
+
     elif env_type == "ssh":
         if not ssh_config or not ssh_config.get("host") or not ssh_config.get("user"):
             raise ValueError("SSH environment requires ssh_host and ssh_user to be configured")
@@ -1459,6 +1496,7 @@ def _create_environment(env_type: str, image: str, cwd: str, timeout: int,
 # ephemeral ``local`` never does.  New backends (e.g. e2b) register themselves.
 _RECONNECT_BACKENDS: Dict[str, Any] = {
     "docker": _DockerEnvironment,
+    "e2b": _E2BEnvironment,
 }
 
 
@@ -1487,6 +1525,92 @@ def reconnect_environment(
     except Exception as exc:  # noqa: BLE001 — reconnect must degrade gracefully
         logger.warning("reconnect_environment(%s) failed: %s", backend, exc)
         return None
+
+
+def register_active_environment(task_id: str, env) -> None:
+    """Inject a pre-built / reconnected environment into the active-env cache.
+
+    Public seam so durable-session resume can place a reattached sandbox under
+    its task_id without reaching into the private dict + lock directly.
+    """
+    if env is None or not task_id:
+        return
+    with _env_lock:
+        _active_environments[task_id] = env
+        _last_activity[task_id] = time.time()
+
+
+def persist_sandbox_handle(session_id: str, db, *, task_id: Optional[str] = None) -> bool:
+    """Persist the live sandbox's reconnect handle for *session_id* via *db*.
+
+    Reads the active environment (under *task_id*, defaulting to *session_id*)
+    and stores ``env.handle`` so a future resume can reattach. Returns True iff
+    a handle was stored. Never raises.
+    """
+    if not session_id or db is None:
+        return False
+    # The live env is cached under the RESOLVED container key — for the top-level
+    # agent that is "default" (task_id collapses), NOT session_id. Look it up the
+    # same way terminal() stores it, or persistence silently finds nothing.
+    raw_key = task_id or session_id
+    container_key = _resolve_container_task_id(raw_key)
+    with _env_lock:
+        env = (
+            _active_environments.get(container_key)
+            or _active_environments.get(raw_key)
+            or _active_environments.get(session_id)
+        )
+    handle = getattr(env, "handle", None) if env is not None else None
+    if not handle:
+        return False
+    try:
+        db.set_session_sandbox_handle(session_id, handle)
+        logger.debug("persisted sandbox handle for session %s", session_id)
+        return True
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("persist_sandbox_handle(%s) failed: %s", session_id, exc)
+        return False
+
+
+def restore_sandbox_for_session(
+    session_id: str,
+    db,
+    *,
+    cwd: str = "~",
+    timeout: int = 120,
+    task_id: Optional[str] = None,
+):
+    """Reattach the persisted sandbox for *session_id* (if any) and register it
+    under *task_id* (default *session_id*). Returns the env or None.
+
+    The whole point of durable sessions: on resume, rebind to the SAME sandbox
+    (filesystem, packages, background processes intact) instead of spawning a
+    fresh one. Degrades gracefully — any failure returns None and the caller
+    falls back to normal lazy env creation.
+    """
+    if not session_id or db is None:
+        return None
+    try:
+        handle = db.get_session_sandbox_handle(session_id)
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("restore_sandbox_for_session(%s) read failed: %s", session_id, exc)
+        return None
+    if not handle:
+        return None
+    env = reconnect_environment(handle, cwd=cwd, timeout=timeout)
+    if env is None:
+        return None
+    # Register under the RESOLVED container key (e.g. "default" for the top-level
+    # agent) so subsequent terminal() calls — which look up by that same resolved
+    # key — find the reattached sandbox instead of spawning a fresh one.
+    container_key = _resolve_container_task_id(task_id or session_id)
+    register_active_environment(container_key, env)
+    logger.info(
+        "restored sandbox for session %s under %r (%s backend)",
+        session_id, container_key,
+        handle.get("backend") if isinstance(handle, dict) else "?",
+    )
+    return env
 
 
 def _cleanup_inactive_envs(lifetime_seconds: int = 300):
@@ -2038,6 +2162,8 @@ def terminal_tool(
             image = overrides.get("modal_image") or config["modal_image"]
         elif env_type == "daytona":
             image = overrides.get("daytona_image") or config["daytona_image"]
+        elif env_type == "e2b":
+            image = overrides.get("e2b_template") or config.get("e2b_template") or "base"
         else:
             image = ""
 
@@ -2127,7 +2253,7 @@ def terminal_tool(
                             }
 
                         container_config = None
-                        if env_type in {"docker", "singularity", "modal", "daytona"}:
+                        if env_type in ISOLATED_BACKENDS:
                             container_config = {
                                 "container_cpu": config.get("container_cpu", 1),
                                 "container_memory": config.get("container_memory", 5120),

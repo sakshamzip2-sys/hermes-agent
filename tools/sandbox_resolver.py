@@ -40,7 +40,7 @@ logger = logging.getLogger(__name__)
 
 # Backends that provide real kernel/VM isolation (mirrors the set the approval
 # gate treats as already-sandboxed in tools/approval.py).
-ISOLATED_BACKENDS = frozenset({"docker", "singularity", "modal", "daytona"})
+ISOLATED_BACKENDS = frozenset({"docker", "singularity", "modal", "daytona", "e2b"})
 
 # How long to wait on the ``docker info`` daemon probe before giving up and
 # falling back.  A stopped daemon must not hang agent startup.

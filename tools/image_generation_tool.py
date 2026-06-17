@@ -655,7 +655,7 @@ def _agent_cache_base_for_env(env: Any) -> str | None:
     # use a shell-visible tilde path; its first environment sync will upload
     # the cache file before the first command runs.
     backend = (os.getenv("TERMINAL_ENV") or "local").strip().lower()
-    if backend in {"docker", "singularity", "modal"}:
+    if backend in {"docker", "singularity", "modal", "daytona", "e2b"}:
         return "/root/.hermes"
     if backend == "ssh":
         return "~/.hermes"

@@ -3141,6 +3141,16 @@ class AIAgent:
         except Exception:
             pass
 
+        # 1b. Persist the live sandbox's reconnect handle BEFORE teardown so a
+        # resumed session can reattach to the SAME sandbox (durable sessions).
+        try:
+            db = getattr(self, "_session_db", None)
+            if db is not None and task_id:
+                from tools.terminal_tool import persist_sandbox_handle
+                persist_sandbox_handle(task_id, db, task_id=task_id)
+        except Exception:
+            pass
+
         # 2. Clean terminal sandbox environments
         try:
             cleanup_vm(task_id)
@@ -5218,8 +5228,41 @@ class AIAgent:
         persist_user_message: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Forwarder — see ``agent.conversation_loop.run_conversation``."""
+        self._maybe_restore_durable_sandbox()
         from agent.conversation_loop import run_conversation
         return run_conversation(self, user_message, system_message, conversation_history, task_id, stream_callback, persist_user_message)
+
+    def _maybe_restore_durable_sandbox(self) -> None:
+        """Reattach the SAME sandbox a prior (paused/persisted) session left
+        behind, once, before this agent's first terminal use.
+
+        Covers every surface (CLI, gateway, ACP) since all run through
+        ``run_conversation``. No-op for fresh sessions (no stored handle), when
+        an env already exists for this session (don't clobber a live sandbox),
+        or when no SessionDB is bound. Best-effort — never fatal.
+        """
+        if getattr(self, "_sandbox_restore_done", False):
+            return
+        self._sandbox_restore_done = True
+        try:
+            db = getattr(self, "_session_db", None)
+            sid = getattr(self, "session_id", None)
+            if db is None or not sid:
+                return
+            from tools.terminal_tool import (
+                _active_environments,
+                _env_lock,
+                restore_sandbox_for_session,
+            )
+            with _env_lock:
+                already_live = sid in _active_environments
+            if already_live:
+                return  # a live env already serves this session
+            restore_sandbox_for_session(
+                sid, db, cwd=getattr(self, "cwd", "~") or "~", task_id=sid
+            )
+        except Exception:
+            pass
 
     def chat(self, message: str, stream_callback: Optional[callable] = None) -> str:
         """

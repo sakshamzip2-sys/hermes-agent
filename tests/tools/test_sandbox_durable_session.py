@@ -8,6 +8,7 @@ instead of spawning a fresh one — the foundation E2B plugs into later.
 """
 
 import json
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -286,3 +287,122 @@ def test_docker_reconnect_fails_closed_when_init_raises(monkeypatch):
         timeout=10,
     )
     assert out is None
+
+
+# ---------------------------------------------------------------------------
+# D3 — resume-wiring helpers (persist on close, restore on resume)
+# ---------------------------------------------------------------------------
+
+def test_register_active_environment():
+    sentinel = object()
+    terminal_tool.register_active_environment("task-reg", sentinel)
+    try:
+        assert terminal_tool._active_environments.get("task-reg") is sentinel
+    finally:
+        terminal_tool._active_environments.pop("task-reg", None)
+
+
+def test_persist_sandbox_handle_stores_handle():
+    class _Env:
+        handle = {"backend": "docker", "container_id": "c"}
+
+    terminal_tool.register_active_environment("sess-p", _Env())
+    db = MagicMock()
+    try:
+        assert terminal_tool.persist_sandbox_handle("sess-p", db) is True
+        db.set_session_sandbox_handle.assert_called_once_with(
+            "sess-p", {"backend": "docker", "container_id": "c"}
+        )
+    finally:
+        terminal_tool._active_environments.pop("sess-p", None)
+
+
+def test_persist_sandbox_handle_no_env_returns_false():
+    db = MagicMock()
+    assert terminal_tool.persist_sandbox_handle("no-such-session", db) is False
+    db.set_session_sandbox_handle.assert_not_called()
+
+
+def test_persist_sandbox_handle_env_without_handle():
+    class _Env:
+        handle = None
+
+    terminal_tool.register_active_environment("sess-nh", _Env())
+    db = MagicMock()
+    try:
+        assert terminal_tool.persist_sandbox_handle("sess-nh", db) is False
+        db.set_session_sandbox_handle.assert_not_called()
+    finally:
+        terminal_tool._active_environments.pop("sess-nh", None)
+
+
+def test_restore_sandbox_for_session_reconnects_and_registers(monkeypatch):
+    db = MagicMock()
+    db.get_session_sandbox_handle.return_value = {
+        "backend": "docker",
+        "container_id": "c",
+    }
+    sentinel = object()
+    monkeypatch.setattr(terminal_tool, "reconnect_environment", lambda h, **k: sentinel)
+    try:
+        out = terminal_tool.restore_sandbox_for_session(
+            "sess-r", db, cwd="/w", timeout=30
+        )
+        assert out is sentinel
+        # registered under the RESOLVED container key ("default" — sess-r has no
+        # isolation override), matching where terminal() looks it up
+        assert terminal_tool._active_environments.get("default") is sentinel
+    finally:
+        terminal_tool._active_environments.pop("default", None)
+
+
+def test_restore_sandbox_no_handle_returns_none():
+    db = MagicMock()
+    db.get_session_sandbox_handle.return_value = None
+    assert terminal_tool.restore_sandbox_for_session("sess-x", db, cwd="/w") is None
+
+
+def test_persist_finds_env_under_resolved_container_key():
+    """Regression: the top-level agent's env is cached under the RESOLVED
+    container key ('default' — task_id=None collapses), not under session_id.
+    persist must look it up the same way terminal() stores it, or durable
+    resume is a silent no-op for real sessions."""
+    class _Env:
+        handle = {"backend": "docker", "container_id": "c"}
+
+    terminal_tool.register_active_environment("default", _Env())
+    db = MagicMock()
+    try:
+        # called with a session_id that is NOT the cache key — must still find it
+        assert terminal_tool.persist_sandbox_handle("real-session-id", db) is True
+        db.set_session_sandbox_handle.assert_called_once_with(
+            "real-session-id", {"backend": "docker", "container_id": "c"}
+        )
+    finally:
+        terminal_tool._active_environments.pop("default", None)
+
+
+def test_restore_registers_under_resolved_container_key(monkeypatch):
+    """Symmetric: the reconnected env must be registered under the key terminal()
+    will look it up by ('default' for the top-level agent), not session_id."""
+    db = MagicMock()
+    db.get_session_sandbox_handle.return_value = {"backend": "docker", "container_id": "c"}
+    sentinel = object()
+    monkeypatch.setattr(terminal_tool, "reconnect_environment", lambda h, **k: sentinel)
+    try:
+        out = terminal_tool.restore_sandbox_for_session("real-session-id", db, cwd="/w")
+        assert out is sentinel
+        # terminal() for the top-level agent resolves to "default" — env must be there
+        assert terminal_tool._active_environments.get("default") is sentinel
+    finally:
+        terminal_tool._active_environments.pop("default", None)
+
+
+def test_restore_sandbox_reconnect_fails_returns_none(monkeypatch):
+    db = MagicMock()
+    db.get_session_sandbox_handle.return_value = {
+        "backend": "docker",
+        "container_id": "gone",
+    }
+    monkeypatch.setattr(terminal_tool, "reconnect_environment", lambda h, **k: None)
+    assert terminal_tool.restore_sandbox_for_session("sess-y", db, cwd="/w") is None

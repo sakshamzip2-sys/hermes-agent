@@ -161,6 +161,7 @@ LAZY_DEPS: dict[str, tuple[str, ...]] = {
     # ─── Terminal backends ─────────────────────────────────────────────────
     "terminal.modal": ("modal==1.3.4",),
     "terminal.daytona": ("daytona==0.155.0",),
+    "terminal.e2b": ("e2b>=1.2.0",),  # E2B Firecracker microVM sandboxes (cloud or self-hosted)
 
     # ─── Skills ────────────────────────────────────────────────────────────
     "skill.google_workspace": (

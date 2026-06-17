@@ -18,6 +18,10 @@ import time
 import unicodedata
 from typing import Optional
 from hermes_cli.config import cfg_get
+# Single source of truth for "this backend is kernel/VM-isolated" — used by the
+# approval gates below so a new isolated backend (e2b, ...) is auto-allowed
+# everywhere without editing each gate. sandbox_resolver is stdlib-only (no cycle).
+from tools.sandbox_resolver import ISOLATED_BACKENDS
 
 from utils import env_var_enabled, is_truthy_value
 
@@ -1200,7 +1204,7 @@ def check_dangerous_command(command: str, env_type: str,
     Returns:
         {"approved": True/False, "message": str or None, ...}
     """
-    if env_type in {"docker", "singularity", "modal", "daytona"}:
+    if env_type in ISOLATED_BACKENDS:
         return {"approved": True, "message": None}
 
     # Hardline floor: commands with no recovery path (rm -rf /, mkfs, dd
@@ -1457,7 +1461,7 @@ def _check_all_command_guards_impl(command: str, env_type: str,
     other was shown to the user.
     """
     # Skip containers for both checks
-    if env_type in {"docker", "singularity", "modal", "daytona"}:
+    if env_type in ISOLATED_BACKENDS:
         return {"approved": True, "message": None}
 
     # Hardline floor: unconditional block for catastrophic commands
@@ -1832,7 +1836,7 @@ def _check_execute_code_guard_impl(code: str, env_type: str) -> dict:
 
     # Isolated backends already sandbox the child — matches the container skip
     # in check_all_command_guards / check_dangerous_command.
-    if env_type in {"docker", "singularity", "modal", "daytona", "vercel_sandbox"}:
+    if env_type in ISOLATED_BACKENDS:
         return {"approved": True, "message": None}
 
     # --yolo or approvals.mode=off: bypass (session- or process-scoped).

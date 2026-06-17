@@ -989,6 +989,12 @@ DEFAULT_CONFIG = {
         "singularity_image": "docker://nikolaik/python-nodejs:python3.11-nodejs20",
         "modal_image": "nikolaik/python-nodejs:python3.11-nodejs20",
         "daytona_image": "nikolaik/python-nodejs:python3.11-nodejs20",
+        # E2B Firecracker microVM sandbox (cloud or self-hosted). Set E2B_API_KEY
+        # (and E2B_DOMAIN / E2B_API_URL for a self-hosted endpoint, e.g. a 24/7
+        # E2B container on a VM). e2b_template is the sandbox template name;
+        # e2b_sandbox_timeout is the keep-alive in seconds (long for durable work).
+        "e2b_template": "base",
+        "e2b_sandbox_timeout": 3600,
         # Container resource limits (docker, singularity, modal, daytona — ignored for local/ssh)
         "container_cpu": 1,
         "container_memory": 5120,       # MB (default 5GB)
@@ -2601,6 +2607,31 @@ REQUIRED_ENV_VARS = {}
 
 # Optional environment variables that enhance functionality
 OPTIONAL_ENV_VARS = {
+    # ── E2B sandbox backend (terminal.backend: e2b) ──
+    "E2B_API_KEY": {
+        "description": "E2B API key (terminal.backend: e2b — isolated Firecracker microVM sandboxes, cloud or self-hosted)",
+        "prompt": "E2B API key",
+        "url": "https://e2b.dev/dashboard",
+        "password": True,
+        "category": "tool",
+        "advanced": True,
+    },
+    "E2B_DOMAIN": {
+        "description": "E2B domain override for a self-hosted endpoint (e.g. a 24/7 E2B control plane on a VM); leave empty for E2B cloud",
+        "prompt": "E2B domain (leave empty for E2B cloud)",
+        "url": None,
+        "password": False,
+        "category": "tool",
+        "advanced": True,
+    },
+    "E2B_API_URL": {
+        "description": "E2B API URL override for a self-hosted endpoint (alternative to E2B_DOMAIN; the SDK builds https://api.<domain> if unset)",
+        "prompt": "E2B API URL (leave empty for E2B cloud / E2B_DOMAIN)",
+        "url": None,
+        "password": False,
+        "category": "tool",
+        "advanced": True,
+    },
     # ── Provider (handled in provider selection, not shown in checklists) ──
     "NOUS_BASE_URL": {
         "description": "Nous Portal base URL override",
@@ -5349,6 +5380,8 @@ TERMINAL_CONFIG_ENV_MAP = {
     "singularity_image": "TERMINAL_SINGULARITY_IMAGE",
     "modal_image": "TERMINAL_MODAL_IMAGE",
     "daytona_image": "TERMINAL_DAYTONA_IMAGE",
+    "e2b_template": "TERMINAL_E2B_TEMPLATE",
+    "e2b_sandbox_timeout": "TERMINAL_E2B_SANDBOX_TIMEOUT",
     "ssh_host": "TERMINAL_SSH_HOST",
     "ssh_user": "TERMINAL_SSH_USER",
     "ssh_port": "TERMINAL_SSH_PORT",

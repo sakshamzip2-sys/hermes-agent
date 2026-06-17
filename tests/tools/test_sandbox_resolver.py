@@ -205,3 +205,29 @@ def test_auto_mount_guard_allows_real_project_dir(tmp_path):
     assert _is_safe_auto_mount_dir(str(proj)) is True
     # And a typical home-nested repo path.
     assert _is_safe_auto_mount_dir(os.path.join(os.path.expanduser("~"), "code", "app")) is True
+
+
+def test_auto_mount_guard_case_insensitive_home_bypass():
+    """Round-4: on case-insensitive FS, an upper/mixed-case home path is the SAME
+    dir and must be refused (inode comparison, not string compare)."""
+    from tools.terminal_tool import _is_safe_auto_mount_dir
+    import os as _os
+    home = _os.path.expanduser("~")
+    # These resolve to the same inode as home / /Users on macOS → must refuse.
+    for variant in (home.upper(), "/USERS/" + _os.path.basename(home),
+                    _os.path.dirname(home).upper()):
+        # Only meaningful when the variant actually maps to the same dir
+        # (case-insensitive FS). On a case-sensitive FS these are different dirs
+        # that don't exist, so samefile→OSError→casefold compare still refuses
+        # the home/Users cases.
+        assert _is_safe_auto_mount_dir(variant) is False, variant
+
+
+def test_auto_mount_guard_refuses_sensitive_home_children():
+    """Round-4: dirs holding secrets directly under home must never auto-mount."""
+    from tools.terminal_tool import _is_safe_auto_mount_dir
+    import os as _os
+    home = _os.path.expanduser("~")
+    for child in (".ssh", ".aws", ".gnupg", ".config", ".kube", ".docker",
+                  "Desktop", "Documents", "Downloads", "Library"):
+        assert _is_safe_auto_mount_dir(_os.path.join(home, child)) is False, child

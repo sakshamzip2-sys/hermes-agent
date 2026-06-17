@@ -143,6 +143,11 @@ def run_agent_task(spec: AgentSpec) -> AgentResult:
     # Non-interactive: auto-approve tool/shell prompts (a prompt would hang).
     os.environ.setdefault("HERMES_YOLO_MODE", "1")
     os.environ.setdefault("HERMES_ACCEPT_HOOKS", "1")
+    # Sandbox-by-default: this headless path auto-approves, so it must NOT run
+    # model-authored code on the host. 'auto' resolves to docker/modal when present
+    # and only downgrades to local with a logged warning. An inherited TERMINAL_ENV
+    # (e.g. gateway-resolved docker) wins via setdefault.
+    os.environ.setdefault("TERMINAL_ENV", "auto")
 
     try:
         from run_agent import AIAgent

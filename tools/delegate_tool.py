@@ -37,7 +37,7 @@ from toolsets import TOOLSETS
 # Must match hermes_cli.runtime_provider.RUNTIME_PROVIDER_TYPE_CUSTOM.
 _RUNTIME_PROVIDER_CUSTOM = "custom"
 from tools import file_state
-from tools.sandbox_resolver import ISOLATED_BACKENDS, resolve_terminal_backend
+from tools.sandbox_resolver import ISOLATED_BACKENDS, resolve_backend_name
 from tools.terminal_tool import set_approval_callback as _set_subagent_approval_cb
 from utils import base_url_hostname, is_truthy_value
 
@@ -234,23 +234,39 @@ def _resolve_isolatable_backend() -> Optional[str]:
     """
     raw = os.getenv("TERMINAL_ENV") or "auto"
     try:
-        backend = resolve_terminal_backend(raw)
+        # resolve_backend_name returns the concrete backend STRING (not the
+        # (backend, was_auto) tuple from resolve_terminal_backend).
+        backend = resolve_backend_name(raw)
     except Exception:  # noqa: BLE001 — probe failure ⇒ cannot guarantee isolation
         return None
     return backend if backend in ISOLATED_BACKENDS else None
 
 
-def _maybe_isolate_child_sandbox(subagent_id: str) -> bool:
-    """Give a delegated child its OWN sandbox when
-    ``delegation.subagent_sandbox == 'isolated'`` and the active backend can
-    isolate.
+def _maybe_isolate_child_sandbox(subagent_id: str, goal: Optional[str] = None) -> bool:
+    """Give a delegated child its OWN sandbox when isolation is warranted.
+
+    Isolation is applied when EITHER:
+      * ``delegation.subagent_sandbox == 'isolated'`` (global opt-in), OR
+      * the execution router, reading the child's *goal*, returns an
+        ``isolated`` / ``durable`` mode — so a long-running or explicitly
+        isolated sub-task gets its own sandbox even under the default
+        ``shared`` config.
 
     Reuses the existing per-task override hook: registering an ``env_type``
     override makes :func:`terminal_tool._resolve_container_task_id` return the
     child's own id instead of collapsing it to the shared ``'default'``
     container.  Returns ``True`` iff isolation was applied.
     """
-    if _get_subagent_sandbox_mode() != "isolated":
+    want_isolation = _get_subagent_sandbox_mode() == "isolated"
+    if not want_isolation and goal:
+        try:
+            from tools.execution_router import route_execution_mode
+
+            if route_execution_mode(goal).mode in ("isolated", "durable"):
+                want_isolation = True
+        except Exception:  # noqa: BLE001 — routing is advisory, never fatal
+            pass
+    if not want_isolation:
         return False
     backend = _resolve_isolatable_backend()
     if backend is None:
@@ -1106,10 +1122,12 @@ def _build_child_agent(
     parent_subagent_id = getattr(parent_agent, "_subagent_id", None)
     tui_depth = max(0, child_depth - 1)  # 0 = first-level child for the UI
 
-    # Optionally give this child its OWN sandbox (delegation.subagent_sandbox:
-    # isolated). No-op in the default 'shared' mode, so existing behavior — all
-    # children sharing the parent container — is unchanged unless opted in.
-    _maybe_isolate_child_sandbox(subagent_id)
+    # Optionally give this child its OWN sandbox: either via
+    # delegation.subagent_sandbox=isolated, or when the execution router reads
+    # this child's goal as isolated/durable work. No-op for ordinary short
+    # sub-tasks under the default 'shared' mode, so existing behavior — all
+    # children sharing the parent container — is unchanged unless warranted.
+    _maybe_isolate_child_sandbox(subagent_id, goal=goal)
 
     delegation_cfg = _load_config()
 

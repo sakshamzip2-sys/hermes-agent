@@ -156,7 +156,10 @@ def test_passwordless_sudo_skips_interactive_prompt_and_rewrite(monkeypatch):
 
 
 def test_passwordless_sudo_probe_rechecks_local_terminal(monkeypatch):
-    monkeypatch.delenv("TERMINAL_ENV", raising=False)
+    # Pin to local so resolve_terminal_backend() short-circuits without a Docker
+    # `docker info` probe — otherwise that probe consumes the first mocked
+    # subprocess.run call and the sudo probe never runs (this IS the local path).
+    monkeypatch.setenv("TERMINAL_ENV", "local")
     calls = []
 
     class Result:
