@@ -3568,6 +3568,288 @@ class APIServerAdapter(BasePlatformAdapter):
             return auth_err
         return web.json_response(self.build_parallel_agents_snapshot())
 
+    # ------------------------------------------------------------------
+    # Parallel-agents drill-down: per-entity detail, control, and the
+    # click-to-chat bridge. All read paths reuse the plugin DB accessors;
+    # the static builders are factored out so they are unit-testable
+    # without aiohttp (mirroring build_parallel_agents_snapshot()).
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _tail_file(path: str, max_bytes: int = 16384) -> str:
+        """Return the last ``max_bytes`` of a (possibly large) text file,
+        dropping a leading partial line. Empty string if the file is absent."""
+        p = Path(path)
+        if not p.is_file():
+            return ""
+        size = p.stat().st_size
+        with p.open("rb") as fh:
+            if size > max_bytes:
+                fh.seek(size - max_bytes)
+            data = fh.read()
+        text = data.decode("utf-8", errors="replace")
+        if size > max_bytes:
+            nl = text.find("\n")
+            if nl != -1:
+                text = text[nl + 1:]
+        return text
+
+    @staticmethod
+    def build_flow_detail(flow_id: str) -> Optional[dict]:
+        """Full detail for one dynamic-workflow run: phases, per-agent rows,
+        progress logs, and the decoded result. Returns None if no such run."""
+        from plugins.oc_flow import db as _flow_db
+
+        run = _flow_db.get_run(flow_id)
+        if run is None:
+            return None
+        errors: dict = {}
+        phases: list = []
+        agents: list = []
+        logs: list = []
+        result = None
+        try:
+            phases = _flow_db.list_phases(flow_id)
+        except Exception as exc:  # noqa: BLE001
+            errors["phases"] = str(exc)
+        try:
+            agents = _flow_db.list_agents(flow_id)
+        except Exception as exc:  # noqa: BLE001
+            errors["agents"] = str(exc)
+        try:
+            logs = _flow_db.list_logs(flow_id, limit=500)
+        except Exception as exc:  # noqa: BLE001
+            errors["logs"] = str(exc)
+        try:
+            result = _flow_db.decode_result(run)
+        except Exception as exc:  # noqa: BLE001
+            errors["result"] = str(exc)
+        return {
+            "object": "hermes.flow_detail",
+            "run": run,
+            "phases": phases,
+            "agents": agents,
+            "logs": logs,
+            "result": result,
+            "errors": errors,
+        }
+
+    @staticmethod
+    def build_agent_detail(session_id: str, *, log_bytes: int = 16384) -> Optional[dict]:
+        """Full detail for one background agent session: the row plus a bounded
+        tail of its on-disk activity log. Returns None if no such session.
+
+        Reconciles dead PIDs first so a crashed agent reads as ``failed``
+        (matching the daemonless supervisor semantics of the snapshot)."""
+        from plugins.oc_agents import db as _agents_db
+
+        try:
+            from plugins.oc_agents import supervisor as _agents_sup
+
+            _agents_sup.reconcile()
+        except Exception:  # noqa: BLE001 — best-effort liveness reconcile
+            pass
+
+        session = _agents_db.get_session(session_id)
+        if session is None:
+            return None
+        log_tail = ""
+        log_err = None
+        log_path = session.get("log_path")
+        if log_path:
+            try:
+                log_tail = APIServerAdapter._tail_file(str(log_path), log_bytes)
+            except Exception as exc:  # noqa: BLE001
+                log_err = str(exc)
+        return {
+            "object": "hermes.agent_detail",
+            "session": session,
+            "log_path": log_path,
+            "log_tail": log_tail,
+            # agent_session_id (a hermes_state session id) is the click-to-chat
+            # resume target; surface it explicitly for the frontend.
+            "chat_session_id": session.get("agent_session_id") or "",
+            "errors": {"log": log_err},
+        }
+
+    @staticmethod
+    def build_team_detail(team_id: str) -> Optional[dict]:
+        """Full detail for one agent team: members (enriched with each
+        teammate's chat-resume session id), the shared task list, the message
+        log, and the rollup summary. Returns None if no such team."""
+        from plugins.oc_teams import db as _teams_db
+
+        team = _teams_db.get_team(team_id)
+        if team is None:
+            return None
+        errors: dict = {}
+        members: list = []
+        tasks: list = []
+        messages: list = []
+        summary: dict = {}
+        try:
+            members = _teams_db.list_members(team_id)
+        except Exception as exc:  # noqa: BLE001
+            errors["members"] = str(exc)
+        try:
+            tasks = _teams_db.list_tasks(team_id)
+        except Exception as exc:  # noqa: BLE001
+            errors["tasks"] = str(exc)
+        try:
+            messages = _teams_db.list_messages(team_id, limit=200)
+        except Exception as exc:  # noqa: BLE001
+            errors["messages"] = str(exc)
+        try:
+            summary = _teams_db.team_status_summary(team_id)
+        except Exception as exc:  # noqa: BLE001
+            errors["summary"] = str(exc)
+
+        # Enrich each member with its background session's hermes chat session
+        # id so the frontend can offer "continue chatting" per teammate.
+        try:
+            from plugins.oc_agents import db as _agents_db
+
+            for m in members:
+                bg = m.get("bg_session_id")
+                if not bg:
+                    m["chat_session_id"] = ""
+                    continue
+                sess = _agents_db.get_session(bg)
+                m["chat_session_id"] = (sess or {}).get("agent_session_id") or ""
+        except Exception as exc:  # noqa: BLE001 — oc_agents may be absent
+            errors["member_sessions"] = str(exc)
+
+        return {
+            "object": "hermes.team_detail",
+            "team": team,
+            "members": members,
+            "tasks": tasks,
+            "messages": messages,
+            "summary": summary,
+            "errors": errors,
+        }
+
+    @staticmethod
+    def stop_flow(flow_id: str) -> dict:
+        """Signal a running flow's background process and mark it stopped.
+        Idempotent: returns ``{found: False}`` for unknown runs and
+        ``{stopped: False}`` for already-terminal runs; never raises on a
+        dead PID."""
+        from plugins.oc_flow import db as _flow_db
+
+        run = _flow_db.get_run(flow_id)
+        if run is None:
+            return {"found": False, "stopped": False}
+        if run["status"] not in ("running", "pending"):
+            return {"found": True, "stopped": False, "status": run["status"]}
+        pid = run.get("pid")
+        if pid and run.get("background"):
+            try:
+                os.kill(int(pid), 15)  # SIGTERM
+            except ProcessLookupError:
+                pass
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("oc_flow: could not signal pid %s: %s", pid, exc)
+        _flow_db.finish_run(flow_id, "stopped", error="stopped by user")
+        return {"found": True, "stopped": True, "status": "stopped"}
+
+    async def _handle_flow_detail(self, request: "web.Request") -> "web.Response":
+        """GET /api/parallel-agents/flows/{flow_id}"""
+        auth_err = self._check_auth(request)
+        if auth_err:
+            return auth_err
+        flow_id = request.match_info["flow_id"]
+        try:
+            detail = self.build_flow_detail(flow_id)
+        except Exception as exc:  # noqa: BLE001
+            return web.json_response({"error": str(exc)}, status=500)
+        if detail is None:
+            return web.json_response({"error": "flow not found"}, status=404)
+        return web.json_response(detail)
+
+    async def _handle_agent_detail(self, request: "web.Request") -> "web.Response":
+        """GET /api/parallel-agents/agents/{session_id}"""
+        auth_err = self._check_auth(request)
+        if auth_err:
+            return auth_err
+        session_id = request.match_info["session_id"]
+        try:
+            detail = self.build_agent_detail(session_id)
+        except Exception as exc:  # noqa: BLE001
+            return web.json_response({"error": str(exc)}, status=500)
+        if detail is None:
+            return web.json_response({"error": "agent session not found"}, status=404)
+        return web.json_response(detail)
+
+    async def _handle_team_detail(self, request: "web.Request") -> "web.Response":
+        """GET /api/parallel-agents/teams/{team_id}"""
+        auth_err = self._check_auth(request)
+        if auth_err:
+            return auth_err
+        team_id = request.match_info["team_id"]
+        try:
+            detail = self.build_team_detail(team_id)
+        except Exception as exc:  # noqa: BLE001
+            return web.json_response({"error": str(exc)}, status=500)
+        if detail is None:
+            return web.json_response({"error": "team not found"}, status=404)
+        return web.json_response(detail)
+
+    async def _handle_agent_stop(self, request: "web.Request") -> "web.Response":
+        """POST /api/parallel-agents/agents/{session_id}/stop"""
+        auth_err = self._check_auth(request)
+        if auth_err:
+            return auth_err
+        session_id = request.match_info["session_id"]
+        try:
+            from plugins.oc_agents import supervisor as _agents_sup
+
+            stopped = _agents_sup.stop(session_id)
+        except Exception as exc:  # noqa: BLE001
+            return web.json_response({"error": str(exc)}, status=500)
+        return web.json_response({"object": "hermes.agent_stop", "stopped": bool(stopped)})
+
+    async def _handle_flow_stop(self, request: "web.Request") -> "web.Response":
+        """POST /api/parallel-agents/flows/{flow_id}/stop"""
+        auth_err = self._check_auth(request)
+        if auth_err:
+            return auth_err
+        flow_id = request.match_info["flow_id"]
+        try:
+            result = self.stop_flow(flow_id)
+        except Exception as exc:  # noqa: BLE001
+            return web.json_response({"error": str(exc)}, status=500)
+        if not result.get("found"):
+            return web.json_response({"error": "flow not found"}, status=404)
+        return web.json_response({"object": "hermes.flow_stop", **result})
+
+    async def _handle_team_send_message(self, request: "web.Request") -> "web.Response":
+        """POST /api/parallel-agents/teams/{team_id}/messages  {from,to,body}"""
+        auth_err = self._check_auth(request)
+        if auth_err:
+            return auth_err
+        team_id = request.match_info["team_id"]
+        try:
+            data = await request.json()
+        except Exception:  # noqa: BLE001
+            return web.json_response({"error": "invalid JSON body"}, status=400)
+        body = (data.get("body") or "").strip()
+        if not body:
+            return web.json_response({"error": "body is required"}, status=400)
+        from_member = (data.get("from") or "user").strip() or "user"
+        to_member = (data.get("to") or "*").strip() or "*"
+        try:
+            from plugins.oc_teams import db as _teams_db
+
+            if _teams_db.get_team(team_id) is None:
+                return web.json_response({"error": "team not found"}, status=404)
+            message_id = _teams_db.send_message(team_id, from_member, to_member, body)
+        except Exception as exc:  # noqa: BLE001
+            return web.json_response({"error": str(exc)}, status=500)
+        return web.json_response(
+            {"object": "hermes.team_message", "message_id": message_id}
+        )
+
     # Loopback base for the on-box Open Design daemon (the in-OpenComputer
     # "Open Design" panel backend). Overridable for tests / non-default ports.
     _OPEN_DESIGN_DAEMON_BASE = os.environ.get(
@@ -4716,6 +4998,13 @@ class APIServerAdapter(BasePlatformAdapter):
             self._app.router.add_post("/api/jobs/{job_id}/run", self._handle_run_job)
             # Parallel-agents read-only surface (oc_flow / oc_agents / oc_teams plugins)
             self._app.router.add_get("/api/parallel-agents", self._handle_parallel_agents)
+            # Parallel-agents drill-down: per-entity detail, control, and chat bridge.
+            self._app.router.add_get("/api/parallel-agents/flows/{flow_id}", self._handle_flow_detail)
+            self._app.router.add_get("/api/parallel-agents/agents/{session_id}", self._handle_agent_detail)
+            self._app.router.add_get("/api/parallel-agents/teams/{team_id}", self._handle_team_detail)
+            self._app.router.add_post("/api/parallel-agents/agents/{session_id}/stop", self._handle_agent_stop)
+            self._app.router.add_post("/api/parallel-agents/flows/{flow_id}/stop", self._handle_flow_stop)
+            self._app.router.add_post("/api/parallel-agents/teams/{team_id}/messages", self._handle_team_send_message)
             self._app.router.add_get("/api/memory", self._handle_get_memory)
             # Authenticated passthrough to the on-box Open Design daemon so the
             # workspace "Open Design" panel reaches it over the agent's existing
