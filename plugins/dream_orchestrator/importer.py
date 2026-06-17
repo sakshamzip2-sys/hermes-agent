@@ -228,9 +228,10 @@ def run_cross_feed(cfg, store) -> ImportSummary:
             continue
         if cfg.dry_run:
             continue
-        # Promote the PROVENANCE LINE (not the bare text) so the marker travels
-        # with it into MEMORY.md -> the local dreamer can exclude it later.
-        memory_io.promote(line)
+        # Promote the PROVENANCE LINE verbatim (promote_raw, NOT promote) so the
+        # marker travels intact into MEMORY.md (the local dreamer excludes it
+        # later) WITHOUT promote() prepending a second "(dreamed …)" prefix.
+        memory_io.promote_raw(line)
         existing.append(c.text)  # keep the in-run corpus current
         store.mark_imported(c.import_id, source=c.source, ref=c.ref)
         summary.promoted.append(line)

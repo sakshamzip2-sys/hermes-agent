@@ -243,17 +243,34 @@ class GBrainDreamTarget(DreamTarget):
             job = _parse_gbrain_job(obj)
             job_id = job.get("id")
             status = job.get("status")
-            detail = f"submit_job {_GBRAIN_DREAM_JOB} -> job {job_id} ({status})"
-            # Honesty: `gbrain serve --http` may queue but not process jobs (no
-            # worker). We report the accepted state truthfully — a "waiting" job
-            # is accepted, not necessarily executed.
+            # A `gbrain jobs work` worker (Postgres engine) usually drains the
+            # cycle within seconds — poll for the REAL outcome rather than
+            # assuming it never ran. If nothing is draining the queue it stays
+            # "waiting" and we say so honestly.
+            final = status
+            if job_id is not None and status in ("waiting", "running", "queued", None):
+                import time as _t
+
+                for _ in range(15):  # ~15s budget
+                    _t.sleep(1.0)
+                    js = self.job_status(job_id)
+                    cur = js.get("status") if js else None
+                    if cur:
+                        final = cur
+                        if cur in ("completed", "failed", "error", "cancelled"):
+                            break
+            detail = f"submit_job {_GBRAIN_DREAM_JOB} -> job {job_id} ({final})"
             note = ""
-            if status == "waiting":
-                note = (" — queued; the serve process may not run a worker, "
-                        "so the cycle may not execute until a worker drains it")
+            if final in ("waiting", "running", "queued"):
+                note = (" — still queued; no worker is draining the queue "
+                        "(start the gbrain-worker daemon to execute dreams)")
+            elif final in ("failed", "error"):
+                note = " — job did not complete; check the gbrain-worker logs"
             return TargetResult(
-                name=self.name, status="ok", detail=detail + note,
-                data={"job_id": job_id, "job_status": status,
+                name=self.name,
+                status=("error" if final in ("failed", "error") else "ok"),
+                detail=detail + note,
+                data={"job_id": job_id, "job_status": final,
                       "job_name": _GBRAIN_DREAM_JOB},
             )
         except Exception as exc:  # noqa: BLE001

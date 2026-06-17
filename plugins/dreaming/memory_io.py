@@ -99,6 +99,27 @@ def promote(content: str) -> None:
     _atomic_write(path, ENTRY_DELIMITER.join(entries))
 
 
+def promote_raw(content: str) -> None:
+    """Append *content* VERBATIM as a MEMORY.md entry (no added marker, deduped).
+
+    Used by the cross-feed importer, which supplies its own complete
+    provenance-bearing marker — ``(dreamed YYYY-MM-DD · source#id · conf=…) …`` —
+    so we must NOT prepend a second ``(dreamed …)`` prefix the way :func:`promote`
+    does. Dedup is by the bare fact text, consistent with :func:`promote`.
+    """
+    content = content.strip()
+    if not content:
+        return
+    path = _memory_path()
+    entries = _read_entries(path)
+    bare_existing = {_strip_marker(e) for e in entries}
+    if _strip_marker(content) in bare_existing or content in entries:
+        logger.debug("dreaming: skipping promote_raw of duplicate fact")
+        return
+    entries.append(content)
+    _atomic_write(path, ENTRY_DELIMITER.join(entries))
+
+
 def _strip_marker(entry: str) -> str:
     """Remove a leading ``(dreamed YYYY-MM-DD) `` marker for dedup comparison."""
     if entry.startswith("(dreamed ") and ") " in entry:
