@@ -1277,6 +1277,16 @@ credentials are redacted from logs. **Gated**: `check_fn` hides the tool unless 
 connection is configured (`DATABASE_URL` / `DATABASE_URL_<NAME>` env or
 `database.connections` in config.yaml).
 
+### `agent-eval` — behavior regression harness (skill + CLI)
+
+`skills/agent-eval/` pins the *agent's own behavior* (distinct from the
+model-benchmark `evaluating-llms-harness`). `eval.py` scores recorded run traces
+(`tool_calls` + `output` + `available_tools`) against per-case assertions
+(`tool_called`, `tool_not_called`, `no_pii`, `output_valid_json`,
+`output_json_schema`, `no_hallucinated_tool`, contains/regex) and exits non-zero
+when the case pass-rate drops below `--threshold` — wire it into CI to catch a
+prompt/model/tool regression. Exposed as a skill + CLI, not a runtime tool.
+
 ---
 
 ## Profiles: Multi-Instance Support
