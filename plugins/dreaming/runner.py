@@ -45,8 +45,50 @@ def _store_path() -> Path:
         return root / "dreaming" / "dreaming.db"
 
 
+def _review_home() -> Path:
+    """Where the HMAC review queue lives (``$HERMES_HOME/dreaming``)."""
+    try:
+        from hermes_constants import get_hermes_home
+
+        return get_hermes_home() / "dreaming"
+    except Exception:  # noqa: BLE001
+        import os
+
+        base = os.environ.get("HERMES_HOME")
+        root = Path(base) if base else Path.home() / ".hermes"
+        return root / "dreaming"
+
+
 def _candidate_id(session_event_id: str, fact: str) -> str:
     return hashlib.sha256(f"{session_event_id}|{fact}".encode()).hexdigest()[:16]
+
+
+def _queue_for_review(summary: DreamRunSummary) -> None:
+    """Queue gate-passing promotions/updates to the HMAC review queue (review_mode).
+
+    The engine already built full DreamGateResults (text + score + recall + diversity),
+    so we queue each with its provenance instead of having written MEMORY.md. Fail-soft.
+    """
+    from . import review
+
+    home = _review_home()
+    for r in summary.promoted:
+        try:
+            review.queue_pending(
+                home, text=r.candidate.raw_text, source_event_id=r.candidate.event_id,
+                score=r.score, recall_count=r.recall_count, diversity_score=r.diversity_score,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("dreaming: review queue failed for a promotion: %s", exc)
+    for r in summary.updated:
+        try:
+            review.queue_pending(
+                home, text=r.candidate.raw_text, source_event_id=r.candidate.event_id,
+                score=r.score, recall_count=r.recall_count, diversity_score=r.diversity_score,
+                old_text=r.old_text,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("dreaming: review queue failed for an update: %s", exc)
 
 
 async def run_dream_cycle(
@@ -167,7 +209,9 @@ async def run_dream_cycle(
 
     session_summary = DreamRunSummary()
     if cand_facts:
-        pipeline = _build_pipeline(cfg, sdb, fact_by_id, hold_fn=memory_io.hold)
+        promote_fn, replace_fn = _review_mode_fns(cfg)
+        pipeline = _build_pipeline(cfg, sdb, fact_by_id, hold_fn=memory_io.hold,
+                                   promote_fn=promote_fn, replace_fn=replace_fn)
         already = st.processed_ids()
         session_summary = await pipeline.run_once(
             cand_facts,
@@ -179,6 +223,11 @@ async def run_dream_cycle(
         # the Pass-1 re-score (above), not by re-scanning the session.
         evaluated_ids = [c.event_id for c in cand_facts if c.event_id not in already]
         st.mark_processed(evaluated_ids)
+
+    # review_mode: gate-passing facts were NOT written to MEMORY.md (no-op promote/replace);
+    # queue them to the HMAC review queue for operator accept/reject instead.
+    if getattr(cfg, "review_mode", False):
+        _queue_for_review(_merge_summaries(rescore, session_summary))
 
     st.set_last_run_ts(now)
     combined = _merge_summaries(rescore, session_summary)
@@ -202,17 +251,28 @@ def _build_recall_fn(sdb: Path, fact_by_id: dict[str, str]):
     return recall_count_fn
 
 
-def _build_pipeline(cfg, sdb: Path, fact_by_id: dict[str, str], *, hold_fn) -> DreamingPipeline:
+def _build_pipeline(
+    cfg, sdb: Path, fact_by_id: dict[str, str], *, hold_fn,
+    promote_fn=None, replace_fn=None,
+) -> DreamingPipeline:
     return DreamingPipeline(
         cfg.engine,
         score_fn=llm.score_fact,
         recall_count_fn=_build_recall_fn(sdb, fact_by_id),
-        promote_fn=memory_io.promote,
+        promote_fn=promote_fn or memory_io.promote,
         hold_fn=hold_fn,
         embed_fn=llm.semantic_embed,  # semantic (config-driven), lexical fallback
         decision_fn=llm.decide_supersede,
-        replace_fn=memory_io.replace,
+        replace_fn=replace_fn or memory_io.replace,
     )
+
+
+def _review_mode_fns(cfg):
+    """In review_mode, promote/replace become no-ops (don't touch MEMORY.md); the engine
+    still routes to PROMOTED/UPDATED so we can queue the results with full metadata."""
+    if getattr(cfg, "review_mode", False):
+        return (lambda _text: None, lambda _old, _new: True)
+    return (None, None)
 
 
 def _merge_summaries(a: DreamRunSummary, b: DreamRunSummary) -> DreamRunSummary:
@@ -249,7 +309,9 @@ async def _rescore_dreams(cfg, sdb: Path, existing_facts: list[str]) -> DreamRun
 
     # hold_fn is a no-op here: these facts already live in DREAMS.md and we
     # rewrite the file from `remaining` afterwards (avoids duplicate appends).
-    pipeline = _build_pipeline(cfg, sdb, fact_by_id, hold_fn=lambda *_args: None)
+    promote_fn, replace_fn = _review_mode_fns(cfg)
+    pipeline = _build_pipeline(cfg, sdb, fact_by_id, hold_fn=lambda *_args: None,
+                               promote_fn=promote_fn, replace_fn=replace_fn)
     summary = await pipeline.run_once(cand, existing_memories=existing_facts)
 
     gone = {r.candidate.raw_text for r in (*summary.promoted, *summary.updated, *summary.dropped)}

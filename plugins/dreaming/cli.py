@@ -25,6 +25,13 @@ def setup(subparser: argparse.ArgumentParser) -> None:
     p_dreams = sub.add_parser("dreams", help="list the DREAMS.md holding pen")
     p_dreams.set_defaults(func=_cmd_dreams)
 
+    p_review = sub.add_parser("review", help="operate the review queue (review_mode)")
+    p_review.add_argument("review_action", nargs="?", default="list",
+                          choices=["list", "accept", "reject", "verify"])
+    p_review.add_argument("promotion_id", nargs="?", default=None,
+                          help="id for accept/reject")
+    p_review.set_defaults(func=_cmd_review)
+
     # Default when bare `oc dream` is invoked.
     subparser.set_defaults(func=_cmd_status)
 
@@ -82,6 +89,54 @@ def _cmd_run(args: argparse.Namespace) -> int:
         print(f"  + {r.candidate.raw_text}")
     for r in summary.updated:
         print(f"  ~ {r.candidate.raw_text}")
+    return 0
+
+
+def _cmd_review(args: argparse.Namespace) -> int:
+    """Operate the review queue: list / accept <id> / reject <id> / verify."""
+    from . import memory_io, review
+    from .runner import _review_home
+
+    home = _review_home()
+    action = getattr(args, "review_action", "list")
+    pid = getattr(args, "promotion_id", None)
+
+    if action == "verify":
+        ok = review.verify_chain(home)
+        print(f"Review queue HMAC chain: {'OK' if ok else 'BROKEN (tampered)'}")
+        return 0 if ok else 1
+
+    if action == "list":
+        state = review.load_state(home)
+        if not state.items:
+            print("Review queue is empty.")
+            return 0
+        print(f"Review queue ({len(state.items)} pending):")
+        for it in state.items:
+            tag = " (supersede)" if it.old_text else ""
+            print(f"  [{it.id[:8]}] score={it.score:.2f} recall={it.recall_count}{tag}: {it.text}")
+        return 0
+
+    if action in ("accept", "reject"):
+        if not pid:
+            print(f"{action} needs a promotion id (see `dream review list`).")
+            return 2
+        # Match a full or 8-char prefix id.
+        state = review.load_state(home)
+        match = next((it for it in state.items if it.id == pid or it.id.startswith(pid)), None)
+        if match is None:
+            print(f"No pending promotion matching {pid!r}.")
+            return 1
+        removed = review.remove_pending(home, promotion_id=match.id)
+        if action == "accept" and removed is not None:
+            if removed.old_text:
+                memory_io.replace(removed.old_text, removed.text)
+            else:
+                memory_io.promote(removed.text)
+            print(f"Accepted → MEMORY.md: {removed.text}")
+        else:
+            print(f"Rejected: {removed.text if removed else pid}")
+        return 0
     return 0
 
 
