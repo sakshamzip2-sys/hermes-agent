@@ -1196,6 +1196,22 @@ file-only checkpoints, fully backward compatible. Checkpoints remain **opt-in**
 shadow-git commit before every file write in every session — a real latency cost
 on large repos. Enable them to get full file + task-state rewind.
 
+### Browser: DOM-Distilled + Cloud-Isolation-Ready (verified, no rebuild)
+
+The browser stack already matches the "light, isolated, token-cheap" target, so
+do **not** add a redundant browser:
+- **DOM-distilled by default.** `browser_navigate` auto-returns a *compact
+  accessibility-tree snapshot* (CDP `getFullAXTree`, interactive elements + `@e`
+  ref IDs), capped at 8000 chars / LLM-summarized (`tools/browser_tool.py`).
+  Pixel screenshots (`browser_vision`) are the explicit fallback for CAPTCHAs /
+  visual-only content — far more token-efficient and *actionable* (ref-based
+  clicking) than screenshot-driving.
+- **Cloud isolation auto-preferred when configured.** `_get_cloud_provider()`
+  walks Browser-Use → Browserbase → local: with cloud keys set it runs in a
+  disposable cloud browser; without them it falls back to local Chromium
+  (`tools/browser_tool.py`, plugins under `plugins/browser/{browser_use,
+  browserbase,firecrawl}`). Set `browser.cloud_provider` to pin one.
+
 ---
 
 ## Profiles: Multi-Instance Support
