@@ -3568,6 +3568,433 @@ class APIServerAdapter(BasePlatformAdapter):
             return auth_err
         return web.json_response(self.build_parallel_agents_snapshot())
 
+    # ------------------------------------------------------------------
+    # Parallel-agents drill-down: per-entity detail, control, and the
+    # click-to-chat bridge. All read paths reuse the plugin DB accessors;
+    # the static builders are factored out so they are unit-testable
+    # without aiohttp (mirroring build_parallel_agents_snapshot()).
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _tail_file(
+        path: str, max_bytes: int = 16384, *, allowed_dir: Optional[str] = None
+    ) -> str:
+        """Return the last ``max_bytes`` of a (possibly large) text file,
+        dropping a leading partial line. Empty string if the file is absent.
+
+        When ``allowed_dir`` is provided, the resolved path must live inside it
+        — defense-in-depth so a tampered ``log_path`` (e.g. from a compromised
+        DB row) can't read arbitrary files via the API.
+        """
+        p = Path(path).resolve()
+        if allowed_dir is not None:
+            try:
+                p.relative_to(Path(allowed_dir).resolve())
+            except ValueError:
+                return ""
+        if not p.is_file():
+            return ""
+        size = p.stat().st_size
+        with p.open("rb") as fh:
+            if size > max_bytes:
+                fh.seek(size - max_bytes)
+            data = fh.read()
+        text = data.decode("utf-8", errors="replace")
+        if size > max_bytes:
+            nl = text.find("\n")
+            if nl != -1:
+                text = text[nl + 1:]
+        return text
+
+    @staticmethod
+    def build_flow_detail(flow_id: str) -> Optional[dict]:
+        """Full detail for one dynamic-workflow run: phases, per-agent rows,
+        progress logs, and the decoded result. Returns None if no such run."""
+        from plugins.oc_flow import db as _flow_db
+
+        run = _flow_db.get_run(flow_id)
+        if run is None:
+            return None
+        errors: dict = {}
+        phases: list = []
+        agents: list = []
+        logs: list = []
+        result = None
+        try:
+            phases = _flow_db.list_phases(flow_id, limit=500)
+        except Exception as exc:  # noqa: BLE001
+            errors["phases"] = str(exc)
+        try:
+            agents = _flow_db.list_agents(flow_id, limit=500)
+        except Exception as exc:  # noqa: BLE001
+            errors["agents"] = str(exc)
+        try:
+            logs = _flow_db.list_logs(flow_id, limit=500)
+        except Exception as exc:  # noqa: BLE001
+            errors["logs"] = str(exc)
+        try:
+            result = _flow_db.decode_result(run)
+        except Exception as exc:  # noqa: BLE001
+            errors["result"] = str(exc)
+        return {
+            "object": "hermes.flow_detail",
+            "run": run,
+            "phases": phases,
+            "agents": agents,
+            "logs": logs,
+            "result": result,
+            "errors": errors,
+        }
+
+    @staticmethod
+    def build_agent_detail(session_id: str, *, log_bytes: int = 16384) -> Optional[dict]:
+        """Full detail for one background agent session: the row plus a bounded
+        tail of its on-disk activity log. Returns None if no such session.
+
+        Reconciles dead PIDs first so a crashed agent reads as ``failed``
+        (matching the daemonless supervisor semantics of the snapshot)."""
+        from plugins.oc_agents import db as _agents_db
+
+        try:
+            from plugins.oc_agents import supervisor as _agents_sup
+
+            _agents_sup.reconcile()
+        except Exception:  # noqa: BLE001 — best-effort liveness reconcile
+            pass
+
+        session = _agents_db.get_session(session_id)
+        if session is None:
+            return None
+        events: list = []
+        events_err = None
+        try:
+            events = _agents_db.list_events(session_id, limit=300)
+        except Exception as exc:  # noqa: BLE001 — bg_events may not exist on old DBs
+            events_err = str(exc)
+        pending_messages: list = []
+        try:
+            pending_messages = _agents_db.pending_inbox(session_id)
+        except Exception:  # noqa: BLE001 — bg_inbox may not exist on old DBs
+            pending_messages = []
+        # Persona link (when the agent was launched from a persona).
+        persona = None
+        try:
+            _m = json.loads(session.get("meta") or "null")
+            if isinstance(_m, dict) and (_m.get("persona_name") or _m.get("persona_id") is not None):
+                persona = {"id": _m.get("persona_id"), "name": _m.get("persona_name") or ""}
+        except Exception:  # noqa: BLE001
+            persona = None
+        log_tail = ""
+        log_err = None
+        log_path = session.get("log_path")
+        if log_path:
+            try:
+                log_tail = APIServerAdapter._tail_file(
+                    str(log_path), log_bytes, allowed_dir=str(_agents_db.logs_dir())
+                )
+            except Exception as exc:  # noqa: BLE001
+                log_err = str(exc)
+        return {
+            "object": "hermes.agent_detail",
+            "session": session,
+            "log_path": log_path,
+            "log_tail": log_tail,
+            # Granular per-step activity (newest entries capped) for the live feed.
+            "events": events,
+            # User messages queued for this (running) agent, not yet consumed.
+            "pending_messages": pending_messages,
+            # Persona this agent was launched from (null if launched ad-hoc).
+            "persona": persona,
+            # agent_session_id (a hermes_state session id) is the click-to-chat
+            # resume target; surface it explicitly for the frontend.
+            "chat_session_id": session.get("agent_session_id") or "",
+            "errors": {"log": log_err, "events": events_err},
+        }
+
+    @staticmethod
+    def build_team_detail(team_id: str) -> Optional[dict]:
+        """Full detail for one agent team: members (enriched with each
+        teammate's chat-resume session id), the shared task list, the message
+        log, and the rollup summary. Returns None if no such team."""
+        from plugins.oc_teams import db as _teams_db
+
+        team = _teams_db.get_team(team_id)
+        if team is None:
+            return None
+        errors: dict = {}
+        members: list = []
+        tasks: list = []
+        messages: list = []
+        summary: dict = {}
+        try:
+            members = _teams_db.list_members(team_id, limit=200)
+        except Exception as exc:  # noqa: BLE001
+            errors["members"] = str(exc)
+        try:
+            tasks = _teams_db.list_tasks(team_id, limit=500)
+        except Exception as exc:  # noqa: BLE001
+            errors["tasks"] = str(exc)
+        try:
+            messages = _teams_db.list_messages(team_id, limit=200)
+        except Exception as exc:  # noqa: BLE001
+            errors["messages"] = str(exc)
+        try:
+            summary = _teams_db.team_status_summary(team_id)
+        except Exception as exc:  # noqa: BLE001
+            errors["summary"] = str(exc)
+
+        # Enrich each member with its background session's hermes chat session
+        # id so the frontend can offer "continue chatting" per teammate. Every
+        # member is pre-seeded with an empty id so the field is always present,
+        # and each lookup is isolated so one failure can't drop the key from the
+        # remaining members.
+        for m in members:
+            m["chat_session_id"] = ""
+        try:
+            from plugins.oc_agents import db as _agents_db
+        except Exception as exc:  # noqa: BLE001 — oc_agents may be absent
+            _agents_db = None
+            errors["member_sessions"] = str(exc)
+        if _agents_db is not None:
+            for m in members:
+                bg = m.get("bg_session_id")
+                if not bg:
+                    continue
+                try:
+                    sess = _agents_db.get_session(bg)
+                    m["chat_session_id"] = (sess or {}).get("agent_session_id") or ""
+                except Exception as exc:  # noqa: BLE001
+                    errors["member_sessions"] = str(exc)
+
+        return {
+            "object": "hermes.team_detail",
+            "team": team,
+            "members": members,
+            "tasks": tasks,
+            "messages": messages,
+            "summary": summary,
+            "errors": errors,
+        }
+
+    @staticmethod
+    def stop_flow(flow_id: str) -> dict:
+        """Signal a running flow's background process and mark it stopped.
+        Idempotent: returns ``{found: False}`` for unknown runs and
+        ``{stopped: False}`` for already-terminal runs; never raises on a
+        dead PID."""
+        from plugins.oc_flow import db as _flow_db
+
+        run = _flow_db.get_run(flow_id)
+        if run is None:
+            return {"found": False, "stopped": False}
+        if run["status"] not in ("running", "pending"):
+            return {"found": True, "stopped": False, "status": run["status"]}
+        pid = run.get("pid")
+        if pid and run.get("background"):
+            try:
+                os.kill(int(pid), 15)  # SIGTERM
+            except ProcessLookupError:
+                pass
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("oc_flow: could not signal pid %s: %s", pid, exc)
+        _flow_db.finish_run(flow_id, "stopped", error="stopped by user")
+        return {"found": True, "stopped": True, "status": "stopped"}
+
+    async def _handle_flow_detail(self, request: "web.Request") -> "web.Response":
+        """GET /api/parallel-agents/flows/{flow_id}"""
+        auth_err = self._check_auth(request)
+        if auth_err:
+            return auth_err
+        flow_id = request.match_info["flow_id"]
+        try:
+            detail = self.build_flow_detail(flow_id)
+        except Exception:  # noqa: BLE001
+            logger.exception("parallel-agents: flow detail failed for %s", flow_id)
+            return web.json_response({"error": "internal error"}, status=500)
+        if detail is None:
+            return web.json_response({"error": "flow not found"}, status=404)
+        return web.json_response(detail)
+
+    async def _handle_agent_detail(self, request: "web.Request") -> "web.Response":
+        """GET /api/parallel-agents/agents/{session_id}"""
+        auth_err = self._check_auth(request)
+        if auth_err:
+            return auth_err
+        session_id = request.match_info["session_id"]
+        try:
+            detail = self.build_agent_detail(session_id)
+        except Exception:  # noqa: BLE001
+            logger.exception("parallel-agents: agent detail failed for %s", session_id)
+            return web.json_response({"error": "internal error"}, status=500)
+        if detail is None:
+            return web.json_response({"error": "agent session not found"}, status=404)
+        return web.json_response(detail)
+
+    async def _handle_team_detail(self, request: "web.Request") -> "web.Response":
+        """GET /api/parallel-agents/teams/{team_id}"""
+        auth_err = self._check_auth(request)
+        if auth_err:
+            return auth_err
+        team_id = request.match_info["team_id"]
+        try:
+            detail = self.build_team_detail(team_id)
+        except Exception:  # noqa: BLE001
+            logger.exception("parallel-agents: team detail failed for %s", team_id)
+            return web.json_response({"error": "internal error"}, status=500)
+        if detail is None:
+            return web.json_response({"error": "team not found"}, status=404)
+        return web.json_response(detail)
+
+    async def _handle_agent_stop(self, request: "web.Request") -> "web.Response":
+        """POST /api/parallel-agents/agents/{session_id}/stop"""
+        auth_err = self._check_auth(request)
+        if auth_err:
+            return auth_err
+        session_id = request.match_info["session_id"]
+        try:
+            from plugins.oc_agents import db as _agents_db
+            from plugins.oc_agents import supervisor as _agents_sup
+
+            # Distinguish "no such session" (404) from "exists but not in a
+            # stoppable state" (200 + stopped:false), matching flow-stop.
+            if _agents_db.get_session(session_id) is None:
+                return web.json_response(
+                    {"error": "agent session not found"}, status=404
+                )
+            stopped = _agents_sup.stop(session_id)
+        except Exception:  # noqa: BLE001
+            logger.exception("parallel-agents: agent stop failed for %s", session_id)
+            return web.json_response({"error": "internal error"}, status=500)
+        return web.json_response({"object": "hermes.agent_stop", "stopped": bool(stopped)})
+
+    async def _handle_agent_send(self, request: "web.Request") -> "web.Response":
+        """POST /api/parallel-agents/agents/{session_id}/send  {message}
+
+        Queue a message for a background agent. The detached worker delivers it
+        when the agent next asks for input (live steering) and as a follow-up
+        turn after its current run, so you can answer or add work without
+        restarting it."""
+        auth_err = self._check_auth(request)
+        if auth_err:
+            return auth_err
+        session_id = request.match_info["session_id"]
+        try:
+            data = await request.json()
+        except Exception:  # noqa: BLE001
+            return web.json_response({"error": "invalid JSON body"}, status=400)
+        if not isinstance(data, dict):
+            return web.json_response({"error": "body must be a JSON object"}, status=400)
+        message = (data.get("message") or "").strip()
+        if not message:
+            return web.json_response({"error": "message is required"}, status=400)
+        try:
+            from plugins.oc_agents import db as _agents_db
+
+            if _agents_db.get_session(session_id) is None:
+                return web.json_response(
+                    {"error": "agent session not found"}, status=404
+                )
+            message_id = _agents_db.add_inbox_message(session_id, message)
+            pending = _agents_db.pending_inbox(session_id)
+        except Exception:  # noqa: BLE001
+            logger.exception("parallel-agents: agent send failed for %s", session_id)
+            return web.json_response({"error": "internal error"}, status=500)
+        return web.json_response(
+            {
+                "object": "hermes.agent_message",
+                "message_id": message_id,
+                "pending": len(pending),
+            }
+        )
+
+    async def _handle_agent_launch(self, request: "web.Request") -> "web.Response":
+        """POST /api/parallel-agents/agents  {prompt, name?, model?, persona_id?,
+        persona_name?, system_prompt?}
+
+        Dispatch a new background agent from the cockpit. When persona fields are
+        supplied the run is tagged with the persona and (if system_prompt is
+        given) runs as that persona."""
+        auth_err = self._check_auth(request)
+        if auth_err:
+            return auth_err
+        try:
+            data = await request.json()
+        except Exception:  # noqa: BLE001
+            return web.json_response({"error": "invalid JSON body"}, status=400)
+        if not isinstance(data, dict):
+            return web.json_response({"error": "body must be a JSON object"}, status=400)
+        prompt = (data.get("prompt") or "").strip()
+        if not prompt:
+            return web.json_response({"error": "prompt is required"}, status=400)
+        name = (data.get("name") or "").strip()
+        model = (data.get("model") or "").strip()
+        persona_id = data.get("persona_id")
+        persona_name = (data.get("persona_name") or "").strip()
+        system_prompt = (data.get("system_prompt") or "").strip()
+        meta: dict = {}
+        if persona_id is not None or persona_name:
+            meta["persona_id"] = persona_id
+            meta["persona_name"] = persona_name
+        if system_prompt:
+            meta["system_prompt"] = system_prompt
+        try:
+            from plugins.oc_agents import supervisor as _agents_sup
+
+            session_id = _agents_sup.dispatch(
+                prompt, name=name, model=model, meta=meta or None
+            )
+        except Exception:  # noqa: BLE001
+            logger.exception("parallel-agents: agent launch failed")
+            return web.json_response({"error": "internal error"}, status=500)
+        return web.json_response(
+            {"object": "hermes.agent_launch", "session_id": session_id}
+        )
+
+    async def _handle_flow_stop(self, request: "web.Request") -> "web.Response":
+        """POST /api/parallel-agents/flows/{flow_id}/stop"""
+        auth_err = self._check_auth(request)
+        if auth_err:
+            return auth_err
+        flow_id = request.match_info["flow_id"]
+        try:
+            result = self.stop_flow(flow_id)
+        except Exception:  # noqa: BLE001
+            logger.exception("parallel-agents: flow stop failed for %s", flow_id)
+            return web.json_response({"error": "internal error"}, status=500)
+        if not result.get("found"):
+            return web.json_response({"error": "flow not found"}, status=404)
+        return web.json_response({"object": "hermes.flow_stop", **result})
+
+    async def _handle_team_send_message(self, request: "web.Request") -> "web.Response":
+        """POST /api/parallel-agents/teams/{team_id}/messages  {from,to,body}"""
+        auth_err = self._check_auth(request)
+        if auth_err:
+            return auth_err
+        team_id = request.match_info["team_id"]
+        try:
+            data = await request.json()
+        except Exception:  # noqa: BLE001
+            return web.json_response({"error": "invalid JSON body"}, status=400)
+        if not isinstance(data, dict):
+            return web.json_response({"error": "body must be a JSON object"}, status=400)
+        body = (data.get("body") or "").strip()
+        if not body:
+            return web.json_response({"error": "body is required"}, status=400)
+        from_member = (data.get("from") or "user").strip() or "user"
+        to_member = (data.get("to") or "*").strip() or "*"
+        try:
+            from plugins.oc_teams import db as _teams_db
+
+            if _teams_db.get_team(team_id) is None:
+                return web.json_response({"error": "team not found"}, status=404)
+            message_id = _teams_db.send_message(team_id, from_member, to_member, body)
+        except Exception:  # noqa: BLE001
+            logger.exception("parallel-agents: team send-message failed for %s", team_id)
+            return web.json_response({"error": "internal error"}, status=500)
+        return web.json_response(
+            {"object": "hermes.team_message", "message_id": message_id}
+        )
+
     # Loopback base for the on-box Open Design daemon (the in-OpenComputer
     # "Open Design" panel backend). Overridable for tests / non-default ports.
     _OPEN_DESIGN_DAEMON_BASE = os.environ.get(
@@ -4716,6 +5143,15 @@ class APIServerAdapter(BasePlatformAdapter):
             self._app.router.add_post("/api/jobs/{job_id}/run", self._handle_run_job)
             # Parallel-agents read-only surface (oc_flow / oc_agents / oc_teams plugins)
             self._app.router.add_get("/api/parallel-agents", self._handle_parallel_agents)
+            # Parallel-agents drill-down: per-entity detail, control, and chat bridge.
+            self._app.router.add_get("/api/parallel-agents/flows/{flow_id}", self._handle_flow_detail)
+            self._app.router.add_post("/api/parallel-agents/agents", self._handle_agent_launch)
+            self._app.router.add_get("/api/parallel-agents/agents/{session_id}", self._handle_agent_detail)
+            self._app.router.add_get("/api/parallel-agents/teams/{team_id}", self._handle_team_detail)
+            self._app.router.add_post("/api/parallel-agents/agents/{session_id}/stop", self._handle_agent_stop)
+            self._app.router.add_post("/api/parallel-agents/agents/{session_id}/send", self._handle_agent_send)
+            self._app.router.add_post("/api/parallel-agents/flows/{flow_id}/stop", self._handle_flow_stop)
+            self._app.router.add_post("/api/parallel-agents/teams/{team_id}/messages", self._handle_team_send_message)
             self._app.router.add_get("/api/memory", self._handle_get_memory)
             # Authenticated passthrough to the on-box Open Design daemon so the
             # workspace "Open Design" panel reaches it over the agent's existing
