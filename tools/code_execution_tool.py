@@ -271,14 +271,31 @@ def generate_hermes_tools_module(enabled_tools: List[str],
         transport: ``"uds"`` for Unix domain socket (local backend) or
                    ``"file"`` for file-based RPC (remote backends).
     """
-    tools_to_generate = sorted(SANDBOX_ALLOWED_TOOLS & set(enabled_tools))
+    tools_to_generate = sorted(effective_sandbox_allowlist() & set(enabled_tools))
 
     stub_functions = []
     export_names = []
     for tool_name in tools_to_generate:
-        if tool_name not in _TOOL_STUBS:
+        if tool_name in _TOOL_STUBS:
+            func_name, sig, doc, args_expr = _TOOL_STUBS[tool_name]
+        elif tool_name.isidentifier():
+            # Operator-allowed extra tool (code_execution.extra_tools) with no
+            # hardcoded signature: emit a generic passthrough stub. Keyword args
+            # are forwarded verbatim; the parent's handle_function_call validates
+            # them against the tool's real schema.
+            func_name = tool_name
+            sig = "**kwargs"
+            doc = f'"""Call the {tool_name} tool. Keyword args are forwarded to the tool."""'
+            args_expr = "kwargs"
+        else:
+            # Not a valid Python identifier (e.g. hyphens, spaces) — it cannot be
+            # exposed as a `from hermes_tools import <name>`. Skip rather than
+            # emit broken source.
+            logger.warning(
+                "code_execution: skipping sandbox tool %r — not a valid Python identifier",
+                tool_name,
+            )
             continue
-        func_name, sig, doc, args_expr = _TOOL_STUBS[tool_name]
         stub_functions.append(
             f"def {func_name}({sig}):\n"
             f"    {doc}\n"
@@ -896,9 +913,9 @@ def _execute_remote(
     max_tool_calls = _cfg.get("max_tool_calls", DEFAULT_MAX_TOOL_CALLS)
 
     session_tools = set(enabled_tools) if enabled_tools else set()
-    sandbox_tools = frozenset(SANDBOX_ALLOWED_TOOLS & session_tools)
+    sandbox_tools = frozenset(effective_sandbox_allowlist() & session_tools)
     if not sandbox_tools:
-        sandbox_tools = SANDBOX_ALLOWED_TOOLS
+        sandbox_tools = effective_sandbox_allowlist()
 
     effective_task_id = task_id or "default"
     env, env_type = _get_or_create_env(effective_task_id)
@@ -1139,10 +1156,10 @@ def execute_code(
 
     # Determine which tools the sandbox can call
     session_tools = set(enabled_tools) if enabled_tools else set()
-    sandbox_tools = frozenset(SANDBOX_ALLOWED_TOOLS & session_tools)
+    sandbox_tools = frozenset(effective_sandbox_allowlist() & session_tools)
 
     if not sandbox_tools:
-        sandbox_tools = SANDBOX_ALLOWED_TOOLS
+        sandbox_tools = effective_sandbox_allowlist()
 
     # --- Set up temp directory with hermes_tools.py and script.py ---
     tmpdir = tempfile.mkdtemp(prefix="hermes_sandbox_")
@@ -1588,6 +1605,36 @@ def _load_config() -> dict:
         return {}
 
 
+def _get_extra_sandbox_tools() -> frozenset:
+    """Operator-configured extra tools allowed inside the sandbox.
+
+    Read from ``code_execution.extra_tools`` (a list of tool names) in
+    config.yaml.  Empty / malformed config yields an empty set.  Names are
+    NOT validated here — the downstream session intersection and the
+    identifier guard in :func:`generate_hermes_tools_module` enforce safety.
+    """
+    try:
+        raw = _load_config().get("extra_tools", [])
+    except Exception:
+        return frozenset()
+    if isinstance(raw, (list, tuple, set, frozenset)):
+        return frozenset(t.strip() for t in raw if isinstance(t, str) and t.strip())
+    return frozenset()
+
+
+def effective_sandbox_allowlist() -> frozenset:
+    """The base :data:`SANDBOX_ALLOWED_TOOLS` plus ``code_execution.extra_tools``.
+
+    This is the *ceiling* of tools that can be exposed inside an execute_code
+    script.  Every caller still intersects this with the session's actually
+    available tools, so opting a tool in here can never let a script call a
+    tool the session does not have.  With no ``extra_tools`` config this
+    returns exactly the base 7, so default behavior is unchanged.
+    """
+    extra = _get_extra_sandbox_tools()
+    return SANDBOX_ALLOWED_TOOLS | extra if extra else SANDBOX_ALLOWED_TOOLS
+
+
 # ---------------------------------------------------------------------------
 # Execution mode resolution (strict vs project)
 # ---------------------------------------------------------------------------
@@ -1757,7 +1804,7 @@ def build_execute_code_schema(enabled_sandbox_tools: set = None,
     If ``mode`` is None, the current ``code_execution.mode`` config is read.
     """
     if enabled_sandbox_tools is None:
-        enabled_sandbox_tools = SANDBOX_ALLOWED_TOOLS
+        enabled_sandbox_tools = effective_sandbox_allowlist()
     if mode is None:
         mode = _get_execution_mode()
 
@@ -1765,6 +1812,17 @@ def build_execute_code_schema(enabled_sandbox_tools: set = None,
     tool_lines = "\n".join(
         doc for name, doc in _TOOL_DOC_LINES if name in enabled_sandbox_tools
     )
+    # Operator-configured extra tools (code_execution.extra_tools) have no
+    # hardcoded doc line — advertise them generically so the model knows they
+    # are importable from hermes_tools.
+    _documented = {name for name, _ in _TOOL_DOC_LINES}
+    _extra_lines = [
+        f"  {n}(**kwargs) — call the {n} tool (keyword args forwarded)"
+        for n in sorted(enabled_sandbox_tools)
+        if n not in _documented and isinstance(n, str) and n.isidentifier()
+    ]
+    if _extra_lines:
+        tool_lines = (tool_lines + "\n" if tool_lines else "") + "\n".join(_extra_lines)
 
     # Build example import list from enabled tools
     import_examples = [n for n in ("web_search", "terminal") if n in enabled_sandbox_tools]
