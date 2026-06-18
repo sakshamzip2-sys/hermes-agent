@@ -30,6 +30,27 @@ _HTTP_TIMEOUT = 30.0
 _HEALTH_TIMEOUT = 5.0
 
 
+def _run_coro(coro):
+    """Run *coro* whether or not an event loop is already running.
+
+    ``asyncio.run`` raises "cannot be called from a running event loop" when the
+    self-evolution cron / ENRICH step fires *inside* the gateway's async loop —
+    which is exactly why scheduled dreaming silently never ran. When a loop is
+    already active we run the coroutine on a short-lived worker thread with its
+    own loop instead.
+    """
+    import asyncio
+
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(coro)
+    import concurrent.futures
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
+        return ex.submit(asyncio.run, coro).result()
+
+
 @dataclass
 class TargetResult:
     """Outcome of one target's health/trigger within a run."""
@@ -79,11 +100,9 @@ class LocalDreamTarget(DreamTarget):
 
     def trigger(self, *, force: bool = False) -> TargetResult:
         try:
-            import asyncio
-
             from plugins.dreaming.runner import run_dream_cycle
 
-            summary = asyncio.run(run_dream_cycle(force=force))
+            summary = _run_coro(run_dream_cycle(force=force))
             counts = summary.counts()
             promoted = [r.candidate.raw_text for r in summary.promoted]
             return TargetResult(
