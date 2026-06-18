@@ -140,6 +140,17 @@ def _build_headless_agent(row: Dict[str, Any]):
         "skip_context_files": True,
     }
 
+    # When launched from a persona, apply its system prompt so the background
+    # agent runs *as* that persona (meta is JSON persisted on the session row).
+    try:
+        _meta = json.loads(row.get("meta") or "null")
+    except Exception:
+        _meta = None
+    if isinstance(_meta, dict):
+        _persona_prompt = (_meta.get("system_prompt") or "").strip()
+        if _persona_prompt:
+            kwargs["ephemeral_system_prompt"] = _persona_prompt
+
     sid = row["id"]
 
     def _clarify(question: str, choices=None) -> str:

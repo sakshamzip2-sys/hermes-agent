@@ -3676,6 +3676,14 @@ class APIServerAdapter(BasePlatformAdapter):
             pending_messages = _agents_db.pending_inbox(session_id)
         except Exception:  # noqa: BLE001 — bg_inbox may not exist on old DBs
             pending_messages = []
+        # Persona link (when the agent was launched from a persona).
+        persona = None
+        try:
+            _m = json.loads(session.get("meta") or "null")
+            if isinstance(_m, dict) and (_m.get("persona_name") or _m.get("persona_id") is not None):
+                persona = {"id": _m.get("persona_id"), "name": _m.get("persona_name") or ""}
+        except Exception:  # noqa: BLE001
+            persona = None
         log_tail = ""
         log_err = None
         log_path = session.get("log_path")
@@ -3695,6 +3703,8 @@ class APIServerAdapter(BasePlatformAdapter):
             "events": events,
             # User messages queued for this (running) agent, not yet consumed.
             "pending_messages": pending_messages,
+            # Persona this agent was launched from (null if launched ad-hoc).
+            "persona": persona,
             # agent_session_id (a hermes_state session id) is the click-to-chat
             # resume target; surface it explicitly for the frontend.
             "chat_session_id": session.get("agent_session_id") or "",
@@ -3895,6 +3905,49 @@ class APIServerAdapter(BasePlatformAdapter):
                 "message_id": message_id,
                 "pending": len(pending),
             }
+        )
+
+    async def _handle_agent_launch(self, request: "web.Request") -> "web.Response":
+        """POST /api/parallel-agents/agents  {prompt, name?, model?, persona_id?,
+        persona_name?, system_prompt?}
+
+        Dispatch a new background agent from the cockpit. When persona fields are
+        supplied the run is tagged with the persona and (if system_prompt is
+        given) runs as that persona."""
+        auth_err = self._check_auth(request)
+        if auth_err:
+            return auth_err
+        try:
+            data = await request.json()
+        except Exception:  # noqa: BLE001
+            return web.json_response({"error": "invalid JSON body"}, status=400)
+        if not isinstance(data, dict):
+            return web.json_response({"error": "body must be a JSON object"}, status=400)
+        prompt = (data.get("prompt") or "").strip()
+        if not prompt:
+            return web.json_response({"error": "prompt is required"}, status=400)
+        name = (data.get("name") or "").strip()
+        model = (data.get("model") or "").strip()
+        persona_id = data.get("persona_id")
+        persona_name = (data.get("persona_name") or "").strip()
+        system_prompt = (data.get("system_prompt") or "").strip()
+        meta: dict = {}
+        if persona_id is not None or persona_name:
+            meta["persona_id"] = persona_id
+            meta["persona_name"] = persona_name
+        if system_prompt:
+            meta["system_prompt"] = system_prompt
+        try:
+            from plugins.oc_agents import supervisor as _agents_sup
+
+            session_id = _agents_sup.dispatch(
+                prompt, name=name, model=model, meta=meta or None
+            )
+        except Exception:  # noqa: BLE001
+            logger.exception("parallel-agents: agent launch failed")
+            return web.json_response({"error": "internal error"}, status=500)
+        return web.json_response(
+            {"object": "hermes.agent_launch", "session_id": session_id}
         )
 
     async def _handle_flow_stop(self, request: "web.Request") -> "web.Response":
@@ -5092,6 +5145,7 @@ class APIServerAdapter(BasePlatformAdapter):
             self._app.router.add_get("/api/parallel-agents", self._handle_parallel_agents)
             # Parallel-agents drill-down: per-entity detail, control, and chat bridge.
             self._app.router.add_get("/api/parallel-agents/flows/{flow_id}", self._handle_flow_detail)
+            self._app.router.add_post("/api/parallel-agents/agents", self._handle_agent_launch)
             self._app.router.add_get("/api/parallel-agents/agents/{session_id}", self._handle_agent_detail)
             self._app.router.add_get("/api/parallel-agents/teams/{team_id}", self._handle_team_detail)
             self._app.router.add_post("/api/parallel-agents/agents/{session_id}/stop", self._handle_agent_stop)
