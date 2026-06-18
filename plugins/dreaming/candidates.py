@@ -152,6 +152,18 @@ _META_ANSWER_RE = re.compile(
 )
 
 
+# Transcript speaker labels and imperative model-instructions that leak in as
+# "facts": "Assistant: Now let me…", "Retrieve current benchmark numbers…",
+# "Verify the exact latest model versions…", "The conversation is about…".
+# None are durable USER facts (declarative statements about the user/world).
+_LEAKED_PREFIX_RE = re.compile(
+    r"^(?:assistant|user|system)\s*:"
+    r"|^the conversation is about\b"
+    r"|^(?:retrieve|verify|fetch|summari[sz]e|look up|search the web)\b",
+    re.IGNORECASE,
+)
+
+
 def _is_bold_label_fragment(s: str) -> bool:
     """True for an unbalanced-bold answer-structure fragment ("Bottom line:** …",
     "Kimi wins** on: …"). An ODD count of ``**`` means a ``**label**`` got split,
@@ -195,6 +207,8 @@ def _is_noise_line(line: str) -> bool:
     if _MARKDOWN_HEADER_RE.match(s):
         return True
     if _META_ANSWER_RE.match(s):
+        return True
+    if _LEAKED_PREFIX_RE.match(s):
         return True
     if _is_bold_label_fragment(s):
         return True
