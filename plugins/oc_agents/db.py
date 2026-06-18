@@ -63,6 +63,19 @@ CREATE TABLE IF NOT EXISTS bg_sessions (
 
 CREATE INDEX IF NOT EXISTS idx_bg_sessions_status ON bg_sessions(status);
 CREATE INDEX IF NOT EXISTS idx_bg_sessions_created ON bg_sessions(created_at);
+
+-- Granular per-session activity (tool start/complete, thinking lines). The
+-- worker appends here on every progress callback so the cockpit can show a
+-- live play-by-play, not just the latest one-line summary.
+CREATE TABLE IF NOT EXISTS bg_events (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id  TEXT NOT NULL,
+    ts          REAL NOT NULL,
+    kind        TEXT NOT NULL DEFAULT 'activity',   -- activity|tool|thinking|...
+    text        TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_bg_events_session ON bg_events(session_id, id);
 """
 
 _local = threading.local()
@@ -192,6 +205,32 @@ def update_summary(session_id: str, summary: str, *, api_calls: Optional[int] = 
         conn.commit()
 
 
+def add_event(session_id: str, text: str, kind: str = "activity") -> None:
+    """Append one granular activity event for a session. Best-effort: the worker
+    calls this from its progress callback, so it must be cheap and tolerant."""
+    if not text:
+        return
+    with connect() as conn:
+        conn.execute(
+            "INSERT INTO bg_events (session_id, ts, kind, text) VALUES (?,?,?,?)",
+            (session_id, _now(), kind, text[:500]),
+        )
+        conn.commit()
+
+
+def list_events(
+    session_id: str, after_id: int = 0, limit: int = 200
+) -> List[Dict[str, Any]]:
+    """Return up to ``limit`` events for a session with id > ``after_id`` (for
+    incremental polling), oldest-first."""
+    with connect() as conn:
+        rows = conn.execute(
+            "SELECT * FROM bg_events WHERE session_id=? AND id>? ORDER BY id LIMIT ?",
+            (session_id, after_id, limit),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
 def set_needs_input(session_id: str, question: str) -> None:
     now = _now()
     with connect() as conn:
@@ -249,6 +288,7 @@ def list_sessions(limit: int = 100, include_done: bool = True) -> List[Dict[str,
 def delete_session(session_id: str) -> bool:
     with connect() as conn:
         cur = conn.execute("DELETE FROM bg_sessions WHERE id=?", (session_id,))
+        conn.execute("DELETE FROM bg_events WHERE session_id=?", (session_id,))
         conn.commit()
         return cur.rowcount > 0
 

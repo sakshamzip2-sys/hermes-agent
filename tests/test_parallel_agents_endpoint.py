@@ -141,6 +141,53 @@ def test_agent_detail_missing_returns_none(isolated_plugin_dbs):
     assert APIServerAdapter.build_agent_detail("nope") is None
 
 
+def test_agent_events_add_list_and_filter(isolated_plugin_dbs):
+    agents_db = isolated_plugin_dbs["agents"]
+    sid = agents_db.new_session_id()
+    agents_db.create_session(session_id=sid, prompt="work")
+    agents_db.add_event(sid, "started tool: search")
+    agents_db.add_event(sid, "tool done: search")
+    agents_db.add_event(sid, "thinking…", kind="thinking")
+    # Empty events are ignored.
+    agents_db.add_event(sid, "")
+
+    events = agents_db.list_events(sid)
+    assert [e["text"] for e in events] == [
+        "started tool: search",
+        "tool done: search",
+        "thinking…",
+    ]
+    assert events[2]["kind"] == "thinking"
+    # Incremental polling: only events after a cursor id.
+    after = agents_db.list_events(sid, after_id=events[0]["id"])
+    assert [e["text"] for e in after] == ["tool done: search", "thinking…"]
+    # Limit caps the result.
+    assert len(agents_db.list_events(sid, limit=1)) == 1
+
+
+def test_agent_detail_includes_events(isolated_plugin_dbs):
+    agents_db = isolated_plugin_dbs["agents"]
+    sid = agents_db.new_session_id()
+    agents_db.create_session(session_id=sid, prompt="work")
+    agents_db.add_event(sid, "calling terminal")
+    agents_db.add_event(sid, "wrote file")
+
+    detail = APIServerAdapter.build_agent_detail(sid)
+    assert detail is not None
+    assert [e["text"] for e in detail["events"]] == ["calling terminal", "wrote file"]
+    assert detail["errors"]["events"] is None
+
+
+def test_delete_session_clears_events(isolated_plugin_dbs):
+    agents_db = isolated_plugin_dbs["agents"]
+    sid = agents_db.new_session_id()
+    agents_db.create_session(session_id=sid, prompt="work")
+    agents_db.add_event(sid, "event one")
+    assert len(agents_db.list_events(sid)) == 1
+    assert agents_db.delete_session(sid) is True
+    assert agents_db.list_events(sid) == []
+
+
 def test_agent_detail_handles_missing_log_path(isolated_plugin_dbs):
     agents_db = isolated_plugin_dbs["agents"]
     sid = agents_db.new_session_id()

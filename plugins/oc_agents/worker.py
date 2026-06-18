@@ -149,6 +149,18 @@ def _build_headless_agent(row: Dict[str, Any]):
                 summary = str(args[0])[:200]
             if summary:
                 db.update_summary(sid, summary[:200])
+                # Also persist a granular event so the cockpit can show a live
+                # play-by-play, not just the latest one-line summary. Derive a
+                # coarse kind from the activity prefix so the UI can colour-code
+                # tool calls vs reasoning vs other steps.
+                low = summary.lower()
+                if low.startswith("tool."):
+                    kind = "tool"
+                elif low.startswith("reasoning") or "_thinking" in low:
+                    kind = "thinking"
+                else:
+                    kind = "activity"
+                db.add_event(sid, summary[:500], kind=kind)
         except Exception:
             pass
 

@@ -3665,6 +3665,12 @@ class APIServerAdapter(BasePlatformAdapter):
         session = _agents_db.get_session(session_id)
         if session is None:
             return None
+        events: list = []
+        events_err = None
+        try:
+            events = _agents_db.list_events(session_id, limit=300)
+        except Exception as exc:  # noqa: BLE001 — bg_events may not exist on old DBs
+            events_err = str(exc)
         log_tail = ""
         log_err = None
         log_path = session.get("log_path")
@@ -3680,10 +3686,12 @@ class APIServerAdapter(BasePlatformAdapter):
             "session": session,
             "log_path": log_path,
             "log_tail": log_tail,
+            # Granular per-step activity (newest entries capped) for the live feed.
+            "events": events,
             # agent_session_id (a hermes_state session id) is the click-to-chat
             # resume target; surface it explicitly for the frontend.
             "chat_session_id": session.get("agent_session_id") or "",
-            "errors": {"log": log_err},
+            "errors": {"log": log_err, "events": events_err},
         }
 
     @staticmethod
