@@ -81,59 +81,122 @@ def _gbrain_token() -> Optional[str]:
 # Local markdown plane
 # ---------------------------------------------------------------------------
 
-def _split_entries(text: str) -> List[str]:
-    """Best-effort split of a memory markdown file into discrete entries.
+# Provenance prefix the dreaming/promotion path stamps onto entries, e.g.
+# "(dreamed 2026-06-17 · honcho#xRQL7… · conf=high) User's favorite color is teal."
+# We strip it so the user sees the clean fact, not internal bookkeeping.
+_PROVENANCE_RE = re.compile(
+    r"^\((?:dreamed|noted|learned|recorded|observed)\b[^)]*\)\s*", re.IGNORECASE
+)
 
-    Honours bullet lists ("- ", "* "), numbered lists, and blank-line-separated
-    paragraphs, ignoring headings/comments.
+# Lines that are NOT durable user facts but assistant narration, tool plumbing,
+# or leaked transcript fragments the extraction path mistakenly persisted.
+_NOISE_PREFIXES = (
+    "assistant:", "user:", "system:", "i'll ", "i will ", "let me ",
+    "now let me", "i couldn't", "i could not", "the conversation is about",
+    "let me identify", "let me know", "here's ", "here is what",
+    "retrieve ", "verify ", "search the web", "look at ", "looking at",
+    "okay,", "alright,", "sure,", "great,", "first,", "next,", "finally,",
+)
+_NOISE_SUBSTRINGS = (
+    "<tool_call>", "</tool_call>", "<tool_response>", "</tool_response>",
+    '{"name":', "```", "-->", "<!--", "function_call",
+)
+
+
+def _looks_like_fact(text: str) -> bool:
+    """True if *text* reads like a durable user/world fact rather than
+    assistant narration, tool plumbing, or a leaked transcript line."""
+    t = text.strip()
+    if len(t) < 8:
+        return False
+    low = t.lower()
+    if any(s in low for s in _NOISE_SUBSTRINGS):
+        return False
+    if low.startswith(_NOISE_PREFIXES):
+        return False
+    if t[0] in "|>":  # markdown table rows / block quotes
+        return False
+    if t.endswith(":"):  # dangling narration lead-ins ("Let me identify what's durable:")
+        return False
+    letters = sum(c.isalpha() for c in t)
+    if letters < max(6, len(t) // 3):  # mostly punctuation / code-ish
+        return False
+    return True
+
+
+def _norm(text: str) -> str:
+    return re.sub(r"[^a-z0-9]+", " ", text.lower()).strip()
+
+
+def _clean_entries(text: str) -> List[str]:
+    """Split a memory file into clean, de-duplicated, user-facing facts.
+
+    Strips list/section syntax + provenance prefixes, drops non-fact noise
+    (assistant narration, tool calls, transcript leakage), and collapses
+    near-duplicates (the honcho-mirrored copies the dreamer writes several
+    phrasings of), keeping the most complete phrasing.
     """
-    entries: List[str] = []
+    kept: List[str] = []
     for raw in text.splitlines():
         line = raw.strip()
-        if not line or line.startswith("#") or line.startswith("<!--"):
+        if not line or line.startswith("#"):
             continue
-        # Skip entry/section delimiters (§ separates memory entries; --- rules)
-        # so they don't render as empty bullet rows in the UI.
-        if line in ("§", "---", "***", "___"):
+        if line in ("§", "---", "***", "___", "-->", "<!--"):
             continue
         line = re.sub(r"^[-*]\s+", "", line)
         line = re.sub(r"^\d+[.)]\s+", "", line)
-        if line:
-            entries.append(line)
-    return entries[:200]
+        line = _PROVENANCE_RE.sub("", line).strip()
+        if not _looks_like_fact(line):
+            continue
+        key = _norm(line)
+        if not key:
+            continue
+        # Collapse near-dupes: drop every kept fact subsumed by this fuller one,
+        # then skip this one if it's already subsumed by a kept fact. Handles the
+        # dreamer writing 3-4 phrasings of the same fact (incl. honcho mirrors).
+        kept = [p for p in kept if _norm(p) not in key]
+        if any(key in _norm(p) for p in kept):
+            continue
+        kept.append(line)
+    return kept[:200]
 
 
-def _read_local_file(path: Path) -> Optional[Dict[str, Any]]:
+def _read_local_file(path: Path, label: str) -> Optional[Dict[str, Any]]:
     try:
         if not path.exists():
             return None
         text = path.read_text(encoding="utf-8", errors="replace")
     except Exception:
         return None
-    truncated = len(text) > _MAX_FILE_CHARS
-    body = text[:_MAX_FILE_CHARS]
-    return {
-        "name": path.name,
-        "path": str(path),
-        "content": body,
-        "entries": _split_entries(body),
-        "bytes": len(text),
-        "truncated": truncated,
-    }
+    entries = _clean_entries(text[:_MAX_FILE_CHARS])
+    return {"name": path.name, "label": label, "entries": entries, "count": len(entries)}
+
+
+# User-facing files only. DREAMS.md is the dreamer's internal holding pen of
+# unvetted candidate insights (tool calls, transcript fragments) and SOUL.md is
+# persona config — neither is "memory about the user", so both are excluded.
+_LOCAL_FILES = (("USER.md", "About you"), ("MEMORY.md", "Remembered facts"))
 
 
 async def _local_section(hermes_home: Path) -> Dict[str, Any]:
     mem_dir = hermes_home / "memories"
     files: List[Dict[str, Any]] = []
-    # MEMORY.md = promoted long-term facts; USER.md = user profile;
-    # DREAMS.md = the dreaming plugin's holding pen of candidate insights.
-    for name in ("MEMORY.md", "USER.md", "DREAMS.md"):
-        f = _read_local_file(mem_dir / name)
-        if f:
-            files.append(f)
-    soul = _read_local_file(hermes_home / "SOUL.md")
-    if soul:
-        files.append(soul)
+    seen: List[str] = []  # normalized facts already shown in an earlier section
+    for name, label in _LOCAL_FILES:
+        f = _read_local_file(mem_dir / name, label)
+        if not f:
+            continue
+        # Cross-file dedup: profile facts in USER.md ("About you") frequently
+        # re-appear in MEMORY.md — show each fact under one section only.
+        fresh: List[str] = []
+        for e in f["entries"]:
+            ek = _norm(e)
+            if any(ek == s or ek in s or s in ek for s in seen):
+                continue
+            fresh.append(e)
+            seen.append(ek)
+        if fresh:
+            files.append({**f, "entries": fresh, "count": len(fresh)})
     total_entries = sum(len(f["entries"]) for f in files)
     return {
         "enabled": True,
@@ -356,7 +419,18 @@ async def _gbrain_section(base: str, token: Optional[str]) -> Dict[str, Any]:
                 }
                 for p in (page_items or []) if isinstance(p, dict)
             ][:_MAX_ITEMS]
-            out["page_count"] = out.get("status", {}).get("page_count", len(out["pages"]))
+            # Reconcile the page count: GBrain's get_stats sometimes reports a
+            # page_count that excludes typed pages (e.g. concept pages), so it can
+            # disagree with pages_by_type and list_pages. Take the max so the tab
+            # badge and the section's "Pages" tile never contradict each other.
+            _st = out.get("status", {})
+            _by_type = _st.get("pages_by_type") or {}
+            _by_type_total = sum(v for v in _by_type.values() if isinstance(v, (int, float)))
+            out["page_count"] = max(
+                int(_st.get("page_count") or 0),
+                int(_by_type_total),
+                len(out["pages"]),
+            )
 
             # Richer snapshot — sync sources, embedding coverage, dream-cycle timing.
             snapshot = await _gbrain_jsonrpc(cx, base, token, "get_status_snapshot", {})

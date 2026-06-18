@@ -29,8 +29,22 @@ _SLASH_HELP = """Self-evolution — run the whole loop (outcomes→dream→cross
 
 
 def run(*, force: bool = False, plan: bool = False) -> dict:
-    """Synchronous entrypoint (CLI / cron) — drives the async cycle."""
-    return asyncio.run(cycle.run_cycle(force=force, plan=plan))
+    """Synchronous entrypoint (CLI / cron) — drives the async cycle.
+
+    Loop-safe: the scheduled cron fires inside the gateway's running event loop,
+    where ``asyncio.run`` raises "cannot be called from a running event loop"
+    (this is why the nightly cycle silently never ran). Fall back to a worker
+    thread with its own loop in that case.
+    """
+    coro = cycle.run_cycle(force=force, plan=plan)
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(coro)
+    import concurrent.futures
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
+        return ex.submit(asyncio.run, coro).result()
 
 
 # --- status -----------------------------------------------------------------
