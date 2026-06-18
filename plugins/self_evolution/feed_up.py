@@ -17,7 +17,10 @@ from typing import Callable, Optional
 
 logger = logging.getLogger("hermes.plugins.self_evolution.feed_up")
 
-_SIGNAL_SLUG = "agent-self-evolution-signal"
+# GBrain only materializes (and lists) pages whose slug is NAMESPACED as
+# ``<type>/<name>``; a bare slug is accepted by put_page but never persists as a
+# listable page (get_page → page_not_found). So the signal page MUST be namespaced.
+_SIGNAL_SLUG = "notes/agent-self-evolution-signal"
 
 
 def build_signal_page(session_scores: list, *, top: int = 20) -> tuple[str, str]:
@@ -28,7 +31,8 @@ def build_signal_page(session_scores: list, *, top: int = 20) -> tuple[str, str]
     rows = list(session_scores)[:top]
     lines = [
         "---",
-        f"title: {_SIGNAL_SLUG}",
+        "title: Agent self-evolution signal",
+        "type: note",
         "tags: [self-evolution, outcomes, agent-signal]",
         "---",
         "",
