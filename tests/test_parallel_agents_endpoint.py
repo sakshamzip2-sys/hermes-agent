@@ -188,6 +188,20 @@ def test_delete_session_clears_events(isolated_plugin_dbs):
     assert agents_db.list_events(sid) == []
 
 
+def test_add_event_fifo_cap_bounds_growth(isolated_plugin_dbs, monkeypatch):
+    agents_db = isolated_plugin_dbs["agents"]
+    monkeypatch.setattr(agents_db, "EVENTS_PER_SESSION_CAP", 5)
+    sid = agents_db.new_session_id()
+    agents_db.create_session(session_id=sid, prompt="work")
+    # Fresh isolated DB → ids 1..100 are all this session's; the prune fires at
+    # the 100th insert and keeps only the most recent CAP events.
+    for i in range(100):
+        agents_db.add_event(sid, f"event {i}")
+    kept = agents_db.list_events(sid)
+    assert len(kept) <= 5
+    assert kept[-1]["text"] == "event 99"  # newest retained
+
+
 def test_agent_detail_handles_missing_log_path(isolated_plugin_dbs):
     agents_db = isolated_plugin_dbs["agents"]
     sid = agents_db.new_session_id()

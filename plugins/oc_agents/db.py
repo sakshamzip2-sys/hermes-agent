@@ -205,16 +205,35 @@ def update_summary(session_id: str, summary: str, *, api_calls: Optional[int] = 
         conn.commit()
 
 
+# Max events retained per session. The detail API reads at most 300; keeping a
+# generous tail bounds storage without losing useful recent history.
+EVENTS_PER_SESSION_CAP = 1000
+
+
 def add_event(session_id: str, text: str, kind: str = "activity") -> None:
     """Append one granular activity event for a session. Best-effort: the worker
-    calls this from its progress callback, so it must be cheap and tolerant."""
+    calls this from its progress callback, so it must be cheap and tolerant.
+
+    Storage is bounded with a per-session FIFO cap. The prune is run only every
+    ~100th insert (keyed off the global rowid) so the common path stays a single
+    cheap INSERT, while the table can't grow without limit over a long-lived
+    deployment that never deletes finished sessions."""
     if not text:
         return
     with connect() as conn:
-        conn.execute(
+        cur = conn.execute(
             "INSERT INTO bg_events (session_id, ts, kind, text) VALUES (?,?,?,?)",
             (session_id, _now(), kind, text[:500]),
         )
+        if cur.lastrowid and cur.lastrowid % 100 == 0:
+            conn.execute(
+                """DELETE FROM bg_events
+                   WHERE session_id=? AND id NOT IN (
+                       SELECT id FROM bg_events WHERE session_id=?
+                       ORDER BY id DESC LIMIT ?
+                   )""",
+                (session_id, session_id, EVENTS_PER_SESSION_CAP),
+            )
         conn.commit()
 
 
