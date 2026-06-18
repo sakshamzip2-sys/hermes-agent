@@ -253,11 +253,13 @@ def _local_diversity():
 
 def _passes_diversity(text: str, existing: list[str], embed_fn, threshold: float) -> bool:
     """True if *text* is NOT a near-duplicate of any existing MEMORY.md entry."""
-    import asyncio
-
+    from plugins.dream_orchestrator.targets import _run_coro
     from plugins.dreaming.engine import best_match_against
 
     if not existing or embed_fn is None:
         return True
-    diversity, _idx = asyncio.run(best_match_against(text, existing, embed_fn=embed_fn))
+    # Loop-safe: this runs inside the dream cycle, which itself may run on a
+    # worker-thread loop when invoked from the gateway — a bare asyncio.run here
+    # would raise "cannot be called from a running event loop".
+    diversity, _idx = _run_coro(best_match_against(text, existing, embed_fn=embed_fn))
     return diversity < threshold
