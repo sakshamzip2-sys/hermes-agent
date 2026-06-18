@@ -2274,6 +2274,15 @@ DEFAULT_CONFIG = {
         # Env scrubbing (strips *_API_KEY, *_TOKEN, *_SECRET, ...) and the
         # tool whitelist apply identically in both modes.
         "mode": "project",
+        # Extra tools (beyond the built-in 7: web_search, web_extract,
+        # read_file, write_file, search_files, patch, terminal) that scripts
+        # may call from inside the sandbox via `from hermes_tools import ...`.
+        # Each name is intersected with the session's actually-available tools,
+        # so listing one here can never expose a tool the session lacks. Tools
+        # without a hardcoded stub get a generic `name(**kwargs)` passthrough.
+        # Use to collapse browser/MCP research pipelines into one execute_code
+        # turn. Example: ["browser_navigate", "browser_click", "browser_snapshot"].
+        "extra_tools": [],
     },
 
     # Tool Search (progressive disclosure for large tool surfaces).
