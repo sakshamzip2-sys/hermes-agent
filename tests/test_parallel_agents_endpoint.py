@@ -221,6 +221,28 @@ def test_agent_detail_includes_pending_messages(isolated_plugin_dbs):
     assert [m["message"] for m in detail["pending_messages"]] == ["steer: focus on tests"]
 
 
+def test_agent_detail_surfaces_persona_from_meta(isolated_plugin_dbs):
+    agents_db = isolated_plugin_dbs["agents"]
+    sid = agents_db.new_session_id()
+    agents_db.create_session(
+        session_id=sid,
+        prompt="research X",
+        meta={"persona_id": 7, "persona_name": "Researcher", "system_prompt": "be thorough"},
+    )
+    detail = APIServerAdapter.build_agent_detail(sid)
+    assert detail is not None
+    assert detail["persona"] == {"id": 7, "name": "Researcher"}
+
+
+def test_agent_detail_persona_none_when_absent(isolated_plugin_dbs):
+    agents_db = isolated_plugin_dbs["agents"]
+    sid = agents_db.new_session_id()
+    agents_db.create_session(session_id=sid, prompt="ad-hoc task")
+    detail = APIServerAdapter.build_agent_detail(sid)
+    assert detail is not None
+    assert detail["persona"] is None
+
+
 def test_add_event_fifo_cap_bounds_growth(isolated_plugin_dbs, monkeypatch):
     agents_db = isolated_plugin_dbs["agents"]
     monkeypatch.setattr(agents_db, "EVENTS_PER_SESSION_CAP", 5)
