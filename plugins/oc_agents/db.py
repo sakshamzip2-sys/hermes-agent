@@ -76,6 +76,19 @@ CREATE TABLE IF NOT EXISTS bg_events (
 );
 
 CREATE INDEX IF NOT EXISTS idx_bg_events_session ON bg_events(session_id, id);
+
+-- User-sent messages for a running agent ("steer it live"). The worker drains
+-- these when the agent asks for input (clarify) and as follow-up turns after
+-- the current run finishes, so you can answer questions or queue more work.
+CREATE TABLE IF NOT EXISTS bg_inbox (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id  TEXT NOT NULL,
+    ts          REAL NOT NULL,
+    message     TEXT NOT NULL,
+    consumed    INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE INDEX IF NOT EXISTS idx_bg_inbox_session ON bg_inbox(session_id, consumed, id);
 """
 
 _local = threading.local()
@@ -250,6 +263,42 @@ def list_events(
         return [dict(r) for r in rows]
 
 
+def add_inbox_message(session_id: str, message: str) -> int:
+    """Queue a user message for a running agent. Returns the new message id."""
+    with connect() as conn:
+        cur = conn.execute(
+            "INSERT INTO bg_inbox (session_id, ts, message, consumed) VALUES (?,?,?,0)",
+            (session_id, _now(), message[:4000]),
+        )
+        conn.commit()
+        return int(cur.lastrowid or 0)
+
+
+def pop_inbox_message(session_id: str) -> Optional[str]:
+    """Atomically take the oldest unconsumed inbox message (marking it consumed)
+    and return its text, or None if the inbox is empty."""
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT id, message FROM bg_inbox WHERE session_id=? AND consumed=0 ORDER BY id LIMIT 1",
+            (session_id,),
+        ).fetchone()
+        if row is None:
+            return None
+        conn.execute("UPDATE bg_inbox SET consumed=1 WHERE id=?", (row["id"],))
+        conn.commit()
+        return row["message"]
+
+
+def pending_inbox(session_id: str, limit: int = 50) -> List[Dict[str, Any]]:
+    """Unconsumed queued messages for a session (for the UI), oldest-first."""
+    with connect() as conn:
+        rows = conn.execute(
+            "SELECT * FROM bg_inbox WHERE session_id=? AND consumed=0 ORDER BY id LIMIT ?",
+            (session_id, limit),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
 def set_needs_input(session_id: str, question: str) -> None:
     now = _now()
     with connect() as conn:
@@ -308,6 +357,7 @@ def delete_session(session_id: str) -> bool:
     with connect() as conn:
         cur = conn.execute("DELETE FROM bg_sessions WHERE id=?", (session_id,))
         conn.execute("DELETE FROM bg_events WHERE session_id=?", (session_id,))
+        conn.execute("DELETE FROM bg_inbox WHERE session_id=?", (session_id,))
         conn.commit()
         return cur.rowcount > 0
 

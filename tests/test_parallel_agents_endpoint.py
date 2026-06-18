@@ -188,6 +188,39 @@ def test_delete_session_clears_events(isolated_plugin_dbs):
     assert agents_db.list_events(sid) == []
 
 
+def test_inbox_add_pop_pending_and_cascade(isolated_plugin_dbs):
+    agents_db = isolated_plugin_dbs["agents"]
+    sid = agents_db.new_session_id()
+    agents_db.create_session(session_id=sid, prompt="work")
+    agents_db.add_inbox_message(sid, "also check the logs")
+    agents_db.add_inbox_message(sid, "then summarize")
+
+    pending = agents_db.pending_inbox(sid)
+    assert [m["message"] for m in pending] == ["also check the logs", "then summarize"]
+
+    # pop returns oldest-first and marks consumed.
+    assert agents_db.pop_inbox_message(sid) == "also check the logs"
+    assert [m["message"] for m in agents_db.pending_inbox(sid)] == ["then summarize"]
+    assert agents_db.pop_inbox_message(sid) == "then summarize"
+    assert agents_db.pop_inbox_message(sid) is None
+    assert agents_db.pending_inbox(sid) == []
+
+    # delete_session cascades to the inbox.
+    agents_db.add_inbox_message(sid, "queued")
+    assert agents_db.delete_session(sid) is True
+    assert agents_db.pending_inbox(sid) == []
+
+
+def test_agent_detail_includes_pending_messages(isolated_plugin_dbs):
+    agents_db = isolated_plugin_dbs["agents"]
+    sid = agents_db.new_session_id()
+    agents_db.create_session(session_id=sid, prompt="work")
+    agents_db.add_inbox_message(sid, "steer: focus on tests")
+    detail = APIServerAdapter.build_agent_detail(sid)
+    assert detail is not None
+    assert [m["message"] for m in detail["pending_messages"]] == ["steer: focus on tests"]
+
+
 def test_add_event_fifo_cap_bounds_growth(isolated_plugin_dbs, monkeypatch):
     agents_db = isolated_plugin_dbs["agents"]
     monkeypatch.setattr(agents_db, "EVENTS_PER_SESSION_CAP", 5)

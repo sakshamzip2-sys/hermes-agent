@@ -47,7 +47,11 @@ class _FakeAgent:
     def __init__(self, prompt_echo: str = "") -> None:
         self._echo = prompt_echo
 
-    def run_conversation(self, prompt: str, task_id: str = "") -> Dict[str, Any]:
+    def run_conversation(
+        self, prompt: str, task_id: str = "", **_kwargs: Any
+    ) -> Dict[str, Any]:
+        # Accept (and ignore) extra kwargs like conversation_history so the
+        # follow-up/continuation path works under the fake agent too.
         return {
             "messages": [{"role": "assistant", "content": f"[fake] handled: {prompt[:80]}"}],
             "completed": True,
@@ -137,6 +141,24 @@ def _build_headless_agent(row: Dict[str, Any]):
     }
 
     sid = row["id"]
+
+    def _clarify(question: str, choices=None) -> str:
+        # If the user has queued a message for this running agent, deliver it as
+        # the answer (live steering); otherwise fall back to the autonomous
+        # default so the session never stalls.
+        try:
+            pending = db.pop_inbox_message(sid)
+        except Exception:
+            pending = None
+        if pending:
+            try:
+                db.add_event(sid, f"user message: {pending}", kind="user")
+            except Exception:
+                pass
+            return pending
+        return _bg_clarify_callback(question, choices)
+
+    kwargs["clarify_callback"] = _clarify
 
     def _progress(*args, **_kwargs) -> None:
         # AIAgent's tool_progress_callback is called on tool start/complete/
@@ -266,6 +288,35 @@ def run_worker(session_id: str) -> int:
             except Exception as exc:  # noqa: BLE001
                 db.finish_session(session_id, db.STATE_FAILED, error=f"{type(exc).__name__}: {exc}")
                 return 1
+
+            # Drain any messages the user queued while/after the run as follow-up
+            # turns (preserving conversation history) so a background agent can be
+            # steered or given more work. Bounded to avoid a runaway loop.
+            for _ in range(20):
+                try:
+                    pending = db.pop_inbox_message(session_id)
+                except Exception:  # noqa: BLE001
+                    pending = None
+                if not pending:
+                    break
+                try:
+                    db.add_event(session_id, f"user message: {pending}", kind="user")
+                except Exception:  # noqa: BLE001
+                    pass
+                db.mark_working(session_id, agent_session_id=getattr(agent, "session_id", "") or "")
+                history = result.get("messages") if isinstance(result, dict) else None
+                try:
+                    if history:
+                        result = agent.run_conversation(
+                            pending, task_id=task_id, conversation_history=history
+                        )
+                    else:
+                        result = agent.run_conversation(pending, task_id=task_id)
+                except Exception as exc:  # noqa: BLE001
+                    db.finish_session(
+                        session_id, db.STATE_FAILED, error=f"follow-up failed: {exc}"
+                    )
+                    return 1
 
         text = _final_text(result if isinstance(result, dict) else {})
         api_calls = int(result.get("api_calls") or 0) if isinstance(result, dict) else 0

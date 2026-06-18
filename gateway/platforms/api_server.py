@@ -3671,6 +3671,11 @@ class APIServerAdapter(BasePlatformAdapter):
             events = _agents_db.list_events(session_id, limit=300)
         except Exception as exc:  # noqa: BLE001 — bg_events may not exist on old DBs
             events_err = str(exc)
+        pending_messages: list = []
+        try:
+            pending_messages = _agents_db.pending_inbox(session_id)
+        except Exception:  # noqa: BLE001 — bg_inbox may not exist on old DBs
+            pending_messages = []
         log_tail = ""
         log_err = None
         log_path = session.get("log_path")
@@ -3688,6 +3693,8 @@ class APIServerAdapter(BasePlatformAdapter):
             "log_tail": log_tail,
             # Granular per-step activity (newest entries capped) for the live feed.
             "events": events,
+            # User messages queued for this (running) agent, not yet consumed.
+            "pending_messages": pending_messages,
             # agent_session_id (a hermes_state session id) is the click-to-chat
             # resume target; surface it explicitly for the frontend.
             "chat_session_id": session.get("agent_session_id") or "",
@@ -3849,6 +3856,46 @@ class APIServerAdapter(BasePlatformAdapter):
             logger.exception("parallel-agents: agent stop failed for %s", session_id)
             return web.json_response({"error": "internal error"}, status=500)
         return web.json_response({"object": "hermes.agent_stop", "stopped": bool(stopped)})
+
+    async def _handle_agent_send(self, request: "web.Request") -> "web.Response":
+        """POST /api/parallel-agents/agents/{session_id}/send  {message}
+
+        Queue a message for a background agent. The detached worker delivers it
+        when the agent next asks for input (live steering) and as a follow-up
+        turn after its current run, so you can answer or add work without
+        restarting it."""
+        auth_err = self._check_auth(request)
+        if auth_err:
+            return auth_err
+        session_id = request.match_info["session_id"]
+        try:
+            data = await request.json()
+        except Exception:  # noqa: BLE001
+            return web.json_response({"error": "invalid JSON body"}, status=400)
+        if not isinstance(data, dict):
+            return web.json_response({"error": "body must be a JSON object"}, status=400)
+        message = (data.get("message") or "").strip()
+        if not message:
+            return web.json_response({"error": "message is required"}, status=400)
+        try:
+            from plugins.oc_agents import db as _agents_db
+
+            if _agents_db.get_session(session_id) is None:
+                return web.json_response(
+                    {"error": "agent session not found"}, status=404
+                )
+            message_id = _agents_db.add_inbox_message(session_id, message)
+            pending = _agents_db.pending_inbox(session_id)
+        except Exception:  # noqa: BLE001
+            logger.exception("parallel-agents: agent send failed for %s", session_id)
+            return web.json_response({"error": "internal error"}, status=500)
+        return web.json_response(
+            {
+                "object": "hermes.agent_message",
+                "message_id": message_id,
+                "pending": len(pending),
+            }
+        )
 
     async def _handle_flow_stop(self, request: "web.Request") -> "web.Response":
         """POST /api/parallel-agents/flows/{flow_id}/stop"""
@@ -5048,6 +5095,7 @@ class APIServerAdapter(BasePlatformAdapter):
             self._app.router.add_get("/api/parallel-agents/agents/{session_id}", self._handle_agent_detail)
             self._app.router.add_get("/api/parallel-agents/teams/{team_id}", self._handle_team_detail)
             self._app.router.add_post("/api/parallel-agents/agents/{session_id}/stop", self._handle_agent_stop)
+            self._app.router.add_post("/api/parallel-agents/agents/{session_id}/send", self._handle_agent_send)
             self._app.router.add_post("/api/parallel-agents/flows/{flow_id}/stop", self._handle_flow_stop)
             self._app.router.add_post("/api/parallel-agents/teams/{team_id}/messages", self._handle_team_send_message)
             self._app.router.add_get("/api/memory", self._handle_get_memory)
