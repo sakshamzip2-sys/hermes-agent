@@ -120,3 +120,37 @@ rich per-tool timeline. Flow per-agent tables and team data ARE fully real.
 4. For finished detached agents only `last_summary`+result survive — set UX expectations.
 5. Teammate identity → which session id the chat API can resume.
 6. Onyx chat-id vs hermes `agent_session_id` mapping for click-to-chat.
+
+## Outcome (verified live against the running stack)
+
+All capabilities were driven end-to-end in the browser against real seeded data:
+list + live "N running now" counts; flow detail (phases, per-agent rows with
+model/calls/tokens, log feed); agent detail (metadata, summary, honest empty-log
+state, Stop); **click-to-chat loaded the agent's full transcript and let the user
+continue chatting**; team detail (members with per-teammate Chat, tasks, mailbox,
+send-message). Backend: 24 unit tests + 56 plugin + 52 gateway tests pass.
+
+### Bug found & fixed during verification
+The agent's CORS middleware 403s any request whose forwarded `Origin` isn't
+allowlisted. Same-origin GETs omit `Origin` (so they passed), but every browser
+mutation through `/api/hermes/agent/[...path]` forwarded the browser `Origin`
+and got 403 — a **pre-existing latent bug** that also broke `/api/chat/file`
+uploads. Fixed by stripping `Origin`/`Referer` in the BFF proxy
+(`workspace/src/server/proxy/oc-service-api.ts`): a trusted server-to-server
+proxy must not impersonate a browser origin.
+
+### Adversarial review (swarm) — addressed
+17 findings confirmed by a verified review swarm; fixed: path-traversal
+hardening in `_tail_file`, query caps (DoS), team-member enrichment resilience,
+agent-stop 404 semantics, generic logged 500s, send-message body validation,
+card `aria-label`, async-onClick wrapping, `TeamMessage.id` typing.
+
+### Known limitation (Phase 2)
+Click-to-chat **works** (loads the transcript and continues the conversation),
+but the chat view fires two auxiliary calls that 404 for a hermes-native
+background-agent session:
+`GET /api/chat/available-context-tokens/{id}` and
+`GET /api/user/projects/session/{id}/{token-count,files}`. These are non-fatal
+console errors (the conversation loads and is usable). Phase-2 fix: teach those
+endpoints to recognize hermes session ids, or suppress them for agent-resumed
+sessions.
