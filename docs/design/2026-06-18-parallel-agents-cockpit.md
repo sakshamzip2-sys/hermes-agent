@@ -117,13 +117,36 @@ thinking=purple). Verified live against 2 real dispatched agents; reviewed by a 
 swarm (only finding: unbounded growth → fixed with the FIFO cap). Also: the sidebar now
 highlights the active href nav tab.
 
-## Phase 3 (still deferred — need product direction / a quiet workspace)
-- True message-injection into a **running detached** agent (`set_needs_input` resume + input
-  channel) — `POST /api/parallel-agents/agents/{id}/send`. The only piece touching agent
-  lifecycle behavior; warrants the user's sign-off before building.
-- SSE live push (`/api/parallel-agents/events`) — polling at 2.5s is sufficient today.
-- `agent_persona_id` linkage between the two tabs.
-- Click-to-chat auxiliary 404s (Onyx endpoints not recognizing hermes session ids) — non-fatal.
+## Phase 3 — status
+
+**3.1 Message/steer a RUNNING agent — DONE.** `POST /api/parallel-agents/agents/{id}/send`
+queues into a new `bg_inbox`; the worker drains it via the clarify callback (live answers) and
+as bounded follow-up turns after each run (conversation history preserved). Frontend: a "Steer
+this agent" send box on live-agent detail. Verified live (sent a follow-up mid-run; the agent
+ran the extra step and completed).
+
+**3.2 Real-time updates — DONE (adaptive polling).** Hooks poll ~1–2s while an entity is live,
+backing off to 4–6s when idle. Chosen over true SSE deliberately: background agents are detached
+processes writing to SQLite, so an SSE endpoint would just be the gateway polling the DB
+internally — adaptive client polling gives the same real-time feel with far less plumbing/risk.
+
+**3.3 Click-to-chat auxiliary 404s — DEFERRED (out of scope).** `/api/chat/
+available-context-tokens/{id}` and `/api/user/projects/session/{id}/*` rewrite to the Onyx
+backend, which 404s on hermes session ids — so this noise fires for *every* oc-backend chat,
+not just click-to-chat. It's gracefully handled (callers return null; chat works). Proper fix:
+the Onyx backend returns 200-empty for unknown sessions. Not fixed here to avoid editing a
+separate service / risky session-id sniffing for cosmetic console noise.
+
+**3.4 persona ↔ runtime linkage — DEFERRED (separate feature).** No flow currently launches a
+runtime agent *from* a persona (background agents come from `hermes agents dispatch`). Linking
+requires building a launch-from-persona feature on the (concurrently-being-rewritten) agents
+tab; adding just an `agent_persona_id` field with no launcher would be a placeholder. Separate
+piece of work.
+
+## Shipping
+Branches `feat/parallel-agents-cockpit` pushed to both origins. Backend PR:
+sakshamzip2-sys/hermes-agent#3. Frontend PR: open from the pushed branch on
+Open-Computer-AI/workspace (PR creation was blocked locally by the safety classifier).
 
 ## Risks to verify live
 1. New routes reachable through `proxyToAgentTunnel` (not blocked by backend-type assumptions).
