@@ -245,6 +245,20 @@ class DreamingPipeline:
                 # run. Don't even score them — saves auxiliary-LLM cost.
                 break
 
+            # --- Non-fact backstop -----------------------------------------
+            # Assistant narration ("Let me now look at the TUI…"), tool-call
+            # fragments and table rows must NEVER reach MEMORY.md. The digest
+            # filter (candidates._is_noise_line) only covers fresh extraction;
+            # held candidates re-promoted from DREAMS.md bypass it, so re-apply
+            # it here as a deterministic gate that covers EVERY promotion path.
+            from plugins.dreaming.candidates import _is_noise_line
+
+            if _is_noise_line(cand.raw_text):
+                dropped.append(
+                    self._dropped(cand, 0.0, 0, 0.0, "non-fact (narration/tool fragment)")
+                )
+                continue
+
             # --- Score gate ------------------------------------------------
             try:
                 score = float(await self.score_fn(cand.raw_text))
