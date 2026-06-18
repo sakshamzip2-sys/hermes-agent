@@ -223,11 +223,14 @@ def get_member(team_id: str, name: str) -> Optional[Dict[str, Any]]:
         return dict(row) if row else None
 
 
-def list_members(team_id: str) -> List[Dict[str, Any]]:
+def list_members(team_id: str, limit: Optional[int] = None) -> List[Dict[str, Any]]:
+    sql = "SELECT * FROM team_members WHERE team_id=? ORDER BY id"
+    params: tuple = (team_id,)
+    if limit is not None:
+        sql += " LIMIT ?"
+        params = (team_id, limit)
     with connect() as conn:
-        rows = conn.execute(
-            "SELECT * FROM team_members WHERE team_id=? ORDER BY id", (team_id,)
-        ).fetchall()
+        rows = conn.execute(sql, params).fetchall()
         return [dict(r) for r in rows]
 
 
@@ -262,16 +265,20 @@ def get_task(task_id: str) -> Optional[Dict[str, Any]]:
         return dict(row) if row else None
 
 
-def list_tasks(team_id: str, status: Optional[str] = None) -> List[Dict[str, Any]]:
+def list_tasks(
+    team_id: str, status: Optional[str] = None, limit: Optional[int] = None
+) -> List[Dict[str, Any]]:
     with connect() as conn:
         if status:
-            rows = conn.execute(
-                "SELECT * FROM team_tasks WHERE team_id=? AND status=? ORDER BY created_at", (team_id, status)
-            ).fetchall()
+            sql = "SELECT * FROM team_tasks WHERE team_id=? AND status=? ORDER BY created_at"
+            params: tuple = (team_id, status)
         else:
-            rows = conn.execute(
-                "SELECT * FROM team_tasks WHERE team_id=? ORDER BY created_at", (team_id,)
-            ).fetchall()
+            sql = "SELECT * FROM team_tasks WHERE team_id=? ORDER BY created_at"
+            params = (team_id,)
+        if limit is not None:
+            sql += " LIMIT ?"
+            params = params + (limit,)
+        rows = conn.execute(sql, params).fetchall()
         return [dict(r) for r in rows]
 
 

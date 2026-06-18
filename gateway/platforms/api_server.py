@@ -3576,10 +3576,22 @@ class APIServerAdapter(BasePlatformAdapter):
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _tail_file(path: str, max_bytes: int = 16384) -> str:
+    def _tail_file(
+        path: str, max_bytes: int = 16384, *, allowed_dir: Optional[str] = None
+    ) -> str:
         """Return the last ``max_bytes`` of a (possibly large) text file,
-        dropping a leading partial line. Empty string if the file is absent."""
-        p = Path(path)
+        dropping a leading partial line. Empty string if the file is absent.
+
+        When ``allowed_dir`` is provided, the resolved path must live inside it
+        — defense-in-depth so a tampered ``log_path`` (e.g. from a compromised
+        DB row) can't read arbitrary files via the API.
+        """
+        p = Path(path).resolve()
+        if allowed_dir is not None:
+            try:
+                p.relative_to(Path(allowed_dir).resolve())
+            except ValueError:
+                return ""
         if not p.is_file():
             return ""
         size = p.stat().st_size
@@ -3609,11 +3621,11 @@ class APIServerAdapter(BasePlatformAdapter):
         logs: list = []
         result = None
         try:
-            phases = _flow_db.list_phases(flow_id)
+            phases = _flow_db.list_phases(flow_id, limit=500)
         except Exception as exc:  # noqa: BLE001
             errors["phases"] = str(exc)
         try:
-            agents = _flow_db.list_agents(flow_id)
+            agents = _flow_db.list_agents(flow_id, limit=500)
         except Exception as exc:  # noqa: BLE001
             errors["agents"] = str(exc)
         try:
@@ -3658,7 +3670,9 @@ class APIServerAdapter(BasePlatformAdapter):
         log_path = session.get("log_path")
         if log_path:
             try:
-                log_tail = APIServerAdapter._tail_file(str(log_path), log_bytes)
+                log_tail = APIServerAdapter._tail_file(
+                    str(log_path), log_bytes, allowed_dir=str(_agents_db.logs_dir())
+                )
             except Exception as exc:  # noqa: BLE001
                 log_err = str(exc)
         return {
@@ -3688,11 +3702,11 @@ class APIServerAdapter(BasePlatformAdapter):
         messages: list = []
         summary: dict = {}
         try:
-            members = _teams_db.list_members(team_id)
+            members = _teams_db.list_members(team_id, limit=200)
         except Exception as exc:  # noqa: BLE001
             errors["members"] = str(exc)
         try:
-            tasks = _teams_db.list_tasks(team_id)
+            tasks = _teams_db.list_tasks(team_id, limit=500)
         except Exception as exc:  # noqa: BLE001
             errors["tasks"] = str(exc)
         try:
@@ -3705,19 +3719,27 @@ class APIServerAdapter(BasePlatformAdapter):
             errors["summary"] = str(exc)
 
         # Enrich each member with its background session's hermes chat session
-        # id so the frontend can offer "continue chatting" per teammate.
+        # id so the frontend can offer "continue chatting" per teammate. Every
+        # member is pre-seeded with an empty id so the field is always present,
+        # and each lookup is isolated so one failure can't drop the key from the
+        # remaining members.
+        for m in members:
+            m["chat_session_id"] = ""
         try:
             from plugins.oc_agents import db as _agents_db
-
+        except Exception as exc:  # noqa: BLE001 — oc_agents may be absent
+            _agents_db = None
+            errors["member_sessions"] = str(exc)
+        if _agents_db is not None:
             for m in members:
                 bg = m.get("bg_session_id")
                 if not bg:
-                    m["chat_session_id"] = ""
                     continue
-                sess = _agents_db.get_session(bg)
-                m["chat_session_id"] = (sess or {}).get("agent_session_id") or ""
-        except Exception as exc:  # noqa: BLE001 — oc_agents may be absent
-            errors["member_sessions"] = str(exc)
+                try:
+                    sess = _agents_db.get_session(bg)
+                    m["chat_session_id"] = (sess or {}).get("agent_session_id") or ""
+                except Exception as exc:  # noqa: BLE001
+                    errors["member_sessions"] = str(exc)
 
         return {
             "object": "hermes.team_detail",
@@ -3761,8 +3783,9 @@ class APIServerAdapter(BasePlatformAdapter):
         flow_id = request.match_info["flow_id"]
         try:
             detail = self.build_flow_detail(flow_id)
-        except Exception as exc:  # noqa: BLE001
-            return web.json_response({"error": str(exc)}, status=500)
+        except Exception:  # noqa: BLE001
+            logger.exception("parallel-agents: flow detail failed for %s", flow_id)
+            return web.json_response({"error": "internal error"}, status=500)
         if detail is None:
             return web.json_response({"error": "flow not found"}, status=404)
         return web.json_response(detail)
@@ -3775,8 +3798,9 @@ class APIServerAdapter(BasePlatformAdapter):
         session_id = request.match_info["session_id"]
         try:
             detail = self.build_agent_detail(session_id)
-        except Exception as exc:  # noqa: BLE001
-            return web.json_response({"error": str(exc)}, status=500)
+        except Exception:  # noqa: BLE001
+            logger.exception("parallel-agents: agent detail failed for %s", session_id)
+            return web.json_response({"error": "internal error"}, status=500)
         if detail is None:
             return web.json_response({"error": "agent session not found"}, status=404)
         return web.json_response(detail)
@@ -3789,8 +3813,9 @@ class APIServerAdapter(BasePlatformAdapter):
         team_id = request.match_info["team_id"]
         try:
             detail = self.build_team_detail(team_id)
-        except Exception as exc:  # noqa: BLE001
-            return web.json_response({"error": str(exc)}, status=500)
+        except Exception:  # noqa: BLE001
+            logger.exception("parallel-agents: team detail failed for %s", team_id)
+            return web.json_response({"error": "internal error"}, status=500)
         if detail is None:
             return web.json_response({"error": "team not found"}, status=404)
         return web.json_response(detail)
@@ -3802,11 +3827,19 @@ class APIServerAdapter(BasePlatformAdapter):
             return auth_err
         session_id = request.match_info["session_id"]
         try:
+            from plugins.oc_agents import db as _agents_db
             from plugins.oc_agents import supervisor as _agents_sup
 
+            # Distinguish "no such session" (404) from "exists but not in a
+            # stoppable state" (200 + stopped:false), matching flow-stop.
+            if _agents_db.get_session(session_id) is None:
+                return web.json_response(
+                    {"error": "agent session not found"}, status=404
+                )
             stopped = _agents_sup.stop(session_id)
-        except Exception as exc:  # noqa: BLE001
-            return web.json_response({"error": str(exc)}, status=500)
+        except Exception:  # noqa: BLE001
+            logger.exception("parallel-agents: agent stop failed for %s", session_id)
+            return web.json_response({"error": "internal error"}, status=500)
         return web.json_response({"object": "hermes.agent_stop", "stopped": bool(stopped)})
 
     async def _handle_flow_stop(self, request: "web.Request") -> "web.Response":
@@ -3817,8 +3850,9 @@ class APIServerAdapter(BasePlatformAdapter):
         flow_id = request.match_info["flow_id"]
         try:
             result = self.stop_flow(flow_id)
-        except Exception as exc:  # noqa: BLE001
-            return web.json_response({"error": str(exc)}, status=500)
+        except Exception:  # noqa: BLE001
+            logger.exception("parallel-agents: flow stop failed for %s", flow_id)
+            return web.json_response({"error": "internal error"}, status=500)
         if not result.get("found"):
             return web.json_response({"error": "flow not found"}, status=404)
         return web.json_response({"object": "hermes.flow_stop", **result})
@@ -3833,6 +3867,8 @@ class APIServerAdapter(BasePlatformAdapter):
             data = await request.json()
         except Exception:  # noqa: BLE001
             return web.json_response({"error": "invalid JSON body"}, status=400)
+        if not isinstance(data, dict):
+            return web.json_response({"error": "body must be a JSON object"}, status=400)
         body = (data.get("body") or "").strip()
         if not body:
             return web.json_response({"error": "body is required"}, status=400)
@@ -3844,8 +3880,9 @@ class APIServerAdapter(BasePlatformAdapter):
             if _teams_db.get_team(team_id) is None:
                 return web.json_response({"error": "team not found"}, status=404)
             message_id = _teams_db.send_message(team_id, from_member, to_member, body)
-        except Exception as exc:  # noqa: BLE001
-            return web.json_response({"error": str(exc)}, status=500)
+        except Exception:  # noqa: BLE001
+            logger.exception("parallel-agents: team send-message failed for %s", team_id)
+            return web.json_response({"error": "internal error"}, status=500)
         return web.json_response(
             {"object": "hermes.team_message", "message_id": message_id}
         )

@@ -118,9 +118,11 @@ def test_flow_detail_missing_returns_none(isolated_plugin_dbs):
     assert APIServerAdapter.build_flow_detail("flow_does_not_exist") is None
 
 
-def test_agent_detail_includes_log_tail_and_chat_session(isolated_plugin_dbs, tmp_path):
+def test_agent_detail_includes_log_tail_and_chat_session(isolated_plugin_dbs):
     agents_db = isolated_plugin_dbs["agents"]
-    logf = tmp_path / "agent.log"
+    # Real agent logs live under logs_dir(); the detail builder refuses to read
+    # log paths outside it, so the test log must live there too.
+    logf = agents_db.logs_dir() / "agent.log"
     logf.write_text("line one\nline two\n", encoding="utf-8")
     sid = agents_db.new_session_id()
     agents_db.create_session(session_id=sid, prompt="bg task", log_path=str(logf))
@@ -226,3 +228,79 @@ def test_tail_file_large_drops_partial_first_line(tmp_path):
 
 def test_tail_file_absent_returns_empty(tmp_path):
     assert APIServerAdapter._tail_file(str(tmp_path / "missing.log")) == ""
+
+
+def test_tail_file_allowed_dir_blocks_traversal(tmp_path):
+    allowed = tmp_path / "logs"
+    allowed.mkdir()
+    inside = allowed / "ok.log"
+    inside.write_text("inside\n", encoding="utf-8")
+    outside = tmp_path / "secret.log"
+    outside.write_text("TOP SECRET\n", encoding="utf-8")
+
+    # A path within the allowed dir reads normally.
+    assert "inside" in APIServerAdapter._tail_file(str(inside), allowed_dir=str(allowed))
+    # A path outside the allowed dir is refused (empty), even via traversal.
+    assert APIServerAdapter._tail_file(str(outside), allowed_dir=str(allowed)) == ""
+    traversal = allowed / ".." / "secret.log"
+    assert APIServerAdapter._tail_file(str(traversal), allowed_dir=str(allowed)) == ""
+
+
+def test_agent_detail_rejects_log_path_outside_logs_dir(isolated_plugin_dbs, tmp_path):
+    agents_db = isolated_plugin_dbs["agents"]
+    # A tampered log_path pointing outside the agent logs dir must not leak.
+    secret = tmp_path / "passwd"
+    secret.write_text("root:x:0:0", encoding="utf-8")
+    sid = agents_db.new_session_id()
+    agents_db.create_session(session_id=sid, prompt="x", log_path=str(secret))
+    detail = APIServerAdapter.build_agent_detail(sid)
+    assert detail is not None
+    assert detail["log_tail"] == ""
+
+
+def test_list_accessors_honor_limit(isolated_plugin_dbs):
+    flow_db = isolated_plugin_dbs["flow"]
+    teams_db = isolated_plugin_dbs["teams"]
+    rid = flow_db.new_run_id()
+    flow_db.create_run(run_id=rid, name="capped")
+    for i in range(3):
+        flow_db.add_phase(rid, i, f"p{i}")
+        flow_db.start_agent(rid, i, label=f"a{i}")
+    assert len(flow_db.list_phases(rid, limit=2)) == 2
+    assert len(flow_db.list_agents(rid, limit=1)) == 1
+    # Default (no limit) still returns everything — backward compatible.
+    assert len(flow_db.list_phases(rid)) == 3
+
+    tid = teams_db.new_team_id()
+    teams_db.create_team(tid, "t")
+    teams_db.add_member(tid, "m1")
+    teams_db.add_member(tid, "m2")
+    teams_db.create_task(tid, "t1")
+    teams_db.create_task(tid, "t2")
+    assert len(teams_db.list_members(tid, limit=1)) == 1
+    assert len(teams_db.list_tasks(tid, limit=1)) == 1
+
+
+def test_team_detail_member_key_survives_enrichment_error(
+    isolated_plugin_dbs, monkeypatch
+):
+    teams_db = isolated_plugin_dbs["teams"]
+    agents_db = isolated_plugin_dbs["agents"]
+    tid = teams_db.new_team_id()
+    teams_db.create_team(tid, "resilient")
+    teams_db.add_member(tid, "alice", kind="teammate", bg_session_id="bg-x")
+    teams_db.add_member(tid, "bob", kind="teammate", bg_session_id="bg-y")
+
+    def boom(*a, **k):
+        raise RuntimeError("agents db exploded")
+
+    monkeypatch.setattr(agents_db, "get_session", boom)
+
+    detail = APIServerAdapter.build_team_detail(tid)
+    assert detail is not None
+    # Every member still carries the key (defaulted to ""), and the error is
+    # recorded rather than dropping the field from later members.
+    for m in detail["members"]:
+        assert "chat_session_id" in m
+        assert m["chat_session_id"] == ""
+    assert "member_sessions" in detail["errors"]

@@ -242,11 +242,14 @@ def add_phase(run_id: str, seq: int, title: str) -> None:
         conn.commit()
 
 
-def list_phases(run_id: str) -> List[Dict[str, Any]]:
+def list_phases(run_id: str, limit: Optional[int] = None) -> List[Dict[str, Any]]:
+    sql = "SELECT * FROM flow_phases WHERE run_id=? ORDER BY seq"
+    params: tuple = (run_id,)
+    if limit is not None:
+        sql += " LIMIT ?"
+        params = (run_id, limit)
     with connect() as conn:
-        rows = conn.execute(
-            "SELECT * FROM flow_phases WHERE run_id=? ORDER BY seq", (run_id,)
-        ).fetchall()
+        rows = conn.execute(sql, params).fetchall()
         return [dict(r) for r in rows]
 
 
@@ -318,11 +321,14 @@ def finish_agent(
         conn.commit()
 
 
-def list_agents(run_id: str) -> List[Dict[str, Any]]:
+def list_agents(run_id: str, limit: Optional[int] = None) -> List[Dict[str, Any]]:
+    sql = "SELECT * FROM flow_agents WHERE run_id=? ORDER BY call_index"
+    params: tuple = (run_id,)
+    if limit is not None:
+        sql += " LIMIT ?"
+        params = (run_id, limit)
     with connect() as conn:
-        rows = conn.execute(
-            "SELECT * FROM flow_agents WHERE run_id=? ORDER BY call_index", (run_id,)
-        ).fetchall()
+        rows = conn.execute(sql, params).fetchall()
         return [dict(r) for r in rows]
 
 
