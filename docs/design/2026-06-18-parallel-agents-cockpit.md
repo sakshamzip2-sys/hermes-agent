@@ -103,15 +103,27 @@ Implemented as testable static builders (`build_flow_detail`, `build_agent_detai
   the UI + screenshot, then an adversarial critique swarm → fix loop until green.
 
 ## No-placeholder rule
-Background-agent granular per-tool history is **not persisted** (only `last_summary` + the
-on-disk log). So the agent detail pane shows the **real** log tail + summary — it will NOT fake a
-rich per-tool timeline. Flow per-agent tables and team data ARE fully real.
+Originally background-agent granular per-tool history was **not persisted** (only `last_summary`
++ the on-disk log). **Phase 2 (below) fixed this** — the worker now persists a kinded event
+stream, so the agent detail shows a real color-coded activity timeline. Flow per-agent tables and
+team data were always fully real.
 
-## Phase 2 (explicitly deferred — engine behavior change, higher risk)
+## Phase 2 — DONE (granular activity timeline)
+Shipped: background agents persist per-step events (tool/thinking/activity) via the worker's
+existing `tool_progress_callback` into a new `bg_events` table (`oc_agents/db.py`,
+`add_event`/`list_events`, FIFO-capped at 1000/session). `build_agent_detail` returns `events[]`;
+the frontend agent-detail renders a live, color-coded Activity timeline (tool=blue,
+thinking=purple). Verified live against 2 real dispatched agents; reviewed by a 3rd adversarial
+swarm (only finding: unbounded growth → fixed with the FIFO cap). Also: the sidebar now
+highlights the active href nav tab.
+
+## Phase 3 (still deferred — need product direction / a quiet workspace)
 - True message-injection into a **running detached** agent (`set_needs_input` resume + input
-  channel) — `POST /api/parallel-agents/agents/{id}/send`.
-- SSE live push (`/api/parallel-agents/events`) — polling is sufficient for v1.
+  channel) — `POST /api/parallel-agents/agents/{id}/send`. The only piece touching agent
+  lifecycle behavior; warrants the user's sign-off before building.
+- SSE live push (`/api/parallel-agents/events`) — polling at 2.5s is sufficient today.
 - `agent_persona_id` linkage between the two tabs.
+- Click-to-chat auxiliary 404s (Onyx endpoints not recognizing hermes session ids) — non-fatal.
 
 ## Risks to verify live
 1. New routes reachable through `proxyToAgentTunnel` (not blocked by backend-type assumptions).
