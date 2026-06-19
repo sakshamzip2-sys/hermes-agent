@@ -1986,6 +1986,63 @@ class APIServerAdapter(BasePlatformAdapter):
             headers={"Content-Disposition": f'attachment; filename="{safe_name}"'},
         )
 
+    async def _handle_oc_image_file(self, request: "web.Request") -> "web.Response":
+        """GET /api/files/{file_id} — serve a generated image from the images cache.
+
+        The web image-generation flow saves images under
+        ``$HERMES_HOME/cache/images/<filename>`` (see
+        agent.image_gen_provider.save_b64_image); the frontend references each by
+        that bare filename. We serve ONLY files inside that directory, resolved
+        by basename, so this route can never read an arbitrary path (the choke
+        point that previously left generated images unservable — the BFF proxies
+        ``/api/chat/file/{id}`` here, and nothing answered).
+        """
+        import pathlib
+        import mimetypes
+        auth_err = self._check_auth(request)
+        if auth_err:
+            return auth_err
+        file_id = request.match_info.get("file_id") or ""
+        # Basename-only guard: reject anything that could escape the cache dir.
+        if (
+            not file_id
+            or "/" in file_id
+            or "\\" in file_id
+            or ".." in file_id
+            or "\x00" in file_id
+        ):
+            return web.json_response(
+                _openai_error("Invalid file id", code="invalid_file_id"), status=400
+            )
+        try:
+            from agent.image_gen_provider import _images_cache_dir
+            base = _images_cache_dir().resolve()
+        except Exception:
+            return web.json_response(
+                _openai_error("Image cache unavailable", code="image_cache_unavailable"),
+                status=500,
+            )
+        p = (base / file_id).resolve()
+        # Confine strictly to the images cache directory.
+        if p.parent != base or not p.is_file():
+            return web.json_response(
+                _openai_error("File not found", code="file_not_found"), status=404
+            )
+        try:
+            body = p.read_bytes()
+        except OSError:
+            return web.json_response(
+                _openai_error("File unreadable", code="file_unreadable"), status=500
+            )
+        ctype = mimetypes.guess_type(str(p))[0] or "application/octet-stream"
+        safe_name = re.sub(r'[\r\n"]', "_", p.name)
+        # `inline` (not attachment) so the browser <img> renders it.
+        return web.Response(
+            body=body,
+            content_type=ctype,
+            headers={"Content-Disposition": f'inline; filename="{safe_name}"'},
+        )
+
     async def _handle_fork_session(self, request: "web.Request") -> "web.Response":
         """POST /api/sessions/{session_id}/fork — branch via current SessionDB primitives."""
         auth_err = self._check_auth(request)
@@ -5552,6 +5609,10 @@ class APIServerAdapter(BasePlatformAdapter):
             self._app.router.add_get("/api/v1/sessions/{session_id}/artifacts/{artifact_id}/download", self._handle_artifact_download)
             self._app.router.add_get("/api/sessions/{session_id}/artifacts", self._handle_artifact_list)
             self._app.router.add_get("/api/sessions/{session_id}/artifacts/{artifact_id}/download", self._handle_artifact_download)
+            # Generated-image serving: the web BFF proxies /api/chat/file/{id}
+            # here so <img> tags can load images the image_generate tool saved to
+            # $HERMES_HOME/cache/images/. Served by basename, confined to that dir.
+            self._app.router.add_get("/api/files/{file_id}", self._handle_oc_image_file)
             # Authenticated passthrough to the on-box Open Design daemon so the
             # workspace "Open Design" panel reaches it over the agent's existing
             # tunnel without exposing the daemon publicly.
