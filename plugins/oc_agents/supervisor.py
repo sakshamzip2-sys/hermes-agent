@@ -46,8 +46,14 @@ def dispatch(
     parent_id: str = "",
     kind: str = "agent",
     extra_env: Optional[Dict[str, str]] = None,
+    meta: Optional[Dict[str, Any]] = None,
 ) -> str:
-    """Create a session row and spawn a detached worker. Returns the session id."""
+    """Create a session row and spawn a detached worker. Returns the session id.
+
+    ``meta`` is persisted on the session row (JSON) — e.g. a persona link
+    (``persona_id``/``persona_name``) and an optional ``system_prompt`` the
+    worker applies so the background agent runs *as* that persona.
+    """
     session_id = db.new_session_id()
     log_path = str(db.logs_dir() / f"{session_id}.log")
     resolved_cwd = cwd or os.getcwd()
@@ -55,7 +61,7 @@ def dispatch(
     db.create_session(
         session_id=session_id, prompt=prompt, name=name, cwd=resolved_cwd,
         model=model, provider=provider, toolsets=toolsets, parent_id=parent_id,
-        kind=kind, log_path=log_path,
+        kind=kind, log_path=log_path, meta=meta,
     )
 
     cmd = [sys.executable, _hermes_entry(), "agents", "_worker", "--id", session_id]
