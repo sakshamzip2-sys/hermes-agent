@@ -40,6 +40,7 @@ import os
 import socket as _socket
 import re
 import sqlite3
+import threading
 import time
 import uuid
 from pathlib import Path
@@ -831,6 +832,11 @@ class APIServerAdapter(BasePlatformAdapter):
         # Per-agent profile SessionDBs (frontend "agents" each get their own
         # state.db at agent-profiles/{slug}/state.db). Cached per slug.
         self._agent_profile_dbs: Dict[str, Any] = {}
+        # Guards _agent_profile_dbs: reachable from the event loop thread (read
+        # handlers) and executor worker threads (_run_agent) at once, so the
+        # check-then-open-then-cache must be atomic or two threads would open
+        # (and leak) two SQLite connections for the same slug.
+        self._agent_profile_dbs_lock = threading.Lock()
         # Artifact registry (in-memory, per running gateway). write_file/patch
         # completions register a descriptor here so the web UI can (a) receive a
         # live ``artifact.created`` SSE event and (b) download the file by id via
@@ -1105,17 +1111,24 @@ class APIServerAdapter(BasePlatformAdapter):
         cached = self._agent_profile_dbs.get(slug)
         if cached is not None:
             return cached
-        try:
-            from hermes_constants import get_hermes_home
-            from hermes_state import SessionDB
-            profile_dir = get_hermes_home() / "agent-profiles" / slug
-            profile_dir.mkdir(parents=True, exist_ok=True)
-            db = SessionDB(db_path=profile_dir / "state.db")
-            self._agent_profile_dbs[slug] = db
-            return db
-        except Exception as e:
-            logger.warning("Failed to open agent-profile DB for %s: %s", slug, e)
-            return None
+        # Double-checked locking: hold the lock across the open so only one
+        # SessionDB (one sqlite connection) is ever created per slug, even when
+        # the event loop and an executor thread race on first use.
+        with self._agent_profile_dbs_lock:
+            cached = self._agent_profile_dbs.get(slug)
+            if cached is not None:
+                return cached
+            try:
+                from hermes_constants import get_hermes_home
+                from hermes_state import SessionDB
+                profile_dir = get_hermes_home() / "agent-profiles" / slug
+                profile_dir.mkdir(parents=True, exist_ok=True)
+                db = SessionDB(db_path=profile_dir / "state.db")
+                self._agent_profile_dbs[slug] = db
+                return db
+            except Exception as e:
+                logger.warning("Failed to open agent-profile DB for %s: %s", slug, e)
+                return None
 
     def _agent_db_for_request(self, request: "web.Request"):
         """Return the profile SessionDB for the request's agent, or None.
@@ -1146,6 +1159,7 @@ class APIServerAdapter(BasePlatformAdapter):
         model_override: Optional[str] = None,
         reasoning_config_override: Optional[Dict[str, Any]] = None,
         session_db_override: Optional[Any] = None,
+        is_agent_profile: bool = False,
     ) -> Any:
         """
         Create an AIAgent instance using the gateway's runtime config.
@@ -1182,6 +1196,14 @@ class APIServerAdapter(BasePlatformAdapter):
         user_config = _load_gateway_config()
         enabled_toolsets = sorted(_get_platform_tools(user_config, "api_server"))
 
+        # Per-agent profiles are local-only: they get their own
+        # SQLite/FTS5/markdown memory but NOT the shared external memory plane
+        # (Honcho provider + GBrain MCP), which stays exclusive to the main
+        # agent. Drop the gbrain toolset here; the Honcho provider is skipped
+        # via disable_memory_provider below. The local `memory` toolset stays.
+        if is_agent_profile:
+            enabled_toolsets = [t for t in enabled_toolsets if t != "gbrain"]
+
         max_iterations = int(os.getenv("HERMES_MAX_ITERATIONS", "90"))
 
         # Load fallback provider chain so the API server platform has the
@@ -1208,6 +1230,9 @@ class APIServerAdapter(BasePlatformAdapter):
             fallback_model=fallback_model,
             reasoning_config=reasoning_config,
             gateway_session_key=gateway_session_key,
+            # Profile agents keep their local memory store but skip the external
+            # Honcho provider (GBrain toolset already filtered above).
+            disable_memory_provider=is_agent_profile,
         )
         return agent
 
@@ -4787,18 +4812,21 @@ class APIServerAdapter(BasePlatformAdapter):
             _home_token = None
             _profile_db = None
             if agent_id_slug:
-                try:
-                    from hermes_constants import (
-                        get_hermes_home,
-                        set_hermes_home_override,
+                from hermes_constants import (
+                    get_hermes_home,
+                    set_hermes_home_override,
+                )
+                _profile_db = self._get_agent_profile_db(agent_id_slug)
+                # Fail closed: never silently fall back to the shared main db for
+                # an agent-scoped turn. Doing so would leak this agent's
+                # conversation into the main agent's history and break resume
+                # (reads route to the agent's profile db, which would be empty).
+                if _profile_db is None:
+                    raise RuntimeError(
+                        f"agent-profile db unavailable for {agent_id_slug!r}"
                     )
-                    _profile_db = self._get_agent_profile_db(agent_id_slug)
-                    _profile_dir = get_hermes_home() / "agent-profiles" / agent_id_slug
-                    _home_token = set_hermes_home_override(str(_profile_dir))
-                except Exception as e:
-                    logger.warning("agent-profile setup failed for %s: %s", agent_id_slug, e)
-                    _home_token = None
-                    _profile_db = None
+                _profile_dir = get_hermes_home() / "agent-profiles" / agent_id_slug
+                _home_token = set_hermes_home_override(str(_profile_dir))
             _notify_registered = False
             if approval_notify_callback is not None and _approval_skey:
                 try:
@@ -4821,6 +4849,7 @@ class APIServerAdapter(BasePlatformAdapter):
                     reasoning_config_override=reasoning_config_override,
                     gateway_session_key=gateway_session_key,
                     session_db_override=_profile_db,
+                    is_agent_profile=bool(agent_id_slug),
                 )
                 if agent_ref is not None:
                     agent_ref[0] = agent
@@ -4857,7 +4886,14 @@ class APIServerAdapter(BasePlatformAdapter):
                     except Exception:
                         pass
 
-        return await loop.run_in_executor(None, _run)
+        # Run inside a copied context so any ContextVar mutation in _run (e.g.
+        # the agent-profile home override) is sandboxed to a throwaway context
+        # and can never leak into other tasks sharing the executor's threads —
+        # matching gateway/run.py's _run_in_executor_with_context pattern.
+        from contextvars import copy_context
+
+        _ctx = copy_context()
+        return await loop.run_in_executor(None, _ctx.run, _run)
 
     # ------------------------------------------------------------------
     # /v1/runs — structured event streaming

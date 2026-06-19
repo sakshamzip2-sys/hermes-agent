@@ -402,6 +402,10 @@ class AIAgent:
         skip_context_files: bool = False,
         load_soul_identity: bool = False,
         skip_memory: bool = False,
+        # Skip only the external memory PROVIDER (e.g. Honcho) while keeping the
+        # local on-disk memory store. Used by per-agent profiles, which get
+        # their own local SQLite/FTS5/markdown memory but no Honcho/GBrain.
+        disable_memory_provider: bool = False,
         session_db=None,
         parent_session_id: str = None,
         iteration_budget: "IterationBudget" = None,
@@ -477,6 +481,7 @@ class AIAgent:
             skip_context_files=skip_context_files,
             load_soul_identity=load_soul_identity,
             skip_memory=skip_memory,
+            disable_memory_provider=disable_memory_provider,
             session_db=session_db,
             parent_session_id=parent_session_id,
             iteration_budget=iteration_budget,

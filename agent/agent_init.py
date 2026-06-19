@@ -213,6 +213,7 @@ def init_agent(
     skip_context_files: bool = False,
     load_soul_identity: bool = False,
     skip_memory: bool = False,
+    disable_memory_provider: bool = False,
     session_db=None,
     parent_session_id: str = None,
     iteration_budget: "IterationBudget" = None,
@@ -1158,8 +1159,11 @@ def init_agent(
 
     # Memory provider plugin (external — one at a time, alongside built-in)
     # Reads memory.provider from config to select which plugin to activate.
+    # disable_memory_provider skips ONLY this external provider (e.g. Honcho)
+    # while keeping the local on-disk memory store above — per-agent profiles
+    # get local SQLite/FTS5/markdown memory but no Honcho/GBrain.
     agent._memory_manager = None
-    if not skip_memory:
+    if not skip_memory and not disable_memory_provider:
         try:
             _mem_provider_name = mem_config.get("provider", "") if mem_config else ""
 
