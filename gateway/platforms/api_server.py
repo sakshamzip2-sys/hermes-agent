@@ -828,6 +828,14 @@ class APIServerAdapter(BasePlatformAdapter):
         # in-flight run by run_id.
         self._run_approval_sessions: Dict[str, str] = {}
         self._session_db: Optional[Any] = None  # Lazy-init SessionDB for session continuity
+        # Artifact registry (in-memory, per running gateway). write_file/patch
+        # completions register a descriptor here so the web UI can (a) receive a
+        # live ``artifact.created`` SSE event and (b) download the file by id via
+        # ``/api/v1/sessions/{sid}/artifacts/{aid}/download``. artifact_id is an
+        # unguessable capability token; downloads only ever serve a path we
+        # recorded ourselves (no client-supplied path → no traversal surface).
+        self._session_artifacts: Dict[str, list] = {}      # session_id -> [descriptor]
+        self._artifacts_by_id: Dict[str, Dict[str, Any]] = {}  # artifact_id -> rec(+path,+session)
 
     @staticmethod
     def _parse_cors_origins(value: Any) -> tuple[str, ...]:
@@ -1667,6 +1675,256 @@ class APIServerAdapter(BasePlatformAdapter):
             "data": [self._message_response(m) for m in messages],
         })
 
+    # ---- Artifacts -------------------------------------------------------
+    # write_file / patch completions register the file they produced so the web
+    # UI can present it (claude.ai-style card → panel) and download it by id.
+
+    @staticmethod
+    def _artifact_kind(suffix: str, mime: str) -> str:
+        """Coarse category the web UI uses to pick a preview renderer."""
+        s = (suffix or "").lower().lstrip(".")
+        if s == "svg":
+            return "svg"
+        if mime.startswith("image/"):
+            return "image"
+        if s in ("md", "markdown"):
+            return "markdown"
+        if s == "pdf":
+            return "pdf"
+        if s == "csv":
+            return "csv"
+        if s in ("xlsx", "xls"):
+            return "xlsx"
+        if s in ("docx", "doc"):
+            return "docx"
+        if s in (
+            "py", "js", "ts", "tsx", "jsx", "go", "rs", "java", "c", "cc",
+            "cpp", "h", "hpp", "rb", "sh", "bash", "zsh", "json", "yaml",
+            "yml", "toml", "html", "css", "scss", "sql", "xml", "kt", "swift",
+        ):
+            return "code"
+        return "file"
+
+    @staticmethod
+    def _extract_written_paths(function_result: Any) -> list:
+        """Absolute file paths a write_file/patch result reports (best-effort)."""
+        data = function_result
+        if isinstance(data, str):
+            try:
+                data = json.loads(data)
+            except Exception:
+                return []
+        if not isinstance(data, dict):
+            return []
+        paths: list = []
+        fm = data.get("files_modified")
+        if isinstance(fm, list):
+            paths.extend(str(x) for x in fm if x)
+        rp = data.get("resolved_path")
+        if rp and str(rp) not in paths:
+            paths.append(str(rp))
+        return paths
+
+    @staticmethod
+    def _artifact_id_for(session_id: Optional[str], path: str) -> str:
+        """Deterministic artifact id for a (session, path).
+
+        Stable across reloads AND gateway restarts, so a card minted live
+        during a turn and one re-hydrated from message history later resolve to
+        the SAME id (and the same download URL). This is what makes artifacts
+        durable — "create a file, leave, come back" still shows + downloads it.
+        """
+        import hashlib
+        h = hashlib.sha1(f"{session_id or ''}:{path}".encode("utf-8")).hexdigest()
+        return f"art-{h[:20]}"
+
+    def _build_artifact_descriptor(self, session_id: Optional[str], path: str) -> Optional[Dict[str, Any]]:
+        """Build a wire descriptor for a produced file (deterministic id) and
+        cache it in-memory for the live turn. Returns None for non-files."""
+        import mimetypes
+        import pathlib
+        p = pathlib.Path(path)
+        # Only present real files (skip dirs / phantom paths from diff output).
+        if not p.is_file():
+            return None
+        try:
+            size = p.stat().st_size
+        except OSError:
+            size = None
+        mime = mimetypes.guess_type(str(p))[0] or "application/octet-stream"
+        artifact_id = self._artifact_id_for(session_id, str(p))
+        descriptor = {
+            "artifact_id": artifact_id,
+            "title": p.name,
+            "kind": self._artifact_kind(p.suffix, mime),
+            "path": str(p),
+            "mime_type": mime,
+            "size_bytes": size,
+        }
+        rec = dict(descriptor)
+        rec["session_id"] = session_id or ""
+        self._artifacts_by_id[artifact_id] = rec
+        key = session_id or "_none"
+        lst = self._session_artifacts.setdefault(key, [])
+        if not any(r.get("artifact_id") == artifact_id for r in lst):
+            lst.append(rec)
+            if len(lst) > 200:  # bound memory: keep the most recent
+                del lst[:-200]
+        return descriptor
+
+    # Streaming emit calls this on write_file/patch completion.
+    def _register_artifact(self, session_id: Optional[str], path: str) -> Optional[Dict[str, Any]]:
+        return self._build_artifact_descriptor(session_id, path)
+
+    def _artifacts_from_history(self, session_id: str) -> List[Dict[str, Any]]:
+        """Durable artifact list derived from persisted write_file/patch tool
+        results in the session's message history. Survives restarts/reloads
+        because state.db is the source of truth, not the in-memory cache."""
+        out: List[Dict[str, Any]] = []
+        seen: set = set()
+        try:
+            db = self._ensure_session_db()
+            if db is None:
+                return out
+            resolved = db.resolve_resume_session_id(session_id)
+            messages = db.get_messages(resolved)
+        except Exception:
+            return out
+        for m in messages:
+            if m.get("role") != "tool" or m.get("tool_name") not in ("write_file", "patch"):
+                continue
+            for path in self._extract_written_paths(m.get("content")):
+                if path in seen:
+                    continue
+                seen.add(path)
+                desc = self._build_artifact_descriptor(session_id, path)
+                if desc:
+                    out.append(desc)
+        return out
+
+    def _collect_session_artifacts(self, session_id: str) -> List[Dict[str, Any]]:
+        """Merge durable (history) + live (in-memory, current turn) artifacts,
+        deduped by deterministic id."""
+        merged: Dict[str, Dict[str, Any]] = {}
+        for rec in self._artifacts_from_history(session_id):
+            merged[rec["artifact_id"]] = dict(rec, session_id=session_id)
+        for rec in self._session_artifacts.get(session_id, []):
+            merged[rec["artifact_id"]] = rec
+        return list(merged.values())
+
+    async def _handle_artifact_list(self, request: "web.Request") -> "web.Response":
+        """GET /api/(v1/)sessions/{session_id}/artifacts — descriptors for the browser grid."""
+        auth_err = self._check_auth(request)
+        if auth_err:
+            return auth_err
+        session_id = request.match_info["session_id"]
+        items = self._collect_session_artifacts(session_id)
+        data = [
+            {k: v for k, v in rec.items() if k not in ("path", "session_id")}
+            for rec in items
+        ]
+        return web.json_response({"object": "list", "session_id": session_id, "data": data})
+
+    async def _handle_artifact_download(self, request: "web.Request") -> "web.Response":
+        """GET /api/(v1/)sessions/{session_id}/artifacts/{artifact_id}/download."""
+        import pathlib
+        auth_err = self._check_auth(request)
+        if auth_err:
+            return auth_err
+        session_id = request.match_info.get("session_id") or ""
+        artifact_id = request.match_info["artifact_id"]
+        # Resolve id -> path among THIS session's artifacts (durable history +
+        # live cache). This both survives restarts and acts as the auth guard:
+        # we only ever serve a file the session actually produced.
+        rec = None
+        for cand in self._collect_session_artifacts(session_id):
+            if cand.get("artifact_id") == artifact_id:
+                rec = cand
+                break
+        if not rec:
+            return web.json_response(
+                _openai_error("Artifact not found", code="artifact_not_found"), status=404
+            )
+        p = pathlib.Path(rec["path"])
+        if not p.is_file():
+            return web.json_response(
+                _openai_error("Artifact file no longer available", code="artifact_gone"), status=410
+            )
+        try:
+            body = p.read_bytes()
+        except OSError:
+            return web.json_response(
+                _openai_error("Artifact unreadable", code="artifact_unreadable"), status=500
+            )
+        # Quote the filename defensively (strip CR/LF) for the header.
+        safe_name = re.sub(r"[\r\n\"]", "_", p.name)
+        return web.Response(
+            body=body,
+            content_type=rec.get("mime_type") or "application/octet-stream",
+            headers={"Content-Disposition": f'attachment; filename="{safe_name}"'},
+        )
+
+    async def _handle_artifact_view(self, request: "web.Request") -> "web.Response":
+        """GET /api/v1/sessions/{session_id}/artifact-file?path=... — serve a
+        chat artifact file INLINE (no attachment) by path, for in-panel preview.
+
+        This lets the web app reuse the Craft FilePreviewContent component (which
+        fetches by path + Content-Type) for chat artifacts. Auth: the path must
+        belong to this session's artifacts — never an arbitrary filesystem read.
+        """
+        import mimetypes
+        import pathlib
+        auth_err = self._check_auth(request)
+        if auth_err:
+            return auth_err
+        session_id = request.match_info.get("session_id") or ""
+        path = request.query.get("path") or ""
+        if not path:
+            return web.json_response(
+                _openai_error("Missing path", code="missing_path"), status=400
+            )
+        allowed = {rec.get("path") for rec in self._collect_session_artifacts(session_id)}
+        if path not in allowed:
+            return web.json_response(
+                _openai_error("Artifact not found", code="artifact_not_found"), status=404
+            )
+        p = pathlib.Path(path)
+        if not p.is_file():
+            return web.json_response(
+                _openai_error("Artifact file no longer available", code="artifact_gone"), status=410
+            )
+        try:
+            body = p.read_bytes()
+        except OSError:
+            return web.json_response(
+                _openai_error("Artifact unreadable", code="artifact_unreadable"), status=500
+            )
+        mime = mimetypes.guess_type(str(p))[0] or "application/octet-stream"
+        # Security: a write_file-produced artifact is attacker-influenceable
+        # content. Serving it inline with its guessed MIME would render
+        # text/html or image/svg+xml as ACTIVE content in the app origin →
+        # stored XSS. Only an allowlist of inert types renders inline; anything
+        # else (html, svg, js, ...) is downgraded to opaque bytes + attachment.
+        # Defense-in-depth: nosniff blocks MIME-sniffing, and a locked-down CSP
+        # neuters any script even if a renderable type slips through.
+        SAFE_INLINE = {
+            "image/png", "image/jpeg", "image/gif", "image/webp",
+            "application/pdf", "text/plain",
+        }
+        safe_name = re.sub(r"[\r\n\"]", "_", p.name)
+        headers = {
+            "X-Content-Type-Options": "nosniff",
+            "Content-Security-Policy": "default-src 'none'; sandbox",
+        }
+        if mime in SAFE_INLINE:
+            headers["Content-Disposition"] = f'inline; filename="{safe_name}"'
+            return web.Response(body=body, content_type=mime, headers=headers)
+        # Unsafe/unknown type → force download as opaque bytes (never rendered).
+        headers["Content-Disposition"] = f'attachment; filename="{safe_name}"'
+        return web.Response(
+            body=body, content_type="application/octet-stream", headers=headers
+        )
+
     async def _handle_fork_session(self, request: "web.Request") -> "web.Response":
         """POST /api/sessions/{session_id}/fork — branch via current SessionDB primitives."""
         auth_err = self._check_auth(request)
@@ -2146,6 +2404,22 @@ class APIServerAdapter(BasePlatformAdapter):
                     # dropped → every "Response" box rendered empty.
                     "result": _tool_result_to_text(function_result),
                 }))
+                # Artifact presentation: when a file-producing tool completes,
+                # register the file and emit a named ``artifact.created`` event
+                # the web UI renders as a claude.ai-style card → panel. Purely
+                # observational (no model tool / system-prompt change → prompt
+                # cache prefix untouched).
+                if function_name in ("write_file", "patch"):
+                    try:
+                        for _apath in self._extract_written_paths(function_result):
+                            _desc = self._register_artifact(session_id, _apath)
+                            if _desc:
+                                _stream_q.put(("__artifact__", {
+                                    "tool_name": function_name,
+                                    "artifact": _desc,
+                                }))
+                    except Exception:
+                        logger.debug("artifact emit failed", exc_info=True)
 
             # Surface an escalated approval (smart mode) as a named
             # ``approval.requested`` SSE event the WebUI renders as an Approve
@@ -2401,6 +2675,14 @@ class APIServerAdapter(BasePlatformAdapter):
                     event_data = json.dumps(item[1])
                     await response.write(
                         f"event: approval.requested\ndata: {event_data}\n\n".encode()
+                    )
+                elif isinstance(item, tuple) and len(item) == 2 and item[0] == "__artifact__":
+                    # A file-producing tool completed → ``event: artifact.created``,
+                    # which the WebUI (oc-openai-stream → oc-translator) turns into
+                    # an artifact_created packet rendered as a card + side panel.
+                    event_data = json.dumps(item[1])
+                    await response.write(
+                        f"event: artifact.created\ndata: {event_data}\n\n".encode()
                     )
                 elif isinstance(item, tuple) and len(item) == 2 and item[0] == "__reasoning__":
                     # Extended-thinking delta → ``delta.reasoning_content`` chunk.
@@ -5153,6 +5435,15 @@ class APIServerAdapter(BasePlatformAdapter):
             self._app.router.add_post("/api/parallel-agents/flows/{flow_id}/stop", self._handle_flow_stop)
             self._app.router.add_post("/api/parallel-agents/teams/{team_id}/messages", self._handle_team_send_message)
             self._app.router.add_get("/api/memory", self._handle_get_memory)
+            # Artifacts (claude.ai-style viewer): list + download-by-id. The web
+            # BFF proxy calls the /api/v1/ paths; the non-v1 aliases keep parity
+            # with the rest of the /api/sessions surface.
+            self._app.router.add_get("/api/v1/sessions/{session_id}/artifacts", self._handle_artifact_list)
+            self._app.router.add_get("/api/v1/sessions/{session_id}/artifacts/{artifact_id}/download", self._handle_artifact_download)
+            self._app.router.add_get("/api/sessions/{session_id}/artifacts", self._handle_artifact_list)
+            self._app.router.add_get("/api/sessions/{session_id}/artifacts/{artifact_id}/download", self._handle_artifact_download)
+            # Inline file-by-path view (powers the reused Craft FilePreviewContent).
+            self._app.router.add_get("/api/v1/sessions/{session_id}/artifact-file", self._handle_artifact_view)
             # Authenticated passthrough to the on-box Open Design daemon so the
             # workspace "Open Design" panel reaches it over the agent's existing
             # tunnel without exposing the daemon publicly.
