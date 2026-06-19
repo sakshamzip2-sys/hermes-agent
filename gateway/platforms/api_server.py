@@ -828,6 +828,9 @@ class APIServerAdapter(BasePlatformAdapter):
         # in-flight run by run_id.
         self._run_approval_sessions: Dict[str, str] = {}
         self._session_db: Optional[Any] = None  # Lazy-init SessionDB for session continuity
+        # Per-agent profile SessionDBs (frontend "agents" each get their own
+        # state.db at agent-profiles/{slug}/state.db). Cached per slug.
+        self._agent_profile_dbs: Dict[str, Any] = {}
         # Artifact registry (in-memory, per running gateway). write_file/patch
         # completions register a descriptor here so the web UI can (a) receive a
         # live ``artifact.created`` SSE event and (b) download the file by id via
@@ -1068,6 +1071,53 @@ class APIServerAdapter(BasePlatformAdapter):
         return self._session_db
 
     # ------------------------------------------------------------------
+    # Per-agent profiles: each frontend "agent" gets its own backend profile
+    # = its own state.db (sessions/history/FTS5) + its own memory dir, isolated
+    # from the default/main chat agent (which keeps Honcho + GBrain). Activated
+    # when a request carries ``oc_agent_id``.
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _parse_oc_agent_id(body: Dict[str, Any]) -> Optional[str]:
+        """Validate the optional ``oc_agent_id`` profile slug from a request.
+
+        Returns a safe slug (``[a-z0-9][a-z0-9-]*``, <=64 chars, no path
+        traversal) or None. None means "use the default/main agent".
+        """
+        raw = body.get("oc_agent_id")
+        if not isinstance(raw, str):
+            return None
+        slug = raw.strip().lower()
+        if not slug or len(slug) > 64:
+            return None
+        if not re.fullmatch(r"[a-z0-9][a-z0-9-]*", slug):
+            return None
+        return slug
+
+    def _get_agent_profile_db(self, slug: Optional[str]):
+        """Return a cached SessionDB for an agent profile's own state.db.
+
+        Path: ``{hermes_home}/agent-profiles/{slug}/state.db`` — its own
+        sessions, message history, and FTS5 search, fully isolated per agent.
+        Returns None for the default agent (no slug) or on failure.
+        """
+        if not slug:
+            return None
+        cached = self._agent_profile_dbs.get(slug)
+        if cached is not None:
+            return cached
+        try:
+            from hermes_constants import get_hermes_home
+            from hermes_state import SessionDB
+            profile_dir = get_hermes_home() / "agent-profiles" / slug
+            profile_dir.mkdir(parents=True, exist_ok=True)
+            db = SessionDB(db_path=profile_dir / "state.db")
+            self._agent_profile_dbs[slug] = db
+            return db
+        except Exception as e:
+            logger.warning("Failed to open agent-profile DB for %s: %s", slug, e)
+            return None
+
+    # ------------------------------------------------------------------
     # Agent creation helper
     # ------------------------------------------------------------------
 
@@ -1084,6 +1134,7 @@ class APIServerAdapter(BasePlatformAdapter):
         gateway_session_key: Optional[str] = None,
         model_override: Optional[str] = None,
         reasoning_config_override: Optional[Dict[str, Any]] = None,
+        session_db_override: Optional[Any] = None,
     ) -> Any:
         """
         Create an AIAgent instance using the gateway's runtime config.
@@ -1142,7 +1193,7 @@ class APIServerAdapter(BasePlatformAdapter):
             tool_start_callback=tool_start_callback,
             tool_complete_callback=tool_complete_callback,
             status_callback=status_callback,
-            session_db=self._ensure_session_db(),
+            session_db=session_db_override or self._ensure_session_db(),
             fallback_model=fallback_model,
             reasoning_config=reasoning_config,
             gateway_session_key=gateway_session_key,
@@ -2231,7 +2282,12 @@ class APIServerAdapter(BasePlatformAdapter):
                 )
             session_id = provided_session_id
             try:
-                db = self._ensure_session_db()
+                _agent_slug = self._parse_oc_agent_id(body)
+                db = (
+                    self._get_agent_profile_db(_agent_slug)
+                    if _agent_slug
+                    else self._ensure_session_db()
+                )
                 if db is not None:
                     history = db.get_messages_as_conversation(session_id)
             except Exception as e:
@@ -2253,6 +2309,9 @@ class APIServerAdapter(BasePlatformAdapter):
         # Per-request model / reasoning overrides from the prompt-bar model
         # picker (shared parser — see _parse_oc_overrides; /v1/responses uses it too).
         model_override, reasoning_config_override = self._parse_oc_overrides(body)
+        # Per-agent profile: a frontend "agent" runs against its own state.db +
+        # memory dir (agent-profiles/{slug}). None => default/main chat agent.
+        agent_id_slug = self._parse_oc_agent_id(body)
 
         completion_id = f"chatcmpl-{uuid.uuid4().hex[:29]}"
         model_name = (model_override or body.get("model") or self._model_name)
@@ -2410,6 +2469,7 @@ class APIServerAdapter(BasePlatformAdapter):
                 model_override=model_override,
                 reasoning_config_override=reasoning_config_override,
                 approval_notify_callback=_on_approval,
+                agent_id_slug=agent_id_slug,
             ))
             # Ensure SSE drain loops can terminate without relying on polling
             # agent_task.done(), which can race with queue timeout checks. Also
@@ -2436,6 +2496,7 @@ class APIServerAdapter(BasePlatformAdapter):
                 gateway_session_key=gateway_session_key,
                 model_override=model_override,
                 reasoning_config_override=reasoning_config_override,
+                agent_id_slug=agent_id_slug,
             )
 
         idempotency_key = request.headers.get("Idempotency-Key")
@@ -4640,6 +4701,7 @@ class APIServerAdapter(BasePlatformAdapter):
         model_override: Optional[str] = None,
         reasoning_config_override: Optional[Dict[str, Any]] = None,
         approval_notify_callback=None,
+        agent_id_slug: Optional[str] = None,
     ) -> tuple:
         """
         Create an agent and run a conversation in a thread executor.
@@ -4671,6 +4733,26 @@ class APIServerAdapter(BasePlatformAdapter):
                 session_key=gateway_session_key or session_id or "",
                 session_id=session_id or "",
             )
+            # Per-agent profile isolation: scope this run's home to the agent's
+            # profile dir so memory (and any home-scoped state) load from
+            # agent-profiles/{slug}/ instead of the shared default home. The
+            # session DB is passed explicitly (DEFAULT_DB_PATH is frozen at
+            # import, so the override alone would not redirect it).
+            _home_token = None
+            _profile_db = None
+            if agent_id_slug:
+                try:
+                    from hermes_constants import (
+                        get_hermes_home,
+                        set_hermes_home_override,
+                    )
+                    _profile_db = self._get_agent_profile_db(agent_id_slug)
+                    _profile_dir = get_hermes_home() / "agent-profiles" / agent_id_slug
+                    _home_token = set_hermes_home_override(str(_profile_dir))
+                except Exception as e:
+                    logger.warning("agent-profile setup failed for %s: %s", agent_id_slug, e)
+                    _home_token = None
+                    _profile_db = None
             _notify_registered = False
             if approval_notify_callback is not None and _approval_skey:
                 try:
@@ -4692,6 +4774,7 @@ class APIServerAdapter(BasePlatformAdapter):
                     model_override=model_override,
                     reasoning_config_override=reasoning_config_override,
                     gateway_session_key=gateway_session_key,
+                    session_db_override=_profile_db,
                 )
                 if agent_ref is not None:
                     agent_ref[0] = agent
@@ -4721,6 +4804,12 @@ class APIServerAdapter(BasePlatformAdapter):
                     except Exception:
                         pass
                 clear_session_vars(tokens)
+                if _home_token is not None:
+                    try:
+                        from hermes_constants import reset_hermes_home_override
+                        reset_hermes_home_override(_home_token)
+                    except Exception:
+                        pass
 
         return await loop.run_in_executor(None, _run)
 
