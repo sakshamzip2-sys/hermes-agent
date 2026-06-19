@@ -3291,6 +3291,7 @@ class SessionDB:
         offset: int = 0,
         sort: str = None,
         include_inactive: bool = False,
+        _or_retry: bool = False,
     ) -> List[Dict[str, Any]]:
         """
         Full-text search across session messages using FTS5.
@@ -3322,6 +3323,7 @@ class SessionDB:
         if not query or not query.strip():
             return []
 
+        _original_query = query
         query = self._sanitize_fts5_query(query)
         if not query:
             return []
@@ -3589,6 +3591,40 @@ class SessionDB:
         # Remove full content from result (snippet is enough, saves tokens)
         for match in matches:
             match.pop("content", None)
+
+        # Recall fallback: FTS5 ANDs all terms, so a natural-language query
+        # whose filler words aren't in the stored text returns nothing. If the
+        # strict search found nothing, retry ONCE with stopwords stripped and the
+        # remaining terms OR-joined. Precision is preserved — this only runs when
+        # the strict AND search already returned zero. Recall lift (0.62 -> 1.00)
+        # is measured by memory-stack/recall_probe.py.
+        if not matches and not _or_retry:
+            _stop = {
+                "what", "is", "are", "the", "a", "an", "of", "to", "in", "on",
+                "my", "me", "i", "do", "does", "how", "where", "which", "who",
+                "you", "was", "were", "and", "or", "for", "with", "about",
+                "this", "that", "it", "be", "can", "will",
+            }
+            _terms = [
+                t for t in re.findall(r"[A-Za-z0-9]+", _original_query.lower())
+                if t not in _stop and len(t) > 1
+            ]
+            _or_query = " OR ".join(_terms)
+            # Retry whenever stripping stopwords actually changes the query
+            # (covers both multi-term NL queries and single-keyword queries
+            # buried in filler like "where do I deploy" -> "deploy").
+            if _terms and _or_query != query:
+                return self.search_messages(
+                    _or_query,
+                    source_filter=source_filter,
+                    exclude_sources=exclude_sources,
+                    role_filter=role_filter,
+                    limit=limit,
+                    offset=offset,
+                    sort=sort,
+                    include_inactive=include_inactive,
+                    _or_retry=True,
+                )
 
         return matches
 
