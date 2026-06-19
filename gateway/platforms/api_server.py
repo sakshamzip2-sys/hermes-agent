@@ -1117,6 +1117,17 @@ class APIServerAdapter(BasePlatformAdapter):
             logger.warning("Failed to open agent-profile DB for %s: %s", slug, e)
             return None
 
+    def _agent_db_for_request(self, request: "web.Request"):
+        """Return the profile SessionDB for the request's agent, or None.
+
+        Reads the ``X-OpenComputer-Agent-Id`` header so session reads/deletes can
+        be routed to the same per-agent profile db that the chat turns persist
+        to (fixes "resume an agent chat shows no messages"). None => shared db.
+        """
+        raw = request.headers.get("X-OpenComputer-Agent-Id", "")
+        slug = self._parse_oc_agent_id({"oc_agent_id": raw})
+        return self._get_agent_profile_db(slug) if slug else None
+
     # ------------------------------------------------------------------
     # Agent creation helper
     # ------------------------------------------------------------------
@@ -1540,8 +1551,8 @@ class APIServerAdapter(BasePlatformAdapter):
             return {}, web.json_response(_openai_error("Request body must be a JSON object"), status=400)
         return body, None
 
-    def _get_existing_session_or_404(self, session_id: str) -> tuple[Optional[Dict[str, Any]], Optional["web.Response"]]:
-        db = self._ensure_session_db()
+    def _get_existing_session_or_404(self, session_id: str, db: Optional[Any] = None) -> tuple[Optional[Dict[str, Any]], Optional["web.Response"]]:
+        db = db if db is not None else self._ensure_session_db()
         if db is None:
             return None, web.json_response(_openai_error("Session database unavailable", code="session_db_unavailable"), status=503)
         session = db.get_session(session_id)
@@ -1714,10 +1725,12 @@ class APIServerAdapter(BasePlatformAdapter):
         if auth_err:
             return auth_err
         session_id = request.match_info["session_id"]
-        _, err = self._get_existing_session_or_404(session_id)
+        # Route to the agent's profile db when the request is agent-scoped, so a
+        # resumed agent chat returns the messages persisted by its turns.
+        db = self._agent_db_for_request(request) or self._ensure_session_db()
+        _, err = self._get_existing_session_or_404(session_id, db)
         if err:
             return err
-        db = self._ensure_session_db()
         resolved_id = db.resolve_resume_session_id(session_id)
         messages = db.get_messages(resolved_id)
         return web.json_response({
