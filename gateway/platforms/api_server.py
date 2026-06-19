@@ -1707,16 +1707,49 @@ class APIServerAdapter(BasePlatformAdapter):
         return web.json_response({"object": "hermes.session", "session": self._session_response(session)})
 
     async def _handle_delete_session(self, request: "web.Request") -> "web.Response":
-        """DELETE /api/sessions/{session_id}."""
+        """DELETE /api/sessions/{session_id}.
+
+        An agent-scoped chat has its metadata row in the shared db (created
+        there for the global session list) and its turns persisted in the
+        agent's own profile db. Delete from BOTH so no orphaned messages are
+        left behind in the profile db when the chat is removed.
+        """
         auth_err = self._check_auth(request)
         if auth_err:
             return auth_err
         session_id = request.match_info["session_id"]
-        session, err = self._get_existing_session_or_404(session_id)
-        if err:
-            return err
-        db = self._ensure_session_db()
-        deleted = db.delete_session(session_id)
+
+        shared_db = self._ensure_session_db()
+        agent_db = self._agent_db_for_request(request)
+        # Distinct db objects to act on (agent_db may be None or, defensively,
+        # the same object as shared_db — dedupe by identity).
+        targets = [shared_db]
+        if agent_db is not None and agent_db is not shared_db:
+            targets.append(agent_db)
+
+        # 404 only if the session exists in NONE of the candidate dbs.
+        existed = False
+        for db in targets:
+            try:
+                if db is not None and db.get_session(session_id) is not None:
+                    existed = True
+                    break
+            except Exception:
+                continue
+        if not existed:
+            return web.json_response(_openai_error(f"Session not found: {session_id}", code="session_not_found"), status=404)
+
+        deleted = False
+        for db in targets:
+            if db is None:
+                continue
+            try:
+                if db.delete_session(session_id):
+                    deleted = True
+            except Exception:
+                # Best-effort cleanup across dbs; one failing db must not block
+                # the others or leave the caller with a 500 on a real delete.
+                continue
         return web.json_response({"object": "hermes.session.deleted", "id": session_id, "deleted": bool(deleted)})
 
     async def _handle_session_messages(self, request: "web.Request") -> "web.Response":
