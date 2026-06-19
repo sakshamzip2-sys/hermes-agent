@@ -322,8 +322,11 @@ class HonchoClientConfig:
     # Write frequency: "async" (background thread), "turn" (sync per turn),
     # "session" (flush on session end), or int (every N turns)
     write_frequency: str | int = "async"
-    # Prefetch budget (None = no cap; set to an integer to bound auto-injected context)
-    context_tokens: int | None = None
+    # Prefetch budget — bounds the per-turn auto-injected context so a verbose
+    # peer representation can't silently balloon every request (None = no cap).
+    # Default 1000 tokens (~4000 chars): normal recall (~600-950) passes
+    # untouched; pathological cases are capped. Override per-profile in config.
+    context_tokens: int | None = 1000
     # Dialectic (peer.chat) settings
     # reasoning_level: "minimal" | "low" | "medium" | "high" | "max"
     dialectic_reasoning_level: str = "low"

@@ -299,6 +299,27 @@ def build_memory_context_block(raw_context: str) -> str:
     clean = sanitize_context(raw_context)
     if clean != raw_context:
         logger.warning("memory provider returned pre-wrapped context; stripped")
+    # Threat-scan provider output before injecting it as "authoritative
+    # reference data". Provider memory (Honcho dialectic output, GBrain pages)
+    # is untrusted: a poisoned past session could embed prompt-injection text
+    # that this block would otherwise hand the model as trusted memory
+    # (Hermes #3943). sanitize_context() only strips re-injected fence tags —
+    # it is NOT a payload scan. On a hit, withhold the body entirely.
+    try:
+        from tools.threat_patterns import scan_for_threats
+        threats = scan_for_threats(clean, scope="strict")
+    except Exception:  # pragma: no cover - scanner must never break recall
+        threats = []
+    if threats:
+        logger.warning(
+            "memory context contained threat patterns %s; withheld from prompt",
+            sorted(set(threats)),
+        )
+        clean = (
+            "[BLOCKED: recalled memory context matched injection/threat "
+            f"patterns ({', '.join(sorted(set(threats)))}) and was withheld "
+            "from the prompt.]"
+        )
     return (
         "<memory-context>\n"
         "[System note: The following is recalled memory context, "
