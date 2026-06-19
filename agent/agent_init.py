@@ -484,6 +484,22 @@ def init_agent(
     
     # Model response configuration
     agent.max_tokens = max_tokens  # None = use model default
+    # When no reasoning_config was passed in (e.g. the CLI -z oneshot path, which
+    # doesn't thread one through), fall back to config ``agent.reasoning_effort`` so
+    # reasoning-capable routes (e.g. the OC Router for gpt-5.x) actually receive a
+    # top-level reasoning_effort. Without this the effort defaults to None and the
+    # custom provider emits no reasoning at all. An explicit reasoning_config (web
+    # picker, /reasoning) still wins. Best-effort: never block agent construction.
+    if reasoning_config is None:
+        try:
+            from hermes_cli.config import load_config as _load_cfg
+            _agent_cfg = (_load_cfg() or {}).get("agent")
+            if isinstance(_agent_cfg, dict):
+                _cfg_eff = str(_agent_cfg.get("reasoning_effort") or "").strip().lower()
+                if _cfg_eff and _cfg_eff != "none":
+                    reasoning_config = {"effort": _cfg_eff}
+        except Exception:
+            pass
     agent.reasoning_config = reasoning_config  # None = use default (medium for OpenRouter)
     agent.service_tier = service_tier
     agent.request_overrides = dict(request_overrides or {})
