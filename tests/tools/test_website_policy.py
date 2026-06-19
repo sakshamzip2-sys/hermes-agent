@@ -91,7 +91,9 @@ def test_default_config_exposes_website_blocklist_shape():
     from hermes_cli.config import DEFAULT_CONFIG
 
     website_blocklist = DEFAULT_CONFIG["security"]["website_blocklist"]
-    assert website_blocklist["enabled"] is False
+    # OpenComputer fork deliberately hardens this default to True (block tracking
+    # domains by default); upstream ships it False. Assert the fork's value.
+    assert website_blocklist["enabled"] is True
     assert website_blocklist["domains"] == []
     assert website_blocklist["shared_files"] == []
 
