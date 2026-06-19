@@ -5630,12 +5630,20 @@ class APIServerAdapter(BasePlatformAdapter):
 # ---------------------------------------------------------------------------
 
 _DEFAULT_AVAIL_MODELS = (
+    # Anthropic
     "claude-fable-5",
     "claude-opus-4-8",
     "claude-opus-4-7",
     "claude-opus-4-6",
     "claude-sonnet-4-6",
     "claude-haiku-4-5",
+    # OpenAI (via OC Router) — curated chat/reasoning set surfaced in the
+    # prompt-bar picker. Probed live so the UI reflects what the router serves.
+    "gpt-5.5",
+    "gpt-5.4",
+    "gpt-5.4-mini",
+    "gpt-5.3-codex",
+    "gpt-5.2-pro",
 )
 _MODEL_AVAIL_TTL_SECONDS = 600.0
 # key: frozenset(model ids) -> (monotonic_ts, result_dict). Best-effort, no
