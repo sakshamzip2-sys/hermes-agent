@@ -240,6 +240,14 @@ async def run_dream_cycle(
     # error must never affect the consolidation result the caller sees.
     await _maybe_run_reflection()
 
+    # SENSE -> COMPACT: opt-in tiered-compaction pass (req #9, the real
+    # context-compression path raw -> summary -> pattern -> lesson). It clusters
+    # related ACTIVE facts in the holographic store, folds each cluster into ONE
+    # higher-tier fact (self-signed, provenance-pointed), and ARCHIVES (never
+    # deletes) the folded raw sources. Default OFF (dreaming.compaction.enabled).
+    # Fail-soft: a compaction error must never affect the consolidation result.
+    await _maybe_run_compaction()
+
     counts = combined.counts()
     if counts["promoted"] or counts["updated"] or counts["held"]:
         logger.info(
@@ -268,6 +276,54 @@ async def _maybe_run_reflection() -> None:
             logger.info("dreaming: reflection queued %d proposal(s)", len(result.proposed))
     except Exception as exc:  # noqa: BLE001 — reflection must never surface into the cycle
         logger.debug("dreaming: reflection pass failed: %s", exc)
+
+
+async def _maybe_run_compaction() -> None:
+    """Run the opt-in tiered-compaction pass on the idle fork. Fail-soft, no-op if off.
+
+    Mirrors :func:`_maybe_run_reflection`: kept separate so a compaction error can
+    never affect the consolidation summary the caller already computed. The pass is
+    gated by ``dreaming.compaction.enabled`` (default OFF) and, when on, folds
+    related ACTIVE facts in the LIVE holographic memory store up the tier ladder
+    (raw -> summary -> pattern -> lesson), ARCHIVING (never deleting) the folded
+    sources. It opens the live store read/write only when enabled, and never raises.
+    """
+    try:
+        from .compaction import load_compaction_config, run_compaction_pass
+
+        ccfg = load_compaction_config()
+        if not ccfg.enabled:
+            return
+        store = _open_memory_store()
+        if store is None:
+            return
+        try:
+            result = await run_compaction_pass(store, cfg=ccfg)
+            if result.folded:
+                logger.info("dreaming: compaction folded %d cluster(s)", len(result.folded))
+        finally:
+            try:
+                store.close()
+            except Exception:  # noqa: BLE001
+                pass
+    except Exception as exc:  # noqa: BLE001 — compaction must never surface into the cycle
+        logger.debug("dreaming: compaction pass failed: %s", exc)
+
+
+def _open_memory_store():
+    """Open the live holographic MemoryStore, or None if unavailable. Fail-soft.
+
+    Resolves the default ``memory_store.db`` path under ``$HERMES_HOME`` via the
+    store's own default. Returns None (never raises) if the plugin is absent or the
+    store cannot be opened, so compaction is a safe no-op in trimmed environments.
+    """
+    try:
+        from plugins.memory.holographic.store import MemoryStore
+
+        return MemoryStore()
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("dreaming: could not open memory store for compaction: %s", exc)
+        return None
 
 
 def _build_recall_fn(sdb: Path, fact_by_id: dict[str, str]):

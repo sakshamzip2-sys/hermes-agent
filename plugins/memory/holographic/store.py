@@ -227,6 +227,34 @@ def classify_entity_type(name: str, context: "str | None" = None) -> str:
 # 'orchestrator/shared'; per-agent scopes use 'agent/<slug>'.
 _DEFAULT_SOURCE_STORE = "orchestrator/self"
 
+# Compaction tier ladder (req #9): a fact is folded up this ladder by the
+# tiered-compaction pass (raw -> summary -> pattern -> lesson). The DEFAULT is
+# ``raw`` so every existing/freshly-inserted fact is a raw fact (unchanged
+# behavior); a folded higher-tier fact carries one of the other values and its
+# provenance pointers trace it to its sources.
+TIER_RAW = "raw"
+TIER_SUMMARY = "summary"
+TIER_PATTERN = "pattern"
+TIER_LESSON = "lesson"
+
+# Ordered ladder + the next-tier map, the single source of truth for "what does
+# folding a tier-N cluster produce". A value outside the ladder is treated as
+# ``raw`` by :func:`next_tier` (conservative).
+TIER_ORDER: tuple[str, ...] = (TIER_RAW, TIER_SUMMARY, TIER_PATTERN, TIER_LESSON)
+
+
+def next_tier(tier: "str | None") -> "str | None":
+    """Return the tier one step up the ladder, or ``None`` at the top.
+
+    ``raw -> summary -> pattern -> lesson -> None``. An unrecognized/None tier
+    is treated as ``raw`` (its fold target is ``summary``). Pure function.
+    """
+    current = tier if tier in TIER_ORDER else TIER_RAW
+    idx = TIER_ORDER.index(current)
+    if idx + 1 >= len(TIER_ORDER):
+        return None
+    return TIER_ORDER[idx + 1]
+
 # UUID namespace for deriving stable, reproducible ext_keys from content. A
 # fixed namespace makes uuid5(content) deterministic across processes and runs,
 # so a legacy-row backfill and a fresh insert of the same content agree.
@@ -473,6 +501,15 @@ class MemoryStore:
         # + non-destructive. MUST run after _migrate_bitemporal so ext_key /
         # source_store are present for the content_hash backfill.
         self._migrate_provenance()
+        # Archive-not-delete retention (req #9 / req #2 / #3 data-safety).
+        # Idempotent + non-destructive: adds a nullable ``archived_at`` column so
+        # eviction is a REVERSIBLE state (archive) rather than a hard delete.
+        self._migrate_retention()
+        # Tiered compaction (req #9: raw -> summary -> pattern -> lesson).
+        # Idempotent + non-destructive: adds a ``tier`` column defaulting to
+        # ``'raw'`` so every existing fact reads as a raw fact (unchanged) and a
+        # folded higher-tier fact can be distinguished from its raw sources.
+        self._migrate_tier()
 
     def _sync_fts_index(self) -> None:
         """Reconcile the external-content FTS5 index with the ``facts`` table.
@@ -663,6 +700,83 @@ class MemoryStore:
             )
         self._conn.commit()
 
+    def _migrate_retention(self) -> None:
+        """Add the archive-not-delete retention column to ``facts`` if missing.
+
+        Retention (req #9) evicts a fact by ARCHIVING it (a reversible state),
+        never by deleting it. This adds ONE additive, nullable column:
+          - ``archived_at`` TIMESTAMP NULL: when the fact was archived/evicted.
+            NULL (the default) means the fact is ACTIVE. A non-NULL value hides
+            it from the default read-only view (it is excluded unless
+            ``include_archived=True``); :meth:`restore_fact` clears it back to
+            NULL, so the fact and its content are fully recoverable. NO data is
+            ever lost: the row is preserved exactly.
+
+        Contract (req #2 / #3 data-safety), identical to the sibling migrations:
+          - IDEMPOTENT: the column is added only when ``PRAGMA table_info`` shows
+            it missing, so re-running ``_init_db`` on an already-migrated DB is a
+            no-op and never duplicates the column.
+          - NON-DESTRUCTIVE: the column is only ADDed; every legacy row is
+            preserved and defaults to ``archived_at = NULL`` (active), so every
+            existing read path is unchanged (a legacy DB recalls exactly as
+            before until something explicitly archives a fact).
+          - Runs against whatever DB path this store was opened on (tests use
+            temp DBs); it does nothing special for the live store.
+        """
+        columns = {
+            row[1] for row in self._conn.execute("PRAGMA table_info(facts)").fetchall()
+        }
+        if "archived_at" not in columns:
+            self._conn.execute("ALTER TABLE facts ADD COLUMN archived_at TIMESTAMP")
+        self._conn.commit()
+
+        # Partial index over only the active rows keeps the default read filter
+        # (archived_at IS NULL) cheap without indexing the archived tail. IF NOT
+        # EXISTS makes it idempotent.
+        self._conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_facts_archived_at "
+            "ON facts(archived_at) WHERE archived_at IS NULL"
+        )
+        self._conn.commit()
+
+    def _migrate_tier(self) -> None:
+        """Add the compaction ``tier`` column to ``facts`` if missing.
+
+        Tiered compaction (req #9) folds clusters of related facts up a ladder
+        ``raw -> summary -> pattern -> lesson``. This adds ONE additive column:
+          - ``tier`` TEXT: the compaction tier of the fact. DEFAULTS to
+            ``'raw'`` so every legacy and freshly-inserted fact is a raw fact
+            (the prior behavior). A folded higher-tier fact carries
+            ``'summary'`` / ``'pattern'`` / ``'lesson'`` and its
+            ``supersedes_id`` / provenance pointers trace back to its sources.
+
+        Contract (req #2 / #3 data-safety), identical to the sibling migrations:
+          - IDEMPOTENT: the column is added only when ``PRAGMA table_info`` shows
+            it missing, so re-running ``_init_db`` is a no-op.
+          - NON-DESTRUCTIVE: the column is only ADDed and backfilled to
+            ``'raw'``; every existing row is preserved, so every read path is
+            unchanged (a legacy DB recalls exactly as before).
+          - Runs against whatever DB path this store was opened on (tests use
+            temp DBs); it does nothing special for the live store.
+        """
+        columns = {
+            row[1] for row in self._conn.execute("PRAGMA table_info(facts)").fetchall()
+        }
+        if "tier" not in columns:
+            self._conn.execute("ALTER TABLE facts ADD COLUMN tier TEXT")
+        self._conn.commit()
+        # Backfill any row missing a tier to the raw default. The WHERE ... IS
+        # NULL clause makes this a no-op on an already-backfilled DB.
+        self._conn.execute(
+            "UPDATE facts SET tier = ? WHERE tier IS NULL", (TIER_RAW,)
+        )
+        self._conn.commit()
+        # Index for tier-scoped reads (e.g. cluster the raw tier only).
+        self._conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_facts_tier ON facts(tier)"
+        )
+        self._conn.commit()
+
     def _maybe_sign(
         self, ext_key: str, content: str, source_store: str
     ) -> "tuple[str, str | None]":
@@ -728,6 +842,7 @@ class MemoryStore:
         *,
         source_store: str | None = None,
         defer_enrichment: bool = False,
+        tier: str = TIER_RAW,
     ) -> int:
         """Insert a fact and return its fact_id.
 
@@ -763,11 +878,11 @@ class MemoryStore:
                     INSERT INTO facts
                         (content, category, tags, trust_score,
                          ext_key, t_valid, source_store,
-                         content_hash, signature)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                         content_hash, signature, tier)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (content, category, tags, self.default_trust,
-                     ext_key, now, ns, content_hash, signature),
+                     ext_key, now, ns, content_hash, signature, tier),
                 )
                 self._conn.commit()
                 # lastrowid is always an int after a successful INSERT (sqlite3
@@ -805,11 +920,11 @@ class MemoryStore:
                     INSERT INTO facts
                         (content, category, tags, trust_score,
                          ext_key, t_valid, source_store,
-                         content_hash, signature)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                         content_hash, signature, tier)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (content, category, tags, self.default_trust,
-                     retry_ext_key, now, ns, retry_hash, retry_sig),
+                     retry_ext_key, now, ns, retry_hash, retry_sig, tier),
                 )
                 self._conn.commit()
                 last_id = cur.lastrowid
@@ -877,6 +992,7 @@ class MemoryStore:
         source_store: str | None = None,
         defer_enrichment: bool = False,
         t_invalid: "str | float | int | None" = None,
+        tier: str = TIER_RAW,
     ) -> str:
         """Replace a fact with a newer one (recency-wins), bi-temporally.
 
@@ -915,11 +1031,12 @@ class MemoryStore:
                     INSERT INTO facts
                         (content, category, tags, trust_score,
                          ext_key, t_valid, source_store, supersedes_id,
-                         content_hash, signature)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                         content_hash, signature, tier)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (new_content, category, tags, self.default_trust,
-                     new_ext_key, now, ns, old_ext_key, content_hash, signature),
+                     new_ext_key, now, ns, old_ext_key, content_hash, signature,
+                     tier),
                 )
                 last_id = cur.lastrowid
                 assert last_id is not None
@@ -947,11 +1064,12 @@ class MemoryStore:
                         """
                         UPDATE facts
                         SET supersedes_id = ?, source_store = ?,
-                            content_hash = ?, signature = ?,
+                            content_hash = ?, signature = ?, tier = ?,
                             updated_at = CURRENT_TIMESTAMP
                         WHERE fact_id = ?
                         """,
-                        (old_ext_key, ns, reuse_hash, reuse_sig, new_fact_id),
+                        (old_ext_key, ns, reuse_hash, reuse_sig, tier,
+                         new_fact_id),
                     )
                     inserted = False
                 else:
@@ -969,12 +1087,12 @@ class MemoryStore:
                         INSERT INTO facts
                             (content, category, tags, trust_score,
                              ext_key, t_valid, source_store, supersedes_id,
-                             content_hash, signature)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                             content_hash, signature, tier)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         """,
                         (new_content, category, tags, self.default_trust,
                          new_ext_key, now, ns, old_ext_key,
-                         retry_hash, retry_sig),
+                         retry_hash, retry_sig, tier),
                     )
                     last_id = cur.lastrowid
                     assert last_id is not None
@@ -1001,6 +1119,222 @@ class MemoryStore:
                 self._rebuild_bank(category)
 
             return new_ext_key
+
+    # ------------------------------------------------------------------
+    # Retention (req #9): archive-not-delete eviction. Eviction is a
+    # REVERSIBLE state (archive), restorable; NEVER a hard delete. Only
+    # remove_fact (redaction/GC) is destructive and stays backup-gated.
+    # ------------------------------------------------------------------
+
+    def archive_fact(
+        self,
+        ext_key: str,
+        *,
+        archived_at: "str | float | int | None" = None,
+    ) -> bool:
+        """Archive (evict) a fact by ``ext_key``. Reversible. Never deletes.
+
+        SETS ``archived_at`` (to ``now`` or the given timestamp) on the row whose
+        ``ext_key`` matches AND that is not already archived (``archived_at IS
+        NULL``). The row, its content, its bi-temporal history and its provenance
+        are ALL preserved; the fact simply disappears from the default
+        :meth:`search_facts_readonly` view. :meth:`restore_fact` brings it back,
+        so NO data is lost (this is the difference from :meth:`remove_fact`,
+        which is the only hard DELETE and is reserved for backup-gated
+        redaction/GC).
+
+        Returns ``True`` if a row was archived, ``False`` if no matching,
+        not-already-archived row existed (idempotent: re-archiving is a no-op
+        ``False``). Pure state flip: it does NOT touch facts content, entity
+        links, HRR vectors or banks, so it never invalidates the FTS index or the
+        signature.
+        """
+        ts = (
+            _utc_now_iso()
+            if archived_at is None
+            else self._normalize_as_of(archived_at)
+        )
+        with self._lock:
+            cur = self._conn.execute(
+                """
+                UPDATE facts
+                SET archived_at = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE ext_key = ? AND archived_at IS NULL
+                """,
+                (ts, ext_key),
+            )
+            self._conn.commit()
+            return cur.rowcount > 0
+
+    def restore_fact(self, ext_key: str) -> bool:
+        """Un-archive a fact by ``ext_key`` (clears ``archived_at``). Reversible.
+
+        Clears ``archived_at`` back to NULL on the row whose ``ext_key`` matches
+        AND that is currently archived (``archived_at IS NOT NULL``), so the fact
+        returns to the default :meth:`search_facts_readonly` view exactly as it
+        was, with its content intact. This is the inverse of :meth:`archive_fact`
+        and is what makes eviction reversible (NO data loss).
+
+        Returns ``True`` if a row was restored, ``False`` if no matching,
+        currently-archived row existed (idempotent: restoring an active fact is a
+        no-op ``False``).
+        """
+        with self._lock:
+            cur = self._conn.execute(
+                """
+                UPDATE facts
+                SET archived_at = NULL, updated_at = CURRENT_TIMESTAMP
+                WHERE ext_key = ? AND archived_at IS NOT NULL
+                """,
+                (ext_key,),
+            )
+            self._conn.commit()
+            return cur.rowcount > 0
+
+    def select_eviction_candidates(
+        self,
+        *,
+        min_trust: float = 0.3,
+        max_age_days: float = 90.0,
+        require_zero_retrieval: bool = True,
+        include_invalidated: bool = True,
+        limit: int = 100,
+    ) -> list[dict]:
+        """Return facts matching the retention policy, WITHOUT archiving them.
+
+        A PURE READ (no UPDATE/commit, no archiving side effect). The caller
+        decides what to do with the returned list (typically pass each
+        ``ext_key`` to :meth:`archive_fact`). This keeps selection and the
+        reversible-but-still-a-change archive step decoupled, so a dry run can
+        inspect exactly what WOULD be evicted before anything moves.
+
+        A fact is a candidate when EITHER:
+          - it is LOW-VALUE-AND-AGED: ``trust_score < min_trust`` AND (when
+            ``require_zero_retrieval``) ``retrieval_count == 0`` AND it is older
+            than ``max_age_days`` (by ``created_at``); OR
+          - (when ``include_invalidated``) it is ALREADY-INVALIDATED
+            (``t_invalid IS NOT NULL``) -- a superseded fact that no default read
+            returns anyway, so archiving it frees the active set with zero recall
+            impact.
+
+        Already-archived facts (``archived_at IS NOT NULL``) are NEVER returned
+        (they are already evicted). Results are ordered lowest-value first
+        (trust ascending, then oldest, then least-retrieved) so a bounded caller
+        can take the worst N. ``limit`` caps the read.
+
+        Parameters mirror the MEMORY-POLICY retention contract:
+          - ``min_trust``: the low-trust threshold (strict ``<``);
+          - ``max_age_days``: minimum age (days) for the aged branch;
+          - ``require_zero_retrieval``: require ``retrieval_count == 0`` on the
+            aged branch (a fact that has been recalled is kept regardless of age);
+          - ``include_invalidated``: also surface superseded/invalidated facts.
+        """
+        # Age cutoff as an ISO timestamp: created_at < cutoff means "older than
+        # max_age_days". Computed in Python so the comparison is a plain
+        # lexicographic TIMESTAMP compare in SQLite (same shape as stored values).
+        cutoff_epoch = datetime.now(timezone.utc).timestamp() - (
+            max_age_days * 86400.0
+        )
+        cutoff_ts = datetime.fromtimestamp(
+            cutoff_epoch, tz=timezone.utc
+        ).strftime("%Y-%m-%d %H:%M:%S")
+
+        # Low-value-and-aged branch.
+        aged_clause = "f.trust_score < ? AND f.created_at < ?"
+        aged_params: list = [min_trust, cutoff_ts]
+        if require_zero_retrieval:
+            aged_clause += " AND f.retrieval_count = 0"
+
+        branches = [f"({aged_clause})"]
+        params: list = list(aged_params)
+        if include_invalidated:
+            branches.append("(f.t_invalid IS NOT NULL)")
+
+        where = " OR ".join(branches)
+        sql = f"""
+            SELECT f.fact_id, f.content, f.category, f.tags,
+                   f.trust_score, f.retrieval_count, f.helpful_count,
+                   f.created_at, f.updated_at,
+                   f.ext_key, f.t_valid, f.t_invalid,
+                   f.supersedes_id, f.source_store,
+                   f.content_hash, f.signature, f.archived_at
+            FROM facts f
+            WHERE f.archived_at IS NULL
+              AND ({where})
+            ORDER BY f.trust_score ASC, f.created_at ASC, f.retrieval_count ASC
+            LIMIT ?
+        """
+        params.append(limit)
+        with self._lock:
+            rows = self._conn.execute(sql, params).fetchall()
+        return [self._row_to_dict(r) for r in rows]
+
+    def select_facts_over_capacity(
+        self,
+        max_active_facts: int,
+        *,
+        source_store: str | None = None,
+    ) -> list[dict]:
+        """Return the lowest-value ACTIVE facts to archive to honor a cap.
+
+        Bounded-growth helper (req #9). When the active fact count (rows with
+        ``archived_at IS NULL`` and, by default, currently valid) exceeds
+        ``max_active_facts``, returns exactly the OVERFLOW: the
+        ``count - max_active_facts`` lowest-value active facts, ordered
+        lowest-value first (trust ascending, then oldest, then least-retrieved),
+        so the caller can archive them to bring the active set back under the
+        cap. Returns ``[]`` when at or under the cap (nothing to evict) and when
+        ``max_active_facts <= 0`` is treated as "unbounded" (no eviction).
+
+        PURE READ: it selects but does NOT archive (the caller passes each
+        returned ``ext_key`` to :meth:`archive_fact`). Currently-invalidated
+        facts (``t_invalid IS NOT NULL``) are NOT counted toward the cap and are
+        not returned here -- they are already out of the default view and are the
+        province of :meth:`select_eviction_candidates`; this helper governs the
+        VALID, ACTIVE working set only. ``source_store`` optionally scopes the
+        cap to one namespace.
+        """
+        if max_active_facts <= 0:
+            return []
+
+        scope_clause = ""
+        scope_params: list = []
+        if source_store is not None:
+            scope_clause = "AND f.source_store = ?"
+            scope_params.append(source_store)
+
+        count_sql = f"""
+            SELECT COUNT(*) AS n
+            FROM facts f
+            WHERE f.archived_at IS NULL
+              AND f.t_invalid IS NULL
+              {scope_clause}
+        """
+        select_sql = f"""
+            SELECT f.fact_id, f.content, f.category, f.tags,
+                   f.trust_score, f.retrieval_count, f.helpful_count,
+                   f.created_at, f.updated_at,
+                   f.ext_key, f.t_valid, f.t_invalid,
+                   f.supersedes_id, f.source_store,
+                   f.content_hash, f.signature, f.archived_at
+            FROM facts f
+            WHERE f.archived_at IS NULL
+              AND f.t_invalid IS NULL
+              {scope_clause}
+            ORDER BY f.trust_score ASC, f.created_at ASC, f.retrieval_count ASC
+            LIMIT ?
+        """
+        with self._lock:
+            active = int(
+                self._conn.execute(count_sql, scope_params).fetchone()["n"]
+            )
+            overflow = active - max_active_facts
+            if overflow <= 0:
+                return []
+            rows = self._conn.execute(
+                select_sql, [*scope_params, overflow]
+            ).fetchall()
+        return [self._row_to_dict(r) for r in rows]
 
     def search_facts(
         self,
@@ -1092,6 +1426,7 @@ class MemoryStore:
         *,
         as_of: "str | float | int | None" = None,
         source_store: str | None = None,
+        include_archived: bool = False,
     ) -> list[dict]:
         """Pure read-only full-text search over facts (no write on read).
 
@@ -1118,9 +1453,18 @@ class MemoryStore:
             (``orchestrator/self``, ``orchestrator/shared``, ``agent/<slug>``);
             ``None`` (default) is namespace-agnostic for back-compat.
 
+        Retention (req #9): by DEFAULT archived (evicted) facts are EXCLUDED
+        (``archived_at IS NULL``). Archiving is a reversible state, never a
+        delete, so an archived fact's row and content are preserved; it simply
+        leaves the default view until :meth:`restore_fact` clears it. Set
+        ``include_archived=True`` to also return archived facts (e.g. an
+        explicit "search the archive" path or a restore/audit flow).
+
         Back-compat: ``search_facts`` is unchanged and still writes
-        ``retrieval_count``. ``as_of`` / ``source_store`` default to ``None``,
-        preserving the prior call surface.
+        ``retrieval_count``. ``as_of`` / ``source_store`` default to ``None`` and
+        ``include_archived`` defaults to ``False``, preserving the prior call
+        surface (and recalling exactly as before until something archives a
+        fact).
         """
         query = query.strip()
         if not query:
@@ -1151,6 +1495,10 @@ class MemoryStore:
             source_clause = "AND f.source_store = ?"
             params.append(source_store)
 
+        # Retention: hide archived (evicted) facts unless explicitly included.
+        # This is a pure filter; the archived rows are preserved, just not shown.
+        archived_clause = "" if include_archived else "AND f.archived_at IS NULL"
+
         params.append(limit)
 
         sql = f"""
@@ -1159,7 +1507,7 @@ class MemoryStore:
                    f.created_at, f.updated_at,
                    f.ext_key, f.t_valid, f.t_invalid,
                    f.supersedes_id, f.source_store,
-                   f.content_hash, f.signature
+                   f.content_hash, f.signature, f.archived_at
             FROM facts f
             JOIN facts_fts fts ON fts.rowid = f.fact_id
             WHERE facts_fts MATCH ?
@@ -1167,6 +1515,7 @@ class MemoryStore:
               {category_clause}
               {validity_clause}
               {source_clause}
+              {archived_clause}
             ORDER BY fts.rank, f.trust_score DESC
             LIMIT ?
         """
@@ -1300,6 +1649,62 @@ class MemoryStore:
             """
             rows = self._conn.execute(sql, params).fetchall()
             return [self._row_to_dict(r) for r in rows]
+
+    def list_active_facts(
+        self,
+        *,
+        tier: str | None = None,
+        category: str | None = None,
+        source_store: str | None = None,
+        min_trust: float = 0.0,
+        limit: int = 1000,
+    ) -> list[dict]:
+        """Enumerate ACTIVE facts with their full bi-temporal / provenance row.
+
+        The compaction pass needs to cluster the raw working set, so it needs
+        the columns ``list_facts`` does not expose: ``ext_key``,
+        ``source_store``, ``tier``, ``signature`` and ``hrr_vector``. This is a
+        PURE READ over the currently-active set:
+          - ``archived_at IS NULL`` (not evicted) AND ``t_invalid IS NULL``
+            (currently valid), so a folded raw source disappears here once it is
+            archived and a superseded fact is excluded;
+          - optionally scoped to one ``tier`` (e.g. cluster the ``raw`` tier),
+            one ``category`` and one ``source_store`` namespace (so a cluster
+            never crosses a namespace / trust boundary).
+
+        Ordered oldest-first (``created_at`` ascending) so clustering is stable
+        and deterministic across runs. ``hrr_vector`` BLOB is returned as-is for
+        the HRR-cosine path; callers that do not need it ignore it.
+        """
+        clauses = ["f.archived_at IS NULL", "f.t_invalid IS NULL", "f.trust_score >= ?"]
+        params: list = [min_trust]
+        if tier is not None:
+            clauses.append("f.tier = ?")
+            params.append(tier)
+        if category is not None:
+            clauses.append("f.category = ?")
+            params.append(category)
+        if source_store is not None:
+            clauses.append("f.source_store = ?")
+            params.append(source_store)
+        params.append(limit)
+        where = " AND ".join(clauses)
+        sql = f"""
+            SELECT f.fact_id, f.content, f.category, f.tags,
+                   f.trust_score, f.retrieval_count, f.helpful_count,
+                   f.created_at, f.updated_at,
+                   f.ext_key, f.t_valid, f.t_invalid,
+                   f.supersedes_id, f.source_store,
+                   f.content_hash, f.signature, f.archived_at, f.tier,
+                   f.hrr_vector
+            FROM facts f
+            WHERE {where}
+            ORDER BY f.created_at ASC, f.fact_id ASC
+            LIMIT ?
+        """
+        with self._lock:
+            rows = self._conn.execute(sql, params).fetchall()
+        return [self._row_to_dict(r) for r in rows]
 
     def record_feedback(self, fact_id: int, helpful: bool) -> dict:
         """Record user feedback and adjust trust asymmetrically.
