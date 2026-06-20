@@ -4106,6 +4106,41 @@ class APIServerAdapter(BasePlatformAdapter):
             return auth_err
         return web.json_response(self.build_parallel_agents_snapshot())
 
+    @staticmethod
+    def build_agent_manifests(include_archived: bool = False) -> dict:
+        """Read-only list of specialized-agent manifests (.hermes/agents/*.md) as
+        gallery-ready metadata. Powers the frontend gallery (merged additively onto
+        the hardcoded presets) and the manifest endpoint. Pure + testable; a
+        malformed manifest is surfaced in ``errors`` rather than crashing the list."""
+        manifests: list = []
+        error = None
+        try:
+            from tools.agent_defs import list_agent_definitions, to_manifest_dict
+
+            for d in list_agent_definitions():
+                m = to_manifest_dict(d)
+                status = (m.get("status") or "active")
+                if status == "archived" and not include_archived:
+                    continue
+                manifests.append(m)
+        except Exception as exc:  # noqa: BLE001
+            error = str(exc)
+        return {
+            "object": "hermes.agent_manifests",
+            "manifests": manifests,
+            "error": error,
+            "timestamp": int(time.time()),
+        }
+
+    async def _handle_agent_manifests(self, request: "web.Request") -> "web.Response":
+        """GET /api/agents/manifests — read-only specialized-agent manifest metadata
+        (status-filtered; archived hidden unless ?include_archived=1)."""
+        auth_err = self._check_auth(request)
+        if auth_err:
+            return auth_err
+        inc = request.query.get("include_archived") in ("1", "true", "yes")
+        return web.json_response(self.build_agent_manifests(include_archived=inc))
+
     async def _handle_parallel_agents_events(self, request: "web.Request") -> "web.StreamResponse":
         """GET /v1/parallel-agents/events — live SSE stream of the parallel-agents
         run view: a snapshot on connect, then deltas as run-state lands on the
@@ -5752,6 +5787,7 @@ class APIServerAdapter(BasePlatformAdapter):
             self._app.router.add_post("/api/parallel-agents/flows/{flow_id}/stop", self._handle_flow_stop)
             self._app.router.add_post("/api/parallel-agents/teams/{team_id}/messages", self._handle_team_send_message)
             self._app.router.add_get("/v1/parallel-agents/events", self._handle_parallel_agents_events)
+            self._app.router.add_get("/api/agents/manifests", self._handle_agent_manifests)
             self._app.router.add_get("/api/memory", self._handle_get_memory)
             # Artifacts (claude.ai-style viewer): list + download-by-id. The web
             # BFF proxy calls the /api/v1/ paths; the non-v1 aliases keep parity
