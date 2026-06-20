@@ -1,0 +1,6 @@
+name: oc_orchestrator
+version: 1.0.0
+description: "Supervisory control plane over the agent fleet. A bounded hierarchy of identical deterministic supervisor nodes that detect and recover from failures and stalls, enforce hard depth/concurrency/budget caps at one atomic choke point (runaway fan-out impossible by construction), and own verification, with a thin advisory brain consulted only at ambiguous decision points. Builds on the oc_runs spine + reconciler and the oc_agents/oc_teams/oc_flow spawn seams; no new core tool."
+author: "OpenComputer v2"
+kind: standalone
+provides_hooks: []

@@ -125,10 +125,12 @@ def connect() -> Generator[sqlite3.Connection, None, None]:
                 pass
         conn = sqlite3.connect(path, timeout=30.0)
         conn.row_factory = sqlite3.Row
+        # Autocommit mode so we control transactions explicitly with
+        # BEGIN IMMEDIATE / COMMIT / ROLLBACK for the compare-and-swap ledger.
+        conn.isolation_level = None
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA busy_timeout=30000")
         conn.executescript(SCHEMA_SQL)
-        conn.commit()
         _local.conn = conn
         _local.path = path
     yield conn
