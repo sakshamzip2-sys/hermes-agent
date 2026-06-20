@@ -46,3 +46,36 @@ def test_all_shipped_manifests_load_clean():
     defs = load_agent_definitions(dirs=[AGENTS_DIR])
     assert "forge" in defs
     assert "reviewer" in defs
+
+
+def test_roster_keep_agents_parse_with_real_grants():
+    for slug in ("atlas", "sage", "ledger"):
+        d = get_agent_definition(slug, dirs=[AGENTS_DIR])
+        assert d is not None, f"{slug} manifest missing"
+        assert d.extra.get("status", "active") == "active"
+        assert d.toolsets, f"{slug} has no toolsets"
+    # Ledger is differentiated by a real compute grant, not just prompt text.
+    assert "code" in get_agent_definition("ledger", dirs=[AGENTS_DIR]).toolsets
+
+
+def test_quill_is_merged_reversibly():
+    d = get_agent_definition("quill", dirs=[AGENTS_DIR])
+    assert d is not None
+    assert d.extra.get("status") == "merged"
+    assert d.extra.get("merged_into") == "atlas"
+    # Retained on disk (reversible), not deleted.
+    assert (AGENTS_DIR / "quill.md").exists()
+
+
+def test_scout_is_archived_reversibly():
+    d = get_agent_definition("scout", dirs=[AGENTS_DIR])
+    assert d is not None
+    assert d.extra.get("status") == "archived"
+    # Retained on disk (reversible by flipping the flag), not deleted.
+    assert (AGENTS_DIR / "scout.md").exists()
+
+
+def test_full_roster_loads_without_error():
+    defs = load_agent_definitions(dirs=[AGENTS_DIR])
+    for slug in ("atlas", "forge", "sage", "ledger", "quill", "scout", "reviewer"):
+        assert slug in defs, f"{slug} failed to load"
