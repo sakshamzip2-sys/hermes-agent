@@ -76,8 +76,17 @@ runnable proof script; recall@k / precision@k eval with real numbers; all 12 req
 
 ## IN FLIGHT
 
-- Safety wave wf_9f40b698: A-MemGuard floor inversion fix (floor only provenance-trusted sources
-  + consensus suppression of un-corroborated untrusted sole-source). memory_merge.py.
+- (none currently; the Part 2 recon is being re-launched after the session-limit failure.)
+
+## DONE since last save
+
+- A-MemGuard floor-inversion fix (web-validation safety item 1): floor protects ONLY
+  provenance-trusted sources; un-corroborated untrusted sole-source is consensus-penalized.
+  VERIFIED with a real adversarial repro (poisoned untrusted sole-source suppressed from top-8,
+  recorded in trace.consensus_penalized=['honcho#p1']; trusted sole-source still floor-protected).
+  16 merge tests pass, pyright 0 errors, baseline 126 passed / 3 skipped. Config knobs:
+  memory.merge.floor_trusted_sources, memory.merge.consensus_penalty. Committed (57bbd4d6c wip).
+  Build-queue safety item 1 (A-MemGuard) DONE.
 
 ## OPEN (Part 1, from the web build queue, ordered)
 
