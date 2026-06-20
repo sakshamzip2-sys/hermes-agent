@@ -57,6 +57,14 @@ async def stream_events(request, *, extra_headers=None, once: bool = False,
     response = web.StreamResponse(status=200, headers=headers)
     await response.prepare(request)
 
+    # Read-triggered: pull current engine state into the spine before snapshotting
+    # so the very first frame reflects live runs (no background daemon needed).
+    try:
+        from . import feeder
+        feeder.feed()
+    except Exception:
+        pass
+
     try:
         if not resuming:
             snap = sse_tailer.snapshot()
@@ -69,6 +77,11 @@ async def stream_events(request, *, extra_headers=None, once: bool = False,
 
         while not once:
             await asyncio.sleep(poll_interval)
+            try:
+                from . import feeder
+                feeder.feed()
+            except Exception:
+                pass
             for event in sse_tailer.deltas_since(cursor):
                 await response.write(sse_tailer.format_sse_frame(event).encode())
                 cursor = event["seq"]
