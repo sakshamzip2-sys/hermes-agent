@@ -653,6 +653,26 @@ def _humanize_agent_error(raw: str) -> str:
     return msg[:240] + ("…" if len(msg) > 240 else "")
 
 
+def _is_openai_family_model(model: str) -> bool:
+    """True for OpenAI-family model ids (gpt-*/o-series/codex/chatgpt).
+
+    The OC Router binds ONE platform per API key (a key's group is anthropic OR
+    openai), so a combined picker must select the KEY by the model's provider,
+    not just swap the model string. OpenAI-family ids need an OpenAI-group key;
+    claude-* keep the default (Anthropic) key. See _create_agent.
+    """
+    m = (model or "").strip().lower()
+    return (
+        m.startswith("gpt-")
+        or m.startswith("gpt5")
+        or m.startswith("chatgpt")
+        or m.startswith("o1")
+        or m.startswith("o3")
+        or m.startswith("o4")
+        or "codex" in m
+    )
+
+
 if AIOHTTP_AVAILABLE:
     @web.middleware
     async def body_limit_middleware(request, handler):
@@ -1209,6 +1229,27 @@ class APIServerAdapter(BasePlatformAdapter):
 
         user_config = _load_gateway_config()
         enabled_toolsets = sorted(_get_platform_tools(user_config, "api_server"))
+
+        # Per-MODEL credential routing (the OC Router binds one platform per API
+        # key). When the selected model is OpenAI-family (gpt-*/o-series/codex)
+        # and the user has configured a `providers.openai` entry in config.yaml
+        # (the OpenAI-group router key + base_url), use ITS credentials for this
+        # turn so GPT models actually route to the OpenAI group instead of 404-ing
+        # against the default Anthropic-group key. claude-* turns are untouched.
+        if _is_openai_family_model(model):
+            _providers = user_config.get("providers")
+            _oai = _providers.get("openai") if isinstance(_providers, dict) else None
+            if isinstance(_oai, dict) and _oai.get("api_key"):
+                runtime_kwargs = dict(runtime_kwargs)
+                runtime_kwargs["api_key"] = _oai["api_key"]
+                if _oai.get("base_url"):
+                    runtime_kwargs["base_url"] = _oai["base_url"]
+                runtime_kwargs["provider"] = _oai.get("provider", "custom")
+                runtime_kwargs["api_mode"] = _oai.get("api_mode", "chat_completions")
+                logger.info(
+                    "[%s] OpenAI-family model %s → providers.openai credentials",
+                    self.name, model,
+                )
 
         # Per-agent profiles are local-only: they get their own
         # SQLite/FTS5/markdown memory but NOT the shared external memory plane
