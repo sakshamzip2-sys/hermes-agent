@@ -104,10 +104,36 @@ runnable proof script; recall@k / precision@k eval with real numbers; all 12 req
 
 ## OPEN (Part 2, observability + self-improvement, the honest version)
 
-P2-0. RECON FIRST (in flight): verify Curator, self-improvement loop, idle-dreaming-fork,
-  /rollback+checkpoint+backups, memory-providers (Honcho representation), native
-  telemetry/Langfuse/OTel hook, AGENTS.md, version, against the REAL repo + Nous docs. Identify
-  the GENUINE GAP. Build only that.
+P2-0. RECON DONE -> PART2-gap-map-and-plan.md. KEY FINDING (the honest reframe): Hermes 0.16.0
+  ALREADY ships the scorer (plugins/outcomes: turn_score [0,1] composite + aux-LLM judge,
+  LIVE-enabled in config), the tracer (plugins/observability/langfuse: per-turn trace, usage/cost,
+  opt-in), and the cross-agent hooks (subagent_start/stop in delegate_tool). So DO NOT rebuild
+  observability. The genuine gap = JOIN them + ADD agent/run identity.
+  REAL GAP, by slice (all additive/reversible, local-first):
+    Slice 0 (working slice, S): add nullable agent_id/subagent_id/role to turn_outcomes
+      (plugins/outcomes/store.py, same ALTER ADD COLUMN pattern) + thread agent_id through
+      engine.py. Unlocks "which agent produces good runs". LOCAL-ONLY, no user decision.
+    Slice 1 (S): subscribe subagent_start/stop in langfuse register() + parent child trace. NEEDS
+      Langfuse-enablement decision (O-P2-1).
+    Slice 2 (M): outcome-to-trace score bridge (call create_score on the matching trace; langfuse
+      register has NO create_score today = real gap). NEEDS Langfuse decision.
+    Slice 3 (M): skill-outcome attribution + additive success_rate/avg_latency/cost_per_run/
+      user_rating on the skill_usage sidecar (_empty_record) -> read-only health signal in the
+      curator review render. NEVER wire to auto-prune (curator.py:391-394 forbids usage-as-quality).
+      LOCAL-ONLY.
+    Slice 4 (M): reflection PROPOSAL pass on the existing idle fork -> writes PROPOSALS.md + the
+      HMAC review queue, NEVER auto-applies. LOCAL-ONLY.
+    Slice 5 (S-M): explicit feedback -> user_rating; utility="used x helpful" read-only view;
+      light controlled entity_type vocab on the holographic entities table.
+  Honcho user-graph verdict: do NOT build a separate graph; reuse Honcho peer card + holographic
+  entities; only micro-supplement = controlled entity_type vocab. Compression = Part 1 retention #9.
+  TWO REAL BUGS found: (a) observer schema-version drift hermes.observer.v1 (middleware.py:17) vs
+  opencomputer.observer.v1 (docs README:42); (b) langfuse register() never calls create_score.
+  NEW USER DECISIONS: O-P2-1 Langfuse default-on-via-config vs strictly-opt-in (outbound telemetry
+  policy; blocks Slices 1-2 going default-on; recommend local-first now, Langfuse opt-in).
+  O-P2-2 local-only score view vs Langfuse aggregation (recommend local first). O-P2-3 which
+  observer schema string is canonical.
+P2-0b OLD (superseded by the above):
 P2-1. Tracing: native hook if it exists, else Langfuse SDK. Per run: goal, system prompt, memory
   + retrieval hits, tool/MCP calls, model calls, tokens, cost, latency, output, user feedback.
 P2-2. Evaluator pass scoring completed runs; store scores against traces.
