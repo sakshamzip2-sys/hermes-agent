@@ -1412,7 +1412,7 @@ def _render_candidate_list() -> str:
         return "No agent-created skills to review."
     lines = [f"Agent-created skills ({len(rows)}):\n"]
     for r in rows:
-        lines.append(
+        line = (
             f"- {r['name']}  "
             f"state={r['state']}  "
             f"pinned={'yes' if r.get('pinned') else 'no'}  "
@@ -1422,7 +1422,46 @@ def _render_candidate_list() -> str:
             f"patches={r.get('patch_count', 0)}  "
             f"last_activity={r.get('last_activity_at') or 'never'}"
         )
+        # Read-only outcome-quality signal for the HUMAN reviewer (Part 2,
+        # Slice 3). Appended only when at least one sample exists; it is purely
+        # informational and MUST NOT influence any transition or consolidation
+        # decision (the rules above forbid usage-as-quality; quality metrics are
+        # likewise advisory only).
+        quality = _render_quality_suffix(r)
+        if quality:
+            line += "  " + quality
+        lines.append(line)
     return "\n".join(lines)
+
+
+def _render_quality_suffix(r: Dict[str, Any]) -> str:
+    """Format the read-only quality metrics for a candidate row, or "".
+
+    Returns an empty string when the skill has no recorded outcome samples, so
+    the candidate list is unchanged for skills without quality data. Never
+    affects any decision — display only.
+    """
+    try:
+        sample_count = int(r.get("sample_count") or 0)
+    except (TypeError, ValueError):
+        sample_count = 0
+    if sample_count <= 0:
+        return ""
+
+    parts: List[str] = [f"samples={sample_count}"]
+    success_rate = r.get("success_rate")
+    if success_rate is not None:
+        parts.append(f"success_rate={float(success_rate):.2f}")
+    avg_latency = r.get("avg_latency_ms")
+    if avg_latency is not None:
+        parts.append(f"avg_latency_ms={float(avg_latency):.0f}")
+    cost = r.get("cost_per_run")
+    if cost is not None:
+        parts.append(f"cost_per_run={float(cost):.4f}")
+    rating = r.get("user_rating")
+    if rating is not None:
+        parts.append(f"user_rating={float(rating):.2f}")
+    return "quality[" + " ".join(parts) + "]"
 
 
 def run_curator_review(

@@ -470,6 +470,22 @@ def _empty_record() -> Dict[str, Any]:
         "state": STATE_ACTIVE,
         "pinned": False,
         "archived_at": None,
+        # ------------------------------------------------------------------
+        # Outcome-quality metrics (Part 2, Slice 3). These are a READ-ONLY
+        # signal for the human reviewer and MUST NEVER drive an auto-prune /
+        # auto-archive decision (the curator review prompt forbids using usage
+        # as a quality signal, curator.py:391-394). All default to None until
+        # the first sample lands, except ``sample_count`` which is 0 so rolling
+        # means stay computable. Loading an old sidecar that predates these
+        # fields backfills them with these defaults (see ``get_record`` /
+        # ``agent_created_report`` ``setdefault`` backfill) — no crash, no
+        # behavior change.
+        # ------------------------------------------------------------------
+        "success_rate": None,
+        "avg_latency_ms": None,
+        "cost_per_run": None,
+        "user_rating": None,
+        "sample_count": 0,
     }
 
 
@@ -616,6 +632,83 @@ def bump_patch(skill_name: str) -> None:
     def _apply(rec: Dict[str, Any]) -> None:
         rec["patch_count"] = int(rec.get("patch_count") or 0) + 1
         rec["last_patched_at"] = _now_iso()
+    _mutate(skill_name, _apply)
+
+
+def _running_mean(
+    prev_mean: Optional[float], prev_count: int, sample: float
+) -> float:
+    """Sample-count-weighted incremental mean.
+
+    ``prev_mean`` is the mean over ``prev_count`` prior samples (None when there
+    were none); folding in ``sample`` yields the mean over ``prev_count + 1``
+    samples. Pure arithmetic, no I/O — the storage layer owns persistence.
+    """
+    if prev_mean is None or prev_count <= 0:
+        return float(sample)
+    return (float(prev_mean) * prev_count + float(sample)) / (prev_count + 1)
+
+
+def record_skill_outcome(
+    skill_name: str,
+    *,
+    turn_score: Optional[float] = None,
+    latency_ms: Optional[float] = None,
+    cost: Optional[float] = None,
+    user_rating: Optional[float] = None,
+) -> None:
+    """Fold one observed run's quality signals into a skill's rolling averages.
+
+    Updates ``success_rate`` (from ``turn_score``), ``avg_latency_ms``,
+    ``cost_per_run``, and ``user_rating`` as sample-count-weighted running means,
+    incrementing ``sample_count`` once per call that carries at least one signal.
+    Every metric is optional: a ``None`` argument leaves that metric unchanged.
+    Atomic-write + flock via ``_mutate`` exactly like ``bump_use``/``bump_view``/
+    ``bump_patch``.
+
+    This is a READ-ONLY health signal for the human reviewer. It is NEVER read by
+    ``apply_automatic_transitions`` or any other auto-prune / auto-archive path,
+    honoring the curator review rule that usage is not a quality signal
+    (curator.py:391-394). Tracks any skill regardless of provenance, mirroring
+    the other counter bumps.
+    """
+    # Nothing to record — avoid bumping sample_count for an empty observation.
+    if turn_score is None and latency_ms is None and cost is None and user_rating is None:
+        return
+
+    def _apply(rec: Dict[str, Any]) -> None:
+        try:
+            prev_count = int(rec.get("sample_count") or 0)
+        except (TypeError, ValueError):
+            prev_count = 0
+
+        def _prev(key: str) -> Optional[float]:
+            raw = rec.get(key)
+            if raw is None:
+                return None
+            try:
+                return float(raw)
+            except (TypeError, ValueError):
+                return None
+
+        if turn_score is not None:
+            rec["success_rate"] = _running_mean(
+                _prev("success_rate"), prev_count, float(turn_score)
+            )
+        if latency_ms is not None:
+            rec["avg_latency_ms"] = _running_mean(
+                _prev("avg_latency_ms"), prev_count, float(latency_ms)
+            )
+        if cost is not None:
+            rec["cost_per_run"] = _running_mean(
+                _prev("cost_per_run"), prev_count, float(cost)
+            )
+        if user_rating is not None:
+            rec["user_rating"] = _running_mean(
+                _prev("user_rating"), prev_count, float(user_rating)
+            )
+        rec["sample_count"] = prev_count + 1
+
     _mutate(skill_name, _apply)
 
 
@@ -898,3 +991,107 @@ def usage_report() -> List[Dict[str, Any]]:
         row["activity_count"] = activity_count(row)
         rows.append(row)
     return sorted(rows, key=lambda r: r["name"])
+
+
+# ---------------------------------------------------------------------------
+# Skill health view — read-only outcome-quality signal (Part 2, Slice 3)
+# ---------------------------------------------------------------------------
+
+# Valid sort orders for ``sort_skill_health``. The workspace consumes the data
+# and may rank by any of these. These are presentation orderings only — they
+# never feed a transition decision.
+_HEALTH_SORTS = ("most_used", "most_successful", "most_expensive", "most_failing")
+
+
+def skill_health_view() -> List[Dict[str, Any]]:
+    """Per-skill health rows: existing counts PLUS outcome-quality metrics.
+
+    Returns one row per skill on disk (every provenance) carrying the usage
+    counters (``use_count``/``view_count``/``patch_count``/``activity_count``)
+    and the additive quality metrics (``success_rate``/``avg_latency_ms``/
+    ``cost_per_run``/``user_rating``/``sample_count``), plus ``provenance`` and
+    ``_persisted``. Metrics are ``None`` until the first sample lands.
+
+    This is a pure read. It is a health signal for the human reviewer and for
+    the workspace to rank/display; it is NEVER consulted by
+    ``apply_automatic_transitions`` or any auto-prune path (curator.py:391-394).
+    Use :func:`sort_skill_health` to rank the returned rows.
+    """
+    rows: List[Dict[str, Any]] = []
+    for r in usage_report():
+        rows.append(
+            {
+                "name": r["name"],
+                "provenance": r.get("provenance"),
+                "state": r.get("state"),
+                "pinned": bool(r.get("pinned")),
+                "use_count": int(r.get("use_count") or 0),
+                "view_count": int(r.get("view_count") or 0),
+                "patch_count": int(r.get("patch_count") or 0),
+                "activity_count": int(r.get("activity_count") or 0),
+                "success_rate": r.get("success_rate"),
+                "avg_latency_ms": r.get("avg_latency_ms"),
+                "cost_per_run": r.get("cost_per_run"),
+                "user_rating": r.get("user_rating"),
+                "sample_count": int(r.get("sample_count") or 0),
+                "last_activity_at": r.get("last_activity_at"),
+                "_persisted": r.get("_persisted", False),
+            }
+        )
+    return rows
+
+
+def sort_skill_health(
+    rows: List[Dict[str, Any]], order: str = "most_used"
+) -> List[Dict[str, Any]]:
+    """Return *rows* (from :func:`skill_health_view`) sorted by *order*.
+
+    Supported orders (``_HEALTH_SORTS``):
+      - ``most_used``        — by ``use_count`` descending.
+      - ``most_successful``  — by ``success_rate`` descending (unsampled last).
+      - ``most_expensive``   — by ``cost_per_run`` descending (unsampled last).
+      - ``most_failing``     — by ``success_rate`` ascending (unsampled last).
+
+    Does not mutate the input. An unknown *order* falls back to ``most_used``.
+    Rows with a ``None`` metric always sort AFTER rows that have a value, in
+    every order, so "no data yet" never masquerades as best or worst. Ties break
+    by ``name`` for a stable, deterministic ordering.
+    """
+    if order not in _HEALTH_SORTS:
+        order = "most_used"
+
+    def _num(value: Any) -> Optional[float]:
+        if value is None:
+            return None
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None
+
+    if order == "most_used":
+        # use_count is always a concrete int; simple descending sort.
+        return sorted(
+            rows,
+            key=lambda r: (-int(r.get("use_count") or 0), str(r.get("name") or "")),
+        )
+
+    if order == "most_expensive":
+        metric, reverse = "cost_per_run", True
+    elif order == "most_failing":
+        metric, reverse = "success_rate", False
+    else:  # most_successful
+        metric, reverse = "success_rate", True
+
+    def _key(r: Dict[str, Any]) -> Tuple[int, float, str]:
+        v = _num(r.get(metric))
+        # Push None metrics to the END regardless of direction: present rows get
+        # has_value=0 (sort first), absent rows has_value=1 (sort last). Within
+        # the present group we negate for descending or keep for ascending.
+        has_value = 0 if v is not None else 1
+        if v is None:
+            sort_v = 0.0
+        else:
+            sort_v = -v if reverse else v
+        return (has_value, sort_v, str(r.get("name") or ""))
+
+    return sorted(rows, key=_key)

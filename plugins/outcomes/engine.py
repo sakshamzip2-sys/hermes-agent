@@ -77,6 +77,9 @@ class OutcomesEngine:
         user_followup: Optional[str] = None,
         judge_fn: Optional[JudgeFn] = None,
         now: Optional[float] = None,
+        agent_id: Optional[str] = None,
+        subagent_id: Optional[str] = None,
+        role: Optional[str] = None,
     ) -> float:
         """Score the just-finished turn, persist it, and reset the session's signals.
 
@@ -85,7 +88,9 @@ class OutcomesEngine:
         the user's correction (which arrives on the *next* message) lands on the right turn.
 
         ``judge_fn`` (optional, injected) returns a judge score in [0,1] or None; it is
-        only consulted when ``judge_enabled`` is True. Returns the fused turn_score.
+        only consulted when ``judge_enabled`` is True. ``agent_id``/``subagent_id``/``role``
+        carry the agent-identity dimension onto the recorded row; all default to None,
+        preserving today's identity-less behavior. Returns the fused turn_score.
         """
         sig = self.signals_for(session_id)
         self._signals.pop(session_id, None)
@@ -93,14 +98,27 @@ class OutcomesEngine:
             session_id, turn, sig,
             trajectory_summary=trajectory_summary, standing_orders=standing_orders,
             user_followup=user_followup, judge_fn=judge_fn, now=now,
+            agent_id=agent_id, subagent_id=subagent_id, role=role,
         )
 
     # -- one-turn-delayed model (the hook path) ----------------------------------
-    def stage_turn(self, session_id: str, turn, *, trajectory_summary: str = "") -> None:  # noqa: ANN001
+    def stage_turn(
+        self,
+        session_id: str,
+        turn,  # noqa: ANN001
+        *,
+        trajectory_summary: str = "",
+        agent_id: Optional[str] = None,
+        subagent_id: Optional[str] = None,
+        role: Optional[str] = None,
+    ) -> None:
         """Snapshot the live turn's signals as 'pending', awaiting next-message feedback.
 
         Resets live signals so the next turn accumulates fresh. If a prior turn is still
         pending (no feedback arrived), it is flushed first so nothing is lost.
+
+        ``agent_id``/``subagent_id``/``role`` are captured with the snapshot so the
+        identity rides through to :meth:`resolve_pending`. All default to None.
         """
         with self._lock:
             if session_id in self._pending:
@@ -108,7 +126,9 @@ class OutcomesEngine:
                 self.flush_pending(session_id)
             sig = self.signals_for(session_id)
             self._signals.pop(session_id, None)
-            self._pending[session_id] = (turn, sig, trajectory_summary)
+            self._pending[session_id] = (
+                turn, sig, trajectory_summary, agent_id, subagent_id, role,
+            )
             self._evict(self._pending, self.max_sessions)
 
     def resolve_pending(
@@ -123,11 +143,12 @@ class OutcomesEngine:
             pend = self._pending.pop(session_id, None)
         if pend is None:
             return None
-        turn, sig, trajectory = pend
+        turn, sig, trajectory, agent_id, subagent_id, role = pend
         return self._score_and_record(
             session_id, turn, sig,
             trajectory_summary=trajectory, standing_orders=standing_orders,
             user_followup=user_followup, judge_fn=judge_fn, now=now,
+            agent_id=agent_id, subagent_id=subagent_id, role=role,
         )
 
     def flush_pending(
@@ -149,6 +170,9 @@ class OutcomesEngine:
         user_followup: Optional[str] = None,
         judge_fn: Optional[JudgeFn] = None,
         now: Optional[float] = None,
+        agent_id: Optional[str] = None,
+        subagent_id: Optional[str] = None,
+        role: Optional[str] = None,
     ) -> float:
         if user_followup:
             sig.apply_user_followup(user_followup)
@@ -177,6 +201,9 @@ class OutcomesEngine:
             judge=judge_score,
             trajectory=trajectory_summary or _auto_trajectory(sig),
             ts=float(now if now is not None else time.time()),
+            agent_id=agent_id,
+            subagent_id=subagent_id,
+            role=role,
         )
         # Reset this session's signals for the next turn.
         self._signals.pop(session_id, None)
