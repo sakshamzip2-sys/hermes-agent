@@ -68,7 +68,7 @@ def test_config_has_coding_model_and_named_personalities():
 # Full roster as profiles (atlas / coder / sage / ledger)
 # --------------------------------------------------------------------------- #
 
-ROSTER = ["atlas", "coder", "sage", "ledger"]
+ROSTER = ["atlas", "coder", "sage", "ledger", "finance"]
 
 
 def test_full_roster_profiles_exist():
