@@ -52,26 +52,34 @@ cd /Users/saksham/Vscode/OpenComputerV2/OC-memory && git branch --show-current &
 - Backups (req #2): ~/.hermes/backups/memory-audit-20260620-111243 (state.db) and
   memory-audit-part2-20260620-161444 (outcomes.db 92 rows). Nothing in live ~/.hermes mutated.
 
-## IN-FLIGHT AT SAVE TIME (salvaged in the wip commit; re-verify on resume)
+## PROVEN since last save
 
-- Safety wave 2 (wf_74fe8dc2): weak-signal injection suite (un-skip the 3 skipped shapes +
-  MemoryGraft/MINJA cases) + dream cross-feed fence (importer.py). Partial edits to
-  memory_reconcile.py, memory_redaction.py, test_memory_injection_suite.py were committed in the
-  wip salvage. ON RESUME: check tests/agent/test_memory_injection_suite.py + run the injection
-  tests; if incomplete, re-run Workflow({scriptPath: "docs/memory-audit/_wf_safety2.js"}).
+- CAPSTONE proof (req #6): `docs/memory-audit/proof/prove_memory.py` -> 10/10 LOCAL mechanisms
+  PASS (FTS5, holographic bi-temporal supersede, redaction, MergeLayer fusion, A-MemGuard,
+  isolation, eval OR recall@5=1.0). Real output saved as evidence E13. Committed.
+- Safety wave 2 WeakSignal (item 5) DONE: test_memory_injection_suite.py 19 passed;
+  test_memory_reconcile.py 24 passed (the 3 previously-skipped injection shapes are UN-SKIPPED).
+
+## IN-FLIGHT (two parallel waves, disjoint files; re-verify on resume)
+
+- wf_87ae81a1 DreamFence (safety wave 2 item 4 resume): scan+redact+review_mode in
+  plugins/dream_orchestrator/importer.py before promote_raw + tests/plugins/test_cross_feed_fence.py.
+  config.py review_mode knob already added (uncommitted). Script docs/memory-audit/_wf_dreamfence.js.
+- wf_f413fbf6 Provenance (web-validation safety item 2): SHA-256 + HMAC self-signature on the
+  holographic store + a MergeLayer trust gate that requires valid provenance for a trusted tier
+  (closes the forgeable-source_tier hole). Files store.py + memory_merge.py + new tests. Script
+  docs/memory-audit/_wf_provenance.js.
 
 ## NEXT ACTION (do this first on "continue")
 
-1. Run the 3 verify commands above. If the proof script and baseline are green, the salvaged
-   safety-wave-2 work is intact; commit it cleanly (selective add) if not already committed.
-2. If safety wave 2 was incomplete: finish it (re-launch _wf_safety2.js), verify, commit.
+1. Run the 3 verify commands above (proof script + baseline) to confirm ground truth.
+2. Re-verify + SELECTIVE-commit the two in-flight waves (DreamFence, Provenance). If either is
+   incomplete, re-run its _wf_*.js script (resumeFromRunId works too).
 3. Then the remaining queue (all local-first, no user decision needed):
-   - Tamper-evident provenance (SHA-256 + agent-self-signature; store.py schema + MergeLayer
-     trust step) -- web-validation safety item 2, made urgent by the forgeable-source_tier finding.
    - Part 2 Slice 4: reflection PROPOSAL pass on the existing idle fork -> writes PROPOSALS.md +
      the HMAC review queue, NEVER auto-applies. (plugins/dreaming + review.py)
    - Part 2 Slice 5: explicit feedback -> user_rating; utility view; entity_type vocab.
-   - Capture the proof-script real output into evidence/EVIDENCE-LOG.md.
+   - Part 1 retention/compaction #9: raw -> summaries -> patterns -> lessons real path.
    - Phase 6: skeptical-staff final review pass; fix top issues; loop until a skeptic approves.
 4. Each wave: self-healing (max 3 attempts), real-output verify, SELECTIVE git add + commit.
 
