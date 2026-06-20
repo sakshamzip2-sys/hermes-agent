@@ -5694,6 +5694,24 @@ class APIServerAdapter(BasePlatformAdapter):
 
         return web.json_response({"run_id": run_id, "status": "stopping"})
 
+    async def _reconcile_runs_loop(self) -> None:
+        """Always-on run-state reconciliation (Feature B truth-under-failure).
+
+        Drains the engine outboxes into the spine and runs the reconciler over
+        live oc_agents sessions on a fixed interval, so a crashed/hung worker
+        flips to failed/stalled even when NObody has the cockpit open (the
+        read-triggered feeder only fires on an SSE/snapshot read). Best-effort and
+        defensive: a transient error never kills the loop. Runs the blocking DB
+        work in a thread so it cannot stall the event loop."""
+        interval = float(os.getenv("HERMES_RECONCILE_INTERVAL", "15"))
+        while True:
+            await asyncio.sleep(interval)
+            try:
+                from plugins.oc_runs import feeder
+                await asyncio.to_thread(feeder.feed)
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("[api_server] reconcile loop tick failed: %s", exc)
+
     async def _sweep_orphaned_runs(self) -> None:
         """Periodically clean up run streams that were never consumed."""
         while True:
@@ -5825,6 +5843,18 @@ class APIServerAdapter(BasePlatformAdapter):
                 pass
             if hasattr(sweep_task, "add_done_callback"):
                 sweep_task.add_done_callback(self._background_tasks.discard)
+
+            # Always-on run-state reconciliation: flip crashed/hung workers to
+            # failed/stalled on the spine even with no cockpit reader. Opt-out via
+            # HERMES_RECONCILE_DISABLED=1 (e.g. tests / minimal deployments).
+            if os.getenv("HERMES_RECONCILE_DISABLED", "").strip() not in ("1", "true", "yes"):
+                reconcile_task = asyncio.create_task(self._reconcile_runs_loop())
+                try:
+                    self._background_tasks.add(reconcile_task)
+                except TypeError:
+                    pass
+                if hasattr(reconcile_task, "add_done_callback"):
+                    reconcile_task.add_done_callback(self._background_tasks.discard)
 
             # Refuse to start without authentication. The API server can
             # dispatch terminal-capable agent work, so every deployment needs
