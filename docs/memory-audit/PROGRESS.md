@@ -8,6 +8,42 @@ Working dir: `/Users/saksham/Vscode/OpenComputerV2/OC-memory` (git worktree, bra
 Venv: `.venv/bin/python`. Standing rule: commit after every wave (a shared-tree clobber already
 ate one uncommitted build; see RECOVERY-NOTE.md). All work isolated in this worktree.
 
+## >>> RESUME HERE (saved before session limit, 2026-06-20) <<<
+
+ALL work is committed and durable. Nothing in flight is lost.
+
+WHERE EVERYTHING LIVES:
+- Worktree (canonical, work here): `/Users/saksham/Vscode/OpenComputerV2/OC-memory`, branch
+  `feat/memory-mission`, base `feat/agents-orchestrator-mission`, Hermes 0.16.0.
+- Venv: `.venv/bin/python` (pytest + pytest-asyncio + aiohttp installed).
+- Backup branch (main-based): `feat/memory-subsystem` in the main dir.
+- The main dir `/Users/saksham/Vscode/OpenComputerV2/OpenComputerV2` is on `main` (left for the
+  other mission). DO NOT work there. Always `cd` to the worktree.
+- Last commit: 57bbd4d6c (wip checkpoint). Tree clean. Baseline 329 passed / 3 skipped.
+
+TWO WORKFLOWS WERE IN FLIGHT when the limit hit (resume by run id, completed agents are cached):
+- Safety wave (A-MemGuard floor-inversion fix in memory_merge.py): run id `wf_9f40b698-039`,
+  script `docs/memory-audit/_wf_safety.js`. On resume: check its task output; if it did not
+  finish, re-run `Workflow({scriptPath: ".../_wf_safety.js", resumeFromRunId: "wf_9f40b698-039"})`.
+  Memory_merge.py may hold partial edits (committed in the wip). Verify with
+  `tests/agent/test_memory_merge.py` and re-run the safety wave if not green.
+- Part 2 observability recon: run id `wf_c21a9ce2-c9a`, script `docs/memory-audit/_wf_part2_recon.js`.
+  On resume: read its output for the genuine-gap map; if unfinished, resume by run id. It produces
+  the Part 2 build plan (reuse Curator/idle-fork/rollback; build only the outcome observability +
+  eval gap).
+
+FIRST ACTIONS ON RESUME:
+1. `cd /Users/saksham/Vscode/OpenComputerV2/OC-memory` and confirm `git branch --show-current`
+   == feat/memory-mission and `git status` clean.
+2. Run the baseline: `.venv/bin/python -m pytest -q -p no:cacheprovider --timeout=180 tests/agent/test_memory_merge.py tests/tools/test_holographic_bitemporal.py tests/agent/test_memory_reconcile.py tests/tools/test_search_facts_readonly.py tests/tools/test_memory_recall_eval.py tests/tools/test_session_search_isolation.py` (expect ~all pass; 3 injection skips are known).
+3. Check the two in-flight workflow outputs; reconcile/re-run as above.
+4. Continue the OPEN queue below (safety items 1-3 first, then promotion, supervisor, remote
+   planes, proof script), plus the Part 2 gap plan once the recon lands.
+
+DECISIONS STILL OWED BY THE USER:
+- O-1: paid Honcho + GBrain bring-up (Docker + OpenRouter credits) for the remote-planes wave.
+- Final integration base: how the memory mission and the agents mission merge into the product.
+
 ## Definition of done (Part 1 memory subsystem)
 
 Every store proven reachable + correct with real evidence; a real retrieval-and-merge layer on
