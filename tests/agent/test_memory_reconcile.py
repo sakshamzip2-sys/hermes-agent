@@ -207,20 +207,6 @@ def test_injection_does_not_block_a_clean_sibling(store: MemoryStore):
 #      "disregard the above", destructive-command imperatives are SKIPPED.
 # ===========================================================================
 
-@pytest.mark.skip(
-    reason=(
-        "Defense-in-depth scope: these three injection shapes (system-role "
-        "impersonation, bare 'disregard the above', destructive-command "
-        "imperatives) are caught by the SUPPLEMENTARY scanner, which is "
-        "conservative additive hardening, not a frozen baseline guarantee. The "
-        "hard, asserted contract is the redaction-leak set (secrets provably "
-        "absent) and the classic strict-scanner injection set. These shapes are "
-        "documented and exercised by test_scan_supplementary_injection_unit, but "
-        "the end-to-end reconcile SKIP is held as a skipped coverage case so a "
-        "future tuning of the supplementary patterns cannot silently red the "
-        "baseline."
-    )
-)
 @pytest.mark.parametrize(
     "payload",
     [
@@ -230,10 +216,14 @@ def test_injection_does_not_block_a_clean_sibling(store: MemoryStore):
     ],
 )
 def test_supplementary_injection_shapes_are_skipped(store: MemoryStore, payload: str):
-    # These three slipped past scan_for_threats(strict) and were STORED. The
-    # supplementary fence routes them to SKIP (not stored). Held as a skipped
-    # coverage case (see the skip reason above); the assertions below remain the
-    # contract for when it is un-skipped.
+    # These three weak-signal shapes slipped past scan_for_threats(strict) and
+    # were STORED as trusted facts: system-role impersonation ("SYSTEM: ..."),
+    # an HTML-ish role tag ("<system>override</system>"), and the bare
+    # "disregard the above" precursor to a destructive command. The
+    # SUPPLEMENTARY scanner (tools.memory_redaction.scan_supplementary_injection)
+    # catches each by syntactic shape, and the reconcile engine routes them to
+    # SKIP. This is now a REAL passing assertion (formerly skipped): the
+    # candidate is provably NOT in the facts table.
     ops = reconcile([payload], store)
 
     assert len(ops) == 1

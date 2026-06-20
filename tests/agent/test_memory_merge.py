@@ -330,11 +330,16 @@ def test_adapters_drive_temp_stores_directly():
 #     still work for TRUSTED sources, which this regression now pins.
 # ===========================================================================
 
-def test_trusted_sole_source_survives_full_budget_flood():
+def test_low_tier_sole_source_survives_full_budget_flood():
     # A high-volume curated plane (>= final_slots hits) versus a SINGLE
     # user_authored hit on the other plane. The lone trusted hit shares the same
     # native rank, so a naive re-sort could still clip it out under the flood.
     # The per-source floor MUST keep the TRUSTED sole-source survivor present.
+    #
+    # Name preserved from the original Wave-2 P1 regression. After the A-MemGuard
+    # correction the floor is trust-gated, so this regression now pins the floor
+    # for a TRUSTED (user_authored) sole-source rather than the old bulk one; the
+    # untrusted-suppression half lives in the test_amemguard_* cases below.
     flood = _FakeAdapter("holographic", [
         _cand(f"h{i}", f"Curated restatement number {i}.", "holographic",
               i + 1, tier="curated")

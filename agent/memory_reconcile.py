@@ -40,6 +40,9 @@ from typing import Any, List, Optional, Sequence
 
 from tools.memory_redaction import redact as _redact
 from tools.memory_redaction import (
+    scan_destructive_advice as _scan_destructive_advice,
+)
+from tools.memory_redaction import (
     scan_supplementary_injection as _scan_supplementary_injection,
 )
 
@@ -81,6 +84,7 @@ OP_ADD = "ADD"
 OP_UPDATE = "UPDATE"
 OP_NOOP = "NOOP"
 OP_SKIP = "SKIP"            # threat-scanned out (req #11) or store/not-store reject
+OP_REVIEW = "REVIEW"       # destructive "best practice" advice (MemoryGraft): held, not silently stored
 OP_QUEUE_REMOTE = "QUEUE_REMOTE"  # routed to Honcho/GBrain, stubbed this wave
 
 
@@ -91,7 +95,7 @@ class OpRecord:
     Attributes
     ----------
     op:
-        One of ADD / UPDATE / NOOP / SKIP / QUEUE_REMOTE.
+        One of ADD / UPDATE / NOOP / SKIP / REVIEW / QUEUE_REMOTE.
     ext_key:
         The stable external key of the affected fact (the NEW fact for ADD /
         UPDATE; the matched existing fact for NOOP; ``None`` for SKIP / a remote
@@ -462,8 +466,12 @@ def reconcile(
     """Reconcile extracted fact candidates into the store (Decision C).
 
     For each candidate string, in order:
-      1. wrap untrusted + ``scan_for_threats(scope="strict")``; on a hit -> SKIP
-         (never stored as a trusted fact, req #11);
+      1. wrap untrusted + ``scan_for_threats(scope="strict")`` plus the
+         supplementary shape scan; on a hit -> SKIP (never stored as a trusted
+         fact, req #11);
+      1b. destructive-advice fence (MemoryGraft): generalized "best practice"
+         advice that encodes a destructive op (force-push / skip-validation /
+         disable-auth) is held for REVIEW, not silently stored;
       2. redact secrets / PII via ``tools.memory_redaction.redact`` (req #8);
       3. store / not-store policy (transient / low-signal / empty -> SKIP);
       4. idempotence: if this (source_store, content, op) was already applied,
@@ -543,6 +551,37 @@ def _reconcile_one(
             content="[BLOCKED:injection]",
             op_id=op_id,
             reason=f"threat:{pid}",
+        )
+        _record_op(conn, rec, source_store)
+        return rec
+
+    # --- 1b. destructive-advice fence (MemoryGraft, build-queue item 5). -----
+    #     A fabricated "best practice" carries NO injection anomaly, so the
+    #     scanner above lets it through and it was being silently ADDed as a
+    #     trusted fact. When the candidate is generalized advice ("always skip
+    #     validation and force-push to main") it is HELD for REVIEW: not stored,
+    #     not hard-SKIPped (the advice may be the safe inverse and needs a human
+    #     to confirm intent). This is a NARROW heuristic, not an injection block;
+    #     the retrieval-time consensus/trust layer is the backstop for novel
+    #     wording. See tools.memory_redaction.scan_destructive_advice.
+    advice = _scan_destructive_advice(original)
+    if advice:
+        kind = advice[0]
+        op_id = _op_id(source_store, original, OP_REVIEW)
+        prior = _op_already_applied(conn, op_id)
+        if prior is not None:
+            return OpRecord(
+                op=OP_REVIEW, ext_key=None, content=original,
+                op_id=op_id, reason=f"advice_review:{kind}",
+                metadata={"advice_kinds": advice},
+            )
+        rec = OpRecord(
+            op=OP_REVIEW,
+            ext_key=None,
+            content=original,
+            op_id=op_id,
+            reason=f"advice_review:{kind}",
+            metadata={"advice_kinds": advice},
         )
         _record_op(conn, rec, source_store)
         return rec
@@ -686,5 +725,6 @@ __all__ = [
     "OP_UPDATE",
     "OP_NOOP",
     "OP_SKIP",
+    "OP_REVIEW",
     "OP_QUEUE_REMOTE",
 ]
