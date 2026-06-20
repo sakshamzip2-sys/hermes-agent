@@ -39,6 +39,9 @@ from dataclasses import dataclass, field
 from typing import Any, List, Optional, Sequence
 
 from tools.memory_redaction import redact as _redact
+from tools.memory_redaction import (
+    scan_supplementary_injection as _scan_supplementary_injection,
+)
 
 # Threat scan (the per-candidate injection fence). Imported defensively so the
 # module stays importable in trimmed environments; the fallback is an inert
@@ -522,7 +525,15 @@ def _reconcile_one(
     original = raw or ""
 
     # --- 1. injection fence (req #11): scan the RAW candidate, strict scope. ---
+    #     Two layers, both routing to SKIP: (1) the repo's strict threat scanner
+    #     (catches the classic "ignore all previous instructions" shape), and
+    #     (2) a conservative SUPPLEMENTARY shape check (defense-in-depth) that
+    #     also flags system-role impersonation tags/prefixes, "disregard the
+    #     above", and destructive-command imperatives, which the strict scanner
+    #     let through and were being STORED as trusted facts.
     threats = _scan_for_threats(original, scope="strict")
+    if not threats:
+        threats = _scan_supplementary_injection(original)
     if threats:
         pid = threats[0]
         op_id = _op_id(source_store, original, OP_SKIP)

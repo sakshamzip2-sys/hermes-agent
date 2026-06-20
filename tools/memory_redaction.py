@@ -33,12 +33,112 @@ from __future__ import annotations
 import re
 from typing import List, Pattern, Tuple
 
-__all__ = ["redact", "luhn_valid", "REDACTION_KINDS"]
+__all__ = [
+    "redact",
+    "luhn_valid",
+    "REDACTION_KINDS",
+    "scan_supplementary_injection",
+    "SUPPLEMENTARY_INJECTION_KINDS",
+]
 
 
 def _ph(kind: str) -> str:
     """The typed placeholder for a redaction ``kind``."""
     return f"[REDACTED:{kind}]"
+
+
+# ---------------------------------------------------------------------------
+# Supplementary injection-shape detection (P2, defense-in-depth).
+#
+# The reconcile fence already runs ``scan_for_threats(scope="strict")``, which
+# catches the classic ``ignore all previous instructions`` shape. But several
+# real injection shapes slipped through and were STORED as trusted facts:
+#   - system-role impersonation tags / prefixes: ``<system>...</system>``,
+#     ``<|system|>``, a line that STARTS ``SYSTEM:`` / ``Assistant:``;
+#   - ``disregard / ignore the above`` (the strict scanner's ``disregard_rules``
+#     pattern requires a trailing ``your/all/any instructions``, so the bare
+#     ``disregard the above`` form is not caught);
+#   - destructive-command imperatives: ``rm -rf /``, ``drop table/database``,
+#     ``mkfs``, ``dd if=``, a fork bomb.
+#
+# This is a SUPPLEMENT to (not a replacement for) ``scan_for_threats``: the
+# reconcile path runs both and SKIPs on a hit from either. The patterns are
+# deliberately CONSERVATIVE (anchored, word-bounded, line-anchored where a
+# generic token would over-match) so curated memory prose ("my system is
+# macOS", "we may drop the feature flag", "the system: prompt the user") does
+# NOT trip them. Pure stdlib ``re``, deterministic, no third-party deps.
+# ---------------------------------------------------------------------------
+
+SUPPLEMENTARY_INJECTION_KINDS = frozenset(
+    {
+        "role_tag_impersonation",
+        "role_prefix_impersonation",
+        "disregard_above",
+        "destructive_rm",
+        "destructive_sql",
+        "destructive_cmd",
+    }
+)
+
+_SUPPLEMENTARY_INJECTION_PATTERNS: List[Tuple[Pattern[str], str]] = [
+    # <system>, </system>, <|system|>, <assistant>, <user> role-impersonation
+    # tags. Both the bare-angle and the pipe-delimited (``<|system|>``) forms.
+    (
+        re.compile(r"<\s*/?\s*\|?\s*(?:system|assistant|user)\s*\|?\s*>", re.IGNORECASE),
+        "role_tag_impersonation",
+    ),
+    # A line that STARTS with a system/assistant role prefix (optionally
+    # bracketed): ``SYSTEM:``, ``[SYSTEM]:``, ``Assistant:``. Anchored to line
+    # start so "the system: ..." or "my system is ..." do NOT match.
+    (
+        re.compile(
+            r"(?m)^\s*[\[\(\{]?\s*(?:system|assistant)\s*[\]\)\}]?\s*:",
+            re.IGNORECASE,
+        ),
+        "role_prefix_impersonation",
+    ),
+    # "disregard / ignore / forget / override (everything | all | the) above".
+    # Complements the strict scanner's instruction-anchored variant.
+    (
+        re.compile(
+            r"\b(?:disregard|ignore|forget|override)\s+"
+            r"(?:everything\s+)?(?:the\s+|all\s+(?:the\s+)?)?above\b",
+            re.IGNORECASE,
+        ),
+        "disregard_above",
+    ),
+    # Destructive ``rm -rf`` / ``rm -fr`` / ``rm -r`` / ``rm -f`` imperatives.
+    (re.compile(r"\brm\s+-[a-z]*[rf][a-z]*\b", re.IGNORECASE), "destructive_rm"),
+    # Destructive SQL DDL/DML imperatives.
+    (
+        re.compile(r"\b(?:drop|truncate)\s+(?:table|database|schema)\b", re.IGNORECASE),
+        "destructive_sql",
+    ),
+    # Other classic destructive one-liners: mkfs, raw dd write, fork bomb.
+    (
+        re.compile(r"\bmkfs\b|\bdd\s+if=|:\s*\(\s*\)\s*\{", re.IGNORECASE),
+        "destructive_cmd",
+    ),
+]
+
+
+def scan_supplementary_injection(text: str) -> List[str]:
+    """Return supplementary injection-shape pattern IDs present in ``text``.
+
+    A conservative defense-in-depth complement to
+    ``tools.threat_patterns.scan_for_threats(scope="strict")``. Returns the
+    matched KIND strings (a subset of :data:`SUPPLEMENTARY_INJECTION_KINDS`), in
+    pattern order, with no duplicates. Empty list = clean (the common case).
+    """
+    if not text:
+        return []
+    hits: List[str] = []
+    for pattern, kind in _SUPPLEMENTARY_INJECTION_PATTERNS:
+        if kind in hits:
+            continue
+        if pattern.search(text):
+            hits.append(kind)
+    return hits
 
 
 # ---------------------------------------------------------------------------
@@ -65,8 +165,16 @@ _JWT_RE: Pattern[str] = re.compile(
 # Connection string with embedded credentials: scheme://user:pass@host. Redact
 # ONLY the password group so the scheme/user/host stay legible. Any URL-ish
 # scheme is covered (postgres, mysql, mongodb+srv, redis, amqp, https, ...).
+#
+# Username is OPTIONAL ([^\s:/@]*) so a password-only string
+# ``redis://:onlypass@host`` still redacts (the leak fix for password-only
+# connection strings). The password group is greedy ``[^\s/]+`` so a password
+# that itself contains ``@`` (``mongodb+srv://u:p@ss@host``) is matched WHOLE:
+# the greedy run backtracks to the LAST ``@`` before the host (``/`` and
+# whitespace bound it), so ``p@ss`` is fully redacted instead of leaking the
+# ``@ss@host`` tail. A bare email has no ``scheme://`` and is never matched.
 _CONNSTR_RE: Pattern[str] = re.compile(
-    r"([a-zA-Z][a-zA-Z0-9+.\-]*://[^\s:/@]+:)([^\s@/]+)(@)"
+    r"([a-zA-Z][a-zA-Z0-9+.\-]*://[^\s:/@]*:)([^\s/]+)(@)"
 )
 
 # AWS Access Key ID.
@@ -96,15 +204,23 @@ _BEARER_RE: Pattern[str] = re.compile(
 
 # password= / password: value shapes. Conservative key set (password, passwd,
 # pwd, secret, token, api_key, apikey, access_token) so a benign word is not
-# eaten. Optional quotes around the value are preserved structure-wise by
-# redacting only the inner value group. The value runs to the next whitespace,
-# quote, comma, or semicolon.
+# eaten. The value is matched in TWO shapes:
+#   - QUOTED: an opening quote, then the value lazily, to the MATCHING closing
+#     quote (``\3``) OR end-of-line (``$``) if the quote is unterminated. This
+#     is the leak fix for ``password="my secret passphrase value"``: a quoted
+#     secret containing spaces is consumed WHOLE instead of leaking everything
+#     after the first space.
+#   - UNQUOTED: a run up to the next whitespace / quote / comma / semicolon.
+# Groups: 1=key, 2=separator, 3=open-quote, 4=quoted-value, 5=close-quote-or-EOL,
+# 6=unquoted-value. Exactly one of group 4 / group 6 is set per match.
 _PASSWORD_KV_RE: Pattern[str] = re.compile(
     r"(?i)\b(password|passwd|pwd|secret|api[_-]?key|apikey|access[_-]?token|auth[_-]?token)"
     r"(\s*[:=]\s*)"
-    r"(['\"]?)"
+    r"(?:"
+    r"(['\"])(.*?)(\3|$)"
+    r"|"
     r"([^\s'\";,]+)"
-    r"(['\"]?)"
+    r")"
 )
 
 
@@ -226,13 +342,16 @@ def redact(text: str) -> Tuple[str, List[str]]:
 
     # 4) password= / password: value shapes: redact only the value, keep key.
     def _pw_sub(match: "re.Match[str]") -> str:
-        value = match.group(4)
+        # Exactly one of the quoted-value group (4) or unquoted-value group (6)
+        # is set per match; the quoted branch is taken when an opening quote
+        # (group 3) was present.
+        value = match.group(4) if match.group(3) is not None else match.group(6)
         # Skip if the value is already a placeholder (idempotence) or empty.
         if not value or value.startswith("[REDACTED:"):
             return match.group(0)
         hits.append("password")
-        # Drop the surrounding quote groups (3/5) so we do not leave dangling
-        # quotes around the typed placeholder.
+        # Drop the surrounding quotes (the whole quoted span is the secret) so we
+        # do not leave dangling quotes around the typed placeholder.
         return f"{match.group(1)}{match.group(2)}{_ph('password')}"
 
     out = _PASSWORD_KV_RE.sub(_pw_sub, out)
