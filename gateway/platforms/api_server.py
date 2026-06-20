@@ -1194,6 +1194,7 @@ class APIServerAdapter(BasePlatformAdapter):
         session_db_override: Optional[Any] = None,
         is_agent_profile: bool = False,
         replace_system_prompt: bool = False,
+        agent_def_slug: Optional[str] = None,
     ) -> Any:
         """
         Create an AIAgent instance using the gateway's runtime config.
@@ -1259,6 +1260,14 @@ class APIServerAdapter(BasePlatformAdapter):
         if is_agent_profile:
             enabled_toolsets = [t for t in enabled_toolsets if t != "gbrain"]
 
+        # Specialized-agent manifest resolution (Feature A): when a turn carries an
+        # oc_agent_id that matches a shipped .hermes/agents/<slug>.md manifest,
+        # apply that agent's declared capability at conversation creation
+        # (set-at-spawn, so per-conversation prompt caching stays intact).
+        if agent_def_slug:
+            enabled_toolsets, model = self._apply_agent_def(
+                agent_def_slug, enabled_toolsets, model, model_override)
+
         max_iterations = int(os.getenv("HERMES_MAX_ITERATIONS", "90"))
 
         # Load fallback provider chain so the API server platform has the
@@ -1293,6 +1302,33 @@ class APIServerAdapter(BasePlatformAdapter):
             ephemeral_system_replaces_base=replace_system_prompt,
         )
         return agent
+
+    @staticmethod
+    def _apply_agent_def(slug, enabled_toolsets, model, model_override):
+        """Resolve a .hermes/agents/<slug>.md manifest into (toolsets, model) at
+        spawn. Pure + testable: the manifest toolsets are INTERSECTED with the
+        platform-available set (a bogus/archived grant can never empty or break
+        the toolset), and the manifest model is honored only when the picker did
+        not already pin one. Never raises: a missing/bad manifest is a no-op."""
+        try:
+            from tools.agent_defs import resolve_agent_overrides
+
+            ov = resolve_agent_overrides(slug)
+            if not ov:
+                return enabled_toolsets, model
+            ts = ov.get("toolsets")
+            if ts:
+                avail = set(enabled_toolsets)
+                resolved = [t for t in ts if t in avail]
+                if resolved:
+                    enabled_toolsets = resolved
+            if ov.get("model") and not (model_override and str(model_override).strip()):
+                model = ov["model"]
+            logger.info("agent-def %s resolved: toolsets=%s model=%s",
+                        slug, enabled_toolsets, model)
+        except Exception as exc:  # noqa: BLE001 - never break a turn on resolve
+            logger.debug("agent-def resolve for %s failed: %s", slug, exc)
+        return enabled_toolsets, model
 
     def _parse_oc_overrides(self, body: Dict[str, Any]) -> tuple:
         """Parse the prompt-bar model-picker fields from a request body.
@@ -1526,6 +1562,35 @@ class APIServerAdapter(BasePlatformAdapter):
         return web.json_response({
             "object": "list",
             "data": skills,
+        })
+
+    async def _handle_skills_usage(self, request: "web.Request") -> "web.Response":
+        """GET /v1/skills/usage — per-skill usage track record.
+
+        Read-only. Returns ``tools.skill_usage.usage_report()`` verbatim: one
+        row per skill on disk with use_count, view_count, last_used_at,
+        last_activity_at, activity_count, state, pinned, and provenance. This is
+        a usage track record (frequency + recency + lifecycle state), NOT a
+        success rate — there is no per-skill outcome counter yet. Powers the
+        workspace skill-health view and the intent-dispatcher's tie-breaking.
+        """
+        auth_err = self._check_auth(request)
+        if auth_err:
+            return auth_err
+
+        try:
+            from tools.skill_usage import usage_report
+            rows = usage_report()
+        except Exception:
+            logger.exception("GET /v1/skills/usage failed")
+            return web.json_response(
+                _openai_error("Failed to read skill usage", err_type="server_error"),
+                status=500,
+            )
+
+        return web.json_response({
+            "object": "list",
+            "data": rows,
         })
 
     async def _handle_toolsets(self, request: "web.Request") -> "web.Response":
@@ -4990,6 +5055,7 @@ class APIServerAdapter(BasePlatformAdapter):
                     session_db_override=_profile_db,
                     is_agent_profile=bool(agent_id_slug),
                     replace_system_prompt=replace_system_prompt,
+                    agent_def_slug=agent_id_slug,
                 )
                 if agent_ref is not None:
                     agent_ref[0] = agent
@@ -5649,6 +5715,7 @@ class APIServerAdapter(BasePlatformAdapter):
             self._app.router.add_get("/v1/oc/model_availability", self._handle_oc_model_availability)
             self._app.router.add_get("/v1/capabilities", self._handle_capabilities)
             self._app.router.add_get("/v1/skills", self._handle_skills)
+            self._app.router.add_get("/v1/skills/usage", self._handle_skills_usage)
             self._app.router.add_get("/v1/toolsets", self._handle_toolsets)
             # Session/client control surface (thin wrappers over SessionDB + _run_agent)
             self._app.router.add_get("/api/sessions", self._handle_list_sessions)
