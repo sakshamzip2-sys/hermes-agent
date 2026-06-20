@@ -16,7 +16,14 @@ The pipeline (PHASE3 section A "the hardened winner"):
       -> weighted RRF (k=60, per-plane weight default 1.0)
       -> source-tier multiplicative prior (user_authored 1.0 / curated 0.85 /
          bulk 0.5 / stale 0.5x) applied as an outer rerank
-      -> per-source floors (a sole-source plane is never fully buried)
+      -> consensus suppression (A-MemGuard, arXiv 2510.02373): an UNTRUSTED
+         sole-source candidate (no corroborating near-dup from any other plane)
+         is demoted by consensus_penalty so the un-corroborated outlier cannot
+         hold a top slot on its own; a corroborated untrusted candidate is not
+         penalized
+      -> trust-gated per-source floors (a sole-source plane is never fully buried
+         ONLY when its best candidate is provenance-trusted; an untrusted-only
+         plane gets NO guaranteed floor slot)
       -> abstention floor (return EMPTY if the top fused score is below threshold)
       -> return (ranked[:8], RecallTrace)
 
@@ -82,6 +89,26 @@ SOURCE_TIER_PRIOR_DEFAULT: Dict[str, float] = {
     "bulk": 0.5,
 }
 STALE_MULTIPLIER_DEFAULT = 0.5
+
+# A-MemGuard safety defaults (arXiv 2510.02373).
+#
+# floor_trusted_sources: ONLY a candidate whose metadata.source_tier is in this
+# set may claim the per-source floor (the guaranteed sole-source slot). A plane
+# whose best hit is untrusted (bulk / cross-fed / external / honcho / gbrain)
+# gets NO guaranteed floor slot, because a poisoned single un-corroborated row
+# is exactly the outlier the floor must NOT protect. Defaults to the two
+# provenance-trusted tiers: user-authored, and agent-self-signed.
+#
+# consensus_penalty: an untrusted candidate that is ALSO sole-source (no
+# corroborating near-duplicate from any OTHER plane) is demoted by multiplying
+# its final score by this factor, so it cannot occupy a top slot on its own. A
+# corroborated untrusted candidate (matched by another plane via dedup) is NOT
+# penalized. Default 0.5 mirrors the bulk source-tier prior.
+FLOOR_TRUSTED_SOURCES_DEFAULT: frozenset[str] = frozenset({
+    "user_authored",
+    "signed_self",
+})
+CONSENSUS_PENALTY_DEFAULT = 0.5
 
 # Abstention: if the top fused (post-prior) score is below this, return EMPTY.
 # Ships dark until gold-set-calibrated (PHASE3 mitigation #6 / config note). The
@@ -372,6 +399,8 @@ def _new_trace(query: str, expanded: str) -> Dict[str, Any]:
         "per_plane_hits": [],          # [{store, id, native_rank, native_score}]
         "fused_order": [],             # [item_key, ...] post-RRF, pre-prior order
         "source_tier_multipliers": {}, # {item_key: multiplier}
+        "consensus_penalized": [],     # [item_key] untrusted + sole-source, demoted
+        "floor_skipped_untrusted": [], # [plane] best hit untrusted -> no floor slot
         "final_slots": [],             # [{store, id, fused_score, final_score}]
         "per_plane_latency_ms": {},    # {store: float}
         "total_latency_ms": 0.0,
@@ -401,6 +430,8 @@ class MergeLayer:
         stale_multiplier: float = STALE_MULTIPLIER_DEFAULT,
         abstention_floor: float = ABSTENTION_FLOOR_DEFAULT,
         per_source_floors: bool = True,
+        floor_trusted_sources: Optional[Sequence[str]] = None,
+        consensus_penalty: float = CONSENSUS_PENALTY_DEFAULT,
         final_slots: int = FINAL_SLOTS_DEFAULT,
         per_store_limit: int = 20,
         enable_hrr_dedup: bool = True,
@@ -416,6 +447,15 @@ class MergeLayer:
         self.stale_multiplier = stale_multiplier
         self.abstention_floor = abstention_floor
         self.per_source_floors = per_source_floors
+        # A-MemGuard trust gate: only these source tiers may claim a floor slot.
+        # An untrusted-only plane gets no guaranteed sole-source slot. Falls back
+        # to the trusted-default set when the caller does not override it.
+        self.floor_trusted_sources = frozenset(
+            floor_trusted_sources
+            if floor_trusted_sources is not None
+            else FLOOR_TRUSTED_SOURCES_DEFAULT
+        )
+        self.consensus_penalty = consensus_penalty
         self.final_slots = final_slots
         self.per_store_limit = per_store_limit
         self.enable_hrr_dedup = enable_hrr_dedup and _HRR_AVAILABLE
@@ -433,6 +473,13 @@ class MergeLayer:
             if _scan_for_threats(cleaned, scope=self.scan_scope):
                 return True
         return False
+
+    # -- provenance trust gate: is this candidate's source_tier floor-trusted?
+    def _is_trusted(self, cand: Optional[Candidate]) -> bool:
+        if cand is None or not cand.metadata:
+            return False
+        tier = str(cand.metadata.get("source_tier", ""))
+        return tier in self.floor_trusted_sources
 
     # -- source-tier multiplicative prior for one candidate
     def _tier_multiplier(self, cand: Candidate) -> float:
@@ -534,8 +581,12 @@ class MergeLayer:
              entirely and record it in ``planes_blocked`` (not whole-block blank);
           4. semantic dedup (text-hash + optional HRR cosine);
           5. weighted RRF (k, per-plane weight);
-          6. source-tier multiplicative prior as an outer rerank;
-          7. per-source floors so a sole-source plane is never fully buried;
+          6. source-tier multiplicative prior as an outer rerank, plus A-MemGuard
+             consensus suppression (an untrusted sole-source candidate is demoted
+             by consensus_penalty; corroborated candidates are not penalized);
+          7. trust-gated per-source floors so a sole-source plane is never fully
+             buried ONLY when its best hit is provenance-trusted (an
+             untrusted-only plane gets no guaranteed floor slot);
           8. abstention floor: EMPTY if the top final score < threshold;
           9. return (ranked[:final_slots], RecallTrace).
 
@@ -600,11 +651,19 @@ class MergeLayer:
             return merged_map.get(k, k)
 
         ranked_lists: List[Tuple[str, List[str]]] = []
+        # Cross-plane corroboration: for each surviving representative, the set of
+        # DISTINCT planes that voted for it (the rep's own plane plus the plane of
+        # every candidate that collapsed into it during dedup). A rep backed by
+        # >= 2 planes is corroborated; one backed by a single plane is sole-source.
+        # This is the consensus signal the A-MemGuard check reads.
+        planes_for_rep: Dict[str, set[str]] = {}
         for plane, hits in kept_by_plane:
             seen: set[str] = set()
             ordered: List[str] = []
             for c in hits:
                 rk = _rep_key(c)
+                if rk in survivor_keys:
+                    planes_for_rep.setdefault(rk, set()).add(plane)
                 if rk in survivor_keys and rk not in seen:
                     seen.add(rk)
                     ordered.append(rk)
@@ -617,12 +676,23 @@ class MergeLayer:
         trace["fused_order"] = [key for key, _ in fused]
 
         # ---- 6: source-tier multiplicative prior (outer rerank) ---------
+        # plus 6.5: A-MemGuard consensus suppression (arXiv 2510.02373). A
+        # candidate that is BOTH untrusted (source_tier not in the floor-trusted
+        # set) AND sole-source (no corroborating near-dup from any OTHER plane) is
+        # the un-corroborated outlier a poisoning attack plants. Demote it by
+        # consensus_penalty so it cannot hold a top slot on its own. A corroborated
+        # untrusted candidate (matched by a second plane) is NOT penalized.
         scored: List[Tuple[str, float, float]] = []  # (key, fused, final)
         for key, fused_score in fused:
             cand = cand_by_key.get(key)
             mult = self._tier_multiplier(cand) if cand is not None else 1.0
+            final_score = fused_score * mult
+            corroborated = len(planes_for_rep.get(key, set())) >= 2
+            if not corroborated and not self._is_trusted(cand):
+                final_score *= self.consensus_penalty
+                trace["consensus_penalized"].append(key)
             trace["source_tier_multipliers"][key] = mult
-            scored.append((key, fused_score, fused_score * mult))
+            scored.append((key, fused_score, final_score))
         scored.sort(key=lambda t: (-t[2], t[0]))
 
         # ---- 7: per-source floors --------------------------------------
@@ -648,12 +718,24 @@ class MergeLayer:
             # are NEVER evicted by the final re-sort. This is the actual floor: a
             # low-tier sole-source plane must not be clipped out by a high-volume
             # higher-tier plane (the previous re-sort silently undid the rescue).
+            #
+            # A-MemGuard trust gate: only TRUSTED best candidates earn the floor.
+            # A plane whose rescued best hit is untrusted (bulk / cross-fed /
+            # external / honcho / gbrain) gets NO guaranteed slot, because a
+            # poisoned single un-corroborated row is exactly the outlier the floor
+            # must SUPPRESS, not protect. Such planes are recorded in the trace.
             pinned: List[str] = []
             for plane, hits in kept_by_plane:
                 if not hits or plane in present_planes:
                     continue
                 rescued = best_key_per_plane.get(plane)
-                if rescued is not None and rescued not in pinned:
+                if rescued is None:
+                    continue
+                if not self._is_trusted(cand_by_key.get(rescued)):
+                    if plane not in trace["floor_skipped_untrusted"]:
+                        trace["floor_skipped_untrusted"].append(plane)
+                    continue
+                if rescued not in pinned:
                     pinned.append(rescued)
             if pinned:
                 pinned = pinned[: self.final_slots]
@@ -708,4 +790,6 @@ __all__ = [
     "STALE_MULTIPLIER_DEFAULT",
     "ABSTENTION_FLOOR_DEFAULT",
     "FINAL_SLOTS_DEFAULT",
+    "FLOOR_TRUSTED_SOURCES_DEFAULT",
+    "CONSENSUS_PENALTY_DEFAULT",
 ]
