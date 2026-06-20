@@ -1,0 +1,6 @@
+name: oc_runs
+version: 1.0.0
+description: "Durable versioned run-event spine for the Parallel Agents view. A single append-only event log plus a pure-fold snapshot cache that oc_agents, oc_teams, oc_flow and delegate emit into via an outbox, giving live status, resumable streaming, durability and truthful-under-failure reporting from one primitive."
+author: "OpenComputer v2"
+kind: standalone
+provides_hooks: []

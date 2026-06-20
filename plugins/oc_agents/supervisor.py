@@ -68,6 +68,17 @@ def dispatch(
     env = dict(os.environ)
     # Pin the worker to the same DB file we just wrote.
     env["HERMES_OC_AGENTS_DB"] = str(db.db_path())
+    # Isolation fix (recon HIGH risk): the per-profile home is a ContextVar that
+    # does NOT touch os.environ, so a detached worker inheriting dict(os.environ)
+    # would write into the DEFAULT profile, not the active one. Pin the active
+    # home explicitly so the worker stays in the same profile memory. extra_env
+    # still wins (applied below), so an explicit caller override is respected.
+    try:
+        from hermes_constants import get_hermes_home
+
+        env["HERMES_HOME"] = str(get_hermes_home())
+    except Exception:
+        pass
     if extra_env:
         env.update(extra_env)
 
