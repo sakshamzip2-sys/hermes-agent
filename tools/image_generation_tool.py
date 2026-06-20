@@ -838,9 +838,28 @@ def image_generate_tool(
             len(formatted_images), generation_time, upscaled_count, model_id,
         )
 
+        image_ref = formatted_images[0]["url"] if formatted_images else None
+        # Remote provider URLs (e.g. fal.media) aren't loadable by the browser
+        # through the agent's auth-proxied image route, which serves
+        # $HERMES_HOME/cache/images by basename (GET /api/files/{id}). Download
+        # the remote result into that cache and return the LOCAL path so the
+        # basename -> /api/files/{id} contract holds (and the ephemeral URL,
+        # which often expires, isn't handed to a downstream consumer). Mirrors
+        # what the openai/codex/xai image plugins already do.
+        if isinstance(image_ref, str) and image_ref.lower().startswith(
+            ("http://", "https://")
+        ):
+            try:
+                from agent.image_gen_provider import save_url_image
+                image_ref = str(save_url_image(image_ref, prefix="fal"))
+            except Exception as exc:
+                logger.warning(
+                    "Could not cache remote image locally (%s); returning URL: %s",
+                    type(exc).__name__, exc,
+                )
         response_data = {
             "success": True,
-            "image": formatted_images[0]["url"] if formatted_images else None,
+            "image": image_ref,
         }
 
         debug_call_data["success"] = True

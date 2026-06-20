@@ -636,6 +636,19 @@ def _humanize_agent_error(raw: str) -> str:
                 "Check the provider login or API key.")
     if "rate limit" in low or "http 429" in low:
         return "The model provider is rate-limiting requests. Try again shortly."
+    # Model not served by this provider/router (e.g. the OC router 404s a GPT id
+    # or Fable 5 with {"message":"model: <id>","type":"server_error"}, or returns
+    # "<model> is not available"). Map it to actionable guidance instead of
+    # leaking a raw "server_error" string.
+    if (
+        "http 404" in low
+        or "model not found" in low
+        or "no such model" in low
+        or "is not available" in low
+        or ("server_error" in low and "model:" in low)
+    ):
+        return ("That model isn't available on this provider right now. "
+                "Pick another model from the picker.")
     msg = " ".join((raw or "The model request failed.").split())
     return msg[:240] + ("…" if len(msg) > 240 else "")
 
