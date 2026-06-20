@@ -6,7 +6,7 @@ description: Automation operator that gets hands-on tasks done on your computer.
 featured: false
 status: archived
 schema_version: 1
-toolsets: [files, search, code, memory]
+toolsets: [file, terminal, web, memory]
 permission_mode: plan
 memory: user
 starters:

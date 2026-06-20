@@ -6,7 +6,7 @@ description: Strategy partner that pressure-tests decisions and plays devil's ad
 featured: true
 status: active
 schema_version: 1
-toolsets: [search, memory]
+toolsets: [web, memory]
 permission_mode: default
 memory: user
 effort: high

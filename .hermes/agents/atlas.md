@@ -6,7 +6,7 @@ description: Research analyst that investigates deeply and synthesizes cited bri
 featured: true
 status: active
 schema_version: 1
-toolsets: [files, search, memory]
+toolsets: [file, web, semantic_search, memory]
 permission_mode: default
 memory: user
 effort: high

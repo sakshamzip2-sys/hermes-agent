@@ -40,7 +40,7 @@ display_name: $slug
 tagline: One line describing this agent (edit me)
 status: active
 schema_version: 1
-toolsets: [files, search, memory]
+toolsets: [file, web, memory]
 permission_mode: default
 memory: user
 effort: medium

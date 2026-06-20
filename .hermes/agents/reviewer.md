@@ -5,7 +5,7 @@ tagline: Independent diff-and-spec reviewer with a structured verdict
 description: Independent reviewer that returns PASS, REVISE, or REJECT on a change.
 status: active
 schema_version: 1
-toolsets: [files, search]
+toolsets: [file]
 model: claude-haiku-4-5
 permission_mode: plan
 memory: project

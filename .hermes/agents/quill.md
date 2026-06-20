@@ -7,7 +7,7 @@ featured: false
 status: merged
 merged_into: atlas
 schema_version: 1
-toolsets: [files, search, memory]
+toolsets: [file, web, memory]
 permission_mode: default
 memory: user
 starters:

@@ -5,7 +5,7 @@ tagline: Coding agent that edits, runs, and verifies its own work
 featured: true
 status: active
 schema_version: 1
-toolsets: [files, patch, code, search, skills, memory]
+toolsets: [file, terminal, code_execution, lsp, memory, skills]
 model: claude-sonnet-4-6
 permission_mode: plan
 memory: user

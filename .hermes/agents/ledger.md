@@ -6,7 +6,7 @@ description: Data and finance analyst that turns raw data into quantified, sourc
 featured: false
 status: active
 schema_version: 1
-toolsets: [code, files, search, memory]
+toolsets: [code_execution, file, web, memory]
 permission_mode: default
 memory: user
 effort: high
