@@ -1,0 +1,284 @@
+# Frozen retrieval-eval gold set for the OpenComputer holographic memory store.
+#
+# This is the BEIR-style ground truth driven by skills/memory-eval/eval.py. Every
+# corpus fact has a stable id; every query lists the corpus ids that are relevant
+# (relevant_fact_ids). The eval inserts every corpus fact into a TEMP MemoryStore
+# via add_fact, then scores Recall@k / Precision@k / Hit-Rate@k / MRR / nDCG@10
+# for each query against its relevant set.
+#
+# FROZEN: do not edit ids or relevance once the regression gate (test_memory_recall_eval.py)
+# is green. Add new cases at the end instead so existing numbers stay comparable.
+#
+# Query types (the five the design contract names):
+#   single_hop      - the answer is one fact, directly stated.
+#   multi_hop       - the answer needs two or more facts that share an entity.
+#   temporal        - the answer depends on time / ordering / "current vs old".
+#   knowledge_update - a later fact supersedes an earlier one; the new fact is relevant.
+#   abstention      - nothing in the corpus answers it; relevant_fact_ids is EMPTY and
+#                     the eval REWARDS returning nothing (an empty result is correct).
+#
+# No secrets, credentials, API keys, or real PII appear anywhere in this file
+# (house policy, requirement #8). The "rotation policy" style facts state a
+# cadence, never a key value.
+
+corpus:
+  # --- core OpenComputer / infra facts (single-hop targets) ---
+  - id: f_lang_rust
+    content: "My favorite programming language for systems work is Rust."
+    category: preferences
+    tags: "language rust systems"
+  - id: f_deploy_hetzner
+    content: "I deploy all my production OpenComputer services on Hetzner Cloud VMs."
+    category: infra
+    tags: "deploy hetzner production vm"
+  - id: f_editor_darkmode
+    content: "I always prefer dark mode in my code editors."
+    category: preferences
+    tags: "editor dark mode theme"
+  - id: f_key_rotation
+    content: "My API key rotation policy is every ninety days."
+    category: security
+    tags: "api key rotation policy security"
+  - id: f_timezone_ist
+    content: "I work in the India Standard Time zone, UTC plus five thirty."
+    category: personal
+    tags: "timezone ist utc india"
+  - id: f_frontend_bun
+    content: "The OpenComputer frontend is built with Next.js and uses bun as the package manager."
+    category: frontend
+    tags: "frontend nextjs bun package manager"
+  - id: f_agent_cli
+    content: "The OpenComputer v2 agent ships a command line interface named hermes."
+    category: agent
+    tags: "cli hermes agent v2"
+  - id: f_v1_cli
+    content: "The OpenComputer v1 agent shipped a command line interface named oc."
+    category: agent
+    tags: "cli oc agent v1"
+  - id: f_gateway_port
+    content: "The local hermes gateway listens on port 8642 during browser testing."
+    category: infra
+    tags: "gateway port 8642 local"
+  - id: f_service_api_port
+    content: "The OpenComputer service-api runs on port 3001 in the local stack."
+    category: infra
+    tags: "service-api port 3001 local"
+  - id: f_frontend_port
+    content: "The OpenComputer frontend dev server runs on port 3000 and serves the app at slash app."
+    category: infra
+    tags: "frontend port 3000 app local"
+
+  # --- entity-shared facts (multi-hop targets) ---
+  - id: f_atlas_persona
+    content: "Atlas is one of the preset OpenComputer agent personas in the explore agents gallery."
+    category: agent
+    tags: "atlas persona agent gallery preset"
+  - id: f_atlas_memory
+    content: "Each OpenComputer agent persona, including Atlas, keeps its own isolated memory scope."
+    category: agent
+    tags: "atlas persona memory isolation scope"
+  - id: f_honcho_provider
+    content: "Honcho is the active external memory provider wired into the OpenComputer v2 agent."
+    category: memory
+    tags: "honcho memory provider external"
+  - id: f_honcho_down
+    content: "The Honcho memory server is currently down and its derive path is unreachable."
+    category: memory
+    tags: "honcho server down outage"
+  - id: f_gbrain_tools
+    content: "GBrain exposes its knowledge graph to the agent as MCP tools rather than as a memory provider."
+    category: memory
+    tags: "gbrain mcp tools knowledge graph"
+  - id: f_holographic_store
+    content: "The holographic memory store is a SQLite plus FTS5 fact store with HRR vectors."
+    category: memory
+    tags: "holographic sqlite fts5 hrr store"
+
+  # --- temporal / ordering facts ---
+  - id: f_standup_time
+    content: "Our team standup is scheduled for nine in the morning India time on weekdays."
+    category: schedule
+    tags: "standup nine morning weekday schedule"
+  - id: f_release_friday
+    content: "We freeze releases on Friday afternoons and never deploy over the weekend."
+    category: schedule
+    tags: "release freeze friday weekend deploy"
+  - id: f_backup_nightly
+    content: "Memory store backups run nightly and are kept under the hermes backups directory."
+    category: ops
+    tags: "backup nightly memory hermes directory"
+
+  # --- knowledge-update pairs (old fact superseded by a newer one) ---
+  - id: f_model_old
+    content: "Earlier my default chat model was set to Opus 4.7."
+    category: config
+    tags: "default model opus old previous"
+  - id: f_model_new
+    content: "I have since switched my default chat model to Opus 4.8."
+    category: config
+    tags: "default model opus new current switched"
+  - id: f_db_old
+    content: "Previously the project notes lived in a single flat markdown file."
+    category: config
+    tags: "notes markdown flat file old previous"
+  - id: f_db_new
+    content: "The project notes are now stored as structured facts in the holographic store."
+    category: config
+    tags: "notes structured facts holographic store new current"
+  - id: f_editor_old
+    content: "I used to use Vim as my primary code editor."
+    category: preferences
+    tags: "editor vim old previous primary"
+  - id: f_editor_new
+    content: "I now use VS Code as my primary code editor."
+    category: preferences
+    tags: "editor vscode new current primary"
+
+  # --- distractors: plausible but never the answer to any query (raise precision difficulty) ---
+  - id: d_weather
+    content: "The weather in Bangalore is pleasant this week."
+    category: misc
+    tags: "weather bangalore week"
+  - id: d_budget
+    content: "Remember to review the quarterly budget report before the board meeting."
+    category: misc
+    tags: "budget quarterly report board"
+  - id: d_conf_talk
+    content: "The conference talk this year was about distributed systems and consensus."
+    category: misc
+    tags: "conference talk distributed systems consensus"
+  - id: d_lunch
+    content: "The cafeteria serves dosa on Wednesdays and the queue is long."
+    category: misc
+    tags: "cafeteria dosa wednesday lunch"
+  - id: d_book
+    content: "I am reading a book about the history of typography this month."
+    category: misc
+    tags: "book typography history reading"
+
+  # --- RULER-style scale-stress: one tiny target needle buried among many near-duplicate
+  #     distractor haystack rows that share surface words but are NOT the answer ---
+  - id: f_needle_secret_room
+    content: "The spare office key is hidden behind the third book on the top shelf of the blue cabinet."
+    category: notes
+    tags: "spare key blue cabinet shelf needle"
+  - id: h_cabinet_1
+    content: "The blue cabinet in the office holds the printer paper and spare toner."
+    category: notes
+    tags: "blue cabinet printer paper toner"
+  - id: h_cabinet_2
+    content: "The top shelf of the storage room has old monitors and cables."
+    category: notes
+    tags: "top shelf storage monitors cables"
+  - id: h_cabinet_3
+    content: "There is a book club shelf near the kitchen with donated paperbacks."
+    category: notes
+    tags: "book shelf kitchen paperback club"
+  - id: h_cabinet_4
+    content: "The office has a blue couch and a green cabinet in the lounge area."
+    category: notes
+    tags: "blue couch green cabinet lounge"
+
+queries:
+  # ---------------- single-hop ----------------
+  - id: q_lang
+    type: single_hop
+    query: "favorite programming language"
+    relevant_fact_ids: [f_lang_rust]
+  - id: q_deploy
+    type: single_hop
+    query: "where do I deploy production services"
+    relevant_fact_ids: [f_deploy_hetzner]
+  - id: q_rotation
+    type: single_hop
+    query: "API key rotation policy"
+    relevant_fact_ids: [f_key_rotation]
+  - id: q_gateway_port
+    type: single_hop
+    query: "what port does the local hermes gateway use"
+    relevant_fact_ids: [f_gateway_port]
+  - id: q_v2_cli
+    type: single_hop
+    query: "name of the v2 agent command line interface"
+    relevant_fact_ids: [f_agent_cli]
+
+  # NL-vs-OR probe cases folded in from memory-stack/recall_probe.py: these use
+  # natural-language filler ("what is my", "which") that FTS5 implicit-AND drops,
+  # so raw NL recall lags OR-expanded recall here. They are the reason the eval
+  # measures both retrieval modes explicitly.
+  - id: q_dog
+    type: single_hop
+    query: "what is my timezone"
+    relevant_fact_ids: [f_timezone_ist]
+  - id: q_darkmode
+    type: single_hop
+    query: "editor dark mode preference"
+    relevant_fact_ids: [f_editor_darkmode]
+  - id: q_frontend_pkg
+    type: single_hop
+    query: "which package manager does the frontend use"
+    relevant_fact_ids: [f_frontend_bun]
+
+  # ---------------- multi-hop (two facts sharing an entity) ----------------
+  - id: q_atlas
+    type: multi_hop
+    query: "Atlas persona memory isolation"
+    relevant_fact_ids: [f_atlas_persona, f_atlas_memory]
+  - id: q_honcho
+    type: multi_hop
+    query: "Honcho provider status"
+    relevant_fact_ids: [f_honcho_provider, f_honcho_down]
+  - id: q_local_ports
+    type: multi_hop
+    query: "local stack service ports"
+    relevant_fact_ids: [f_gateway_port, f_service_api_port, f_frontend_port]
+
+  # ---------------- temporal ----------------
+  - id: q_standup
+    type: temporal
+    query: "when is the team standup"
+    relevant_fact_ids: [f_standup_time]
+  - id: q_release_window
+    type: temporal
+    query: "release freeze schedule weekend"
+    relevant_fact_ids: [f_release_friday]
+
+  # ---------------- knowledge-update (the NEW fact is the relevant one) ----------------
+  # The eval also recognizes "supersedes": the current fact is relevant, the
+  # superseded one is allowed-but-not-required (it must not be penalized as a
+  # false positive). See eval.py allowed_fact_ids handling.
+  - id: q_default_model
+    type: knowledge_update
+    query: "current default chat model"
+    relevant_fact_ids: [f_model_new]
+    allowed_fact_ids: [f_model_old]
+  - id: q_notes_storage
+    type: knowledge_update
+    query: "where the project notes are stored now"
+    relevant_fact_ids: [f_db_new]
+    allowed_fact_ids: [f_db_old]
+  - id: q_editor_now
+    type: knowledge_update
+    query: "primary code editor I use now"
+    relevant_fact_ids: [f_editor_new]
+    allowed_fact_ids: [f_editor_old]
+
+  # ---------------- abstention (empty relevant set; returning nothing is correct) ----------------
+  - id: q_abstain_pet
+    type: abstention
+    query: "what is my pet hamster name"
+    relevant_fact_ids: []
+  - id: q_abstain_guitar
+    type: abstention
+    query: "which guitar brand do I play"
+    relevant_fact_ids: []
+  - id: q_abstain_salary
+    type: abstention
+    query: "what is my monthly salary figure"
+    relevant_fact_ids: []
+
+  # ---------------- RULER-style scale-stress (one needle among look-alike distractors) ----------------
+  - id: q_needle
+    type: single_hop
+    query: "where is the spare office key hidden"
+    relevant_fact_ids: [f_needle_secret_room]

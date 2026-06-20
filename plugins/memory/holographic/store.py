@@ -3,9 +3,12 @@ SQLite-backed fact store with entity resolution and trust scoring.
 Single-user OpenComputer memory store plugin.
 """
 
+import hashlib
 import re
 import sqlite3
 import threading
+import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 
 try:
@@ -95,6 +98,72 @@ def _clamp_trust(value: float) -> float:
     return max(_TRUST_MIN, min(_TRUST_MAX, value))
 
 
+# Default namespace for facts written by the orchestrator's own reconcile path
+# (MEMORY-POLICY: source_store column). The promotion path writes
+# 'orchestrator/shared'; per-agent scopes use 'agent/<slug>'.
+_DEFAULT_SOURCE_STORE = "orchestrator/self"
+
+# UUID namespace for deriving stable, reproducible ext_keys from content. A
+# fixed namespace makes uuid5(content) deterministic across processes and runs,
+# so a legacy-row backfill and a fresh insert of the same content agree.
+_EXT_KEY_NAMESPACE = uuid.UUID("6f9b8c4e-3d2a-4b1f-9a7c-2e5d8f1a0b3c")
+
+
+def _content_ext_key(content: str) -> str:
+    """Derive a stable, reproducible external key (UUID) from fact content.
+
+    Content is the dedup key (UNIQUE column), so a content-derived UUID5 is a
+    stable external reference that survives ``fact_id`` recycling and is
+    reproducible: the same content always maps to the same key. Whitespace is
+    normalized so trivial spacing differences do not fork the key.
+    """
+    normalized = " ".join((content or "").split())
+    return str(uuid.uuid5(_EXT_KEY_NAMESPACE, normalized))
+
+
+def _new_ext_key() -> str:
+    """Generate a fresh random external key (for supersede's new fact)."""
+    return str(uuid.uuid4())
+
+
+def _utc_now_iso() -> str:
+    """Current UTC timestamp in SQLite-friendly ISO form (matches CURRENT_TIMESTAMP shape)."""
+    return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+
+
+# NL -> keyword OR-expansion for FTS5 reads.
+#
+# FTS5 implicitly ANDs the terms in a bare MATCH query, so a natural-language
+# query ("what is my dog's name") forces a miss whenever the stored fact lacks
+# the filler words. OR-joining the surviving content terms recovers the hit.
+# memory-stack/recall_probe.py proved the lift (0.62 NL vs 1.00 OR); this is the
+# same deterministic stopword set, kept additive and read-only.
+_OR_STOPWORDS = frozenset({
+    "what", "is", "my", "do", "i", "the", "a", "an", "in", "of", "to",
+    "where", "which", "are", "you", "does", "how", "me", "on",
+})
+
+# Split on any run of non-word characters (keeps unicode word chars).
+_RE_NONWORD = re.compile(r"\W+", re.UNICODE)
+
+
+def _or_expand_query(query: str) -> str:
+    """Expand a natural-language query into an FTS5 ``term OR term ...`` query.
+
+    Splits on non-word characters, lowercases, drops a small stopword set and
+    single-character tokens (apostrophe fragments like the "s" in "dog's", which
+    are not useful FTS5 terms), and OR-joins the survivors. If nothing survives
+    (e.g. the query is all stopwords or punctuation), the original query is
+    returned unchanged so the caller never ends up with an empty MATCH. Pure
+    function, no I/O.
+    """
+    terms = [
+        t for t in _RE_NONWORD.split(query.lower())
+        if len(t) > 1 and t not in _OR_STOPWORDS
+    ]
+    return " OR ".join(terms) if terms else query.strip()
+
+
 class MemoryStore:
     """SQLite-backed fact store with entity resolution and trust scoring."""
 
@@ -119,6 +188,11 @@ class MemoryStore:
         )
         self._lock = threading.RLock()
         self._conn.row_factory = sqlite3.Row
+        # Lazily-opened, read-only WAL connection used by search_facts_readonly.
+        # WAL permits concurrent readers, so pure recalls do not serialize behind
+        # the single write connection + RLock. Opened on first read-only use.
+        self._read_conn: "sqlite3.Connection | None" = None
+        self._read_lock = threading.Lock()
         self._init_db()
 
     # ------------------------------------------------------------------
@@ -138,6 +212,160 @@ class MemoryStore:
         if "hrr_vector" not in columns:
             self._conn.execute("ALTER TABLE facts ADD COLUMN hrr_vector BLOB")
         self._conn.commit()
+        # Sync the external-content FTS5 index BEFORE any UPDATE on facts. A
+        # legacy DB whose facts table predates facts_fts has rows that were
+        # never indexed; the AFTER UPDATE trigger then issues a 'delete' against
+        # an FTS row that does not exist, which SQLite reports as "database disk
+        # image is malformed". Rebuilding from the external content makes the
+        # index consistent. Cheap + idempotent (a no-op when already in sync),
+        # and purely additive: it never touches the facts table rows.
+        self._sync_fts_index()
+        # Bi-temporal substrate (Decision C). Idempotent + non-destructive.
+        self._migrate_bitemporal()
+
+    def _sync_fts_index(self) -> None:
+        """Reconcile the external-content FTS5 index with the ``facts`` table.
+
+        A legacy DB whose ``facts`` rows predate ``facts_fts`` has content-table
+        rows that were never written into the FTS index. ``COUNT(*)`` on an
+        external-content FTS5 table reflects the content table, so a count
+        compare does NOT reveal the desync. We instead run an FTS integrity
+        check and rebuild only when it reports damage (the legacy case); a
+        healthy in-sync index passes the check and pays nothing but the check.
+        The rebuild reads the external content table; it never modifies
+        ``facts`` rows, so it is data-safe and idempotent.
+        """
+        # Skip entirely on an empty table (nothing to index, integrity-check on
+        # some builds is noisy on empty external-content tables).
+        try:
+            has_rows = (
+                self._conn.execute("SELECT 1 FROM facts LIMIT 1").fetchone()
+                is not None
+            )
+        except sqlite3.DatabaseError:
+            has_rows = True
+        if not has_rows:
+            return
+
+        needs_rebuild = False
+        try:
+            self._conn.execute(
+                "INSERT INTO facts_fts(facts_fts, rank) VALUES('integrity-check', 1)"
+            )
+        except sqlite3.DatabaseError:
+            # integrity-check raises on a corrupt/desynced external-content
+            # index; that is exactly the legacy case we repair.
+            needs_rebuild = True
+
+        if needs_rebuild:
+            self._conn.execute(
+                "INSERT INTO facts_fts(facts_fts) VALUES('rebuild')"
+            )
+            self._conn.commit()
+
+    def _migrate_bitemporal(self) -> None:
+        """Add the bi-temporal / namespace columns to ``facts`` if missing.
+
+        Decision C (PHASE3): makes the holographic fact store bi-temporal so
+        supersession invalidates (sets ``t_invalid``) instead of deleting, and
+        adds a stable external key (``ext_key``) plus a namespace
+        (``source_store``) column for one-plane-per-fact routing and the
+        ``orchestrator/shared`` promotion namespace (Decision B).
+
+        Contract (req #2 / #3 data-safety):
+          - IDEMPOTENT: a column is added only if ``PRAGMA table_info`` shows it
+            missing, so re-running ``_init_db`` on an already-migrated DB is a
+            no-op and never duplicates a column.
+          - NON-DESTRUCTIVE: every existing row is preserved; columns are only
+            ADDed and backfilled, never dropped/deleted. ``ext_key`` is
+            backfilled with a deterministic content hash (reproducible across
+            runs), ``t_valid`` from ``created_at``, ``source_store`` with the
+            default self namespace.
+          - Runs against whatever DB path this store was opened on (tests use
+            temp DBs); it does nothing special for the live store.
+        """
+        columns = {
+            row[1] for row in self._conn.execute("PRAGMA table_info(facts)").fetchall()
+        }
+
+        # SQLite forbids a non-constant DEFAULT (e.g. CURRENT_TIMESTAMP) in
+        # ALTER TABLE ADD COLUMN, so we add the column nullable and backfill
+        # explicitly. Each ALTER is guarded so the migration is idempotent.
+        if "ext_key" not in columns:
+            self._conn.execute("ALTER TABLE facts ADD COLUMN ext_key TEXT")
+        if "t_valid" not in columns:
+            self._conn.execute("ALTER TABLE facts ADD COLUMN t_valid TIMESTAMP")
+        if "t_invalid" not in columns:
+            self._conn.execute("ALTER TABLE facts ADD COLUMN t_invalid TIMESTAMP")
+        if "supersedes_id" not in columns:
+            self._conn.execute("ALTER TABLE facts ADD COLUMN supersedes_id TEXT")
+        if "source_store" not in columns:
+            self._conn.execute("ALTER TABLE facts ADD COLUMN source_store TEXT")
+        self._conn.commit()
+
+        # Backfill any rows missing the new values. This covers both the legacy
+        # rows that predate the columns and is harmless on an already-backfilled
+        # DB (the WHERE ... IS NULL clauses match nothing). t_valid defaults to
+        # created_at; source_store to the self namespace.
+        self._conn.execute(
+            "UPDATE facts SET t_valid = created_at WHERE t_valid IS NULL"
+        )
+        self._conn.execute(
+            "UPDATE facts SET source_store = ? WHERE source_store IS NULL",
+            (_DEFAULT_SOURCE_STORE,),
+        )
+        # ext_key is a deterministic content hash so it is reproducible: the same
+        # content normally backfills to the same key. BUT _content_ext_key
+        # NORMALIZES internal whitespace while the facts.content column is UNIQUE
+        # WITHOUT normalization, so two distinct stored rows that differ only in
+        # whitespace ("the  port is 8000" vs "the port is 8000") derive the SAME
+        # ext_key. The UNIQUE index below would then raise IntegrityError and
+        # brick the store FOREVER (it can never be opened again).
+        #
+        # To GUARANTEE uniqueness while preserving determinism when there is no
+        # collision, we track the keys already used (including any non-null
+        # ext_keys already present on the table) and, on a collision, disambiguate
+        # DETERMINISTICALLY by appending "-<fact_id>" (fact_id is the PK, so it is
+        # unique per row). Backfill per-row only where missing.
+        used_keys: set[str] = {
+            row[0]
+            for row in self._conn.execute(
+                "SELECT ext_key FROM facts WHERE ext_key IS NOT NULL"
+            ).fetchall()
+            if row[0] is not None
+        }
+        rows = self._conn.execute(
+            "SELECT fact_id, content FROM facts WHERE ext_key IS NULL"
+        ).fetchall()
+        for row in rows:
+            candidate = _content_ext_key(row["content"])
+            if candidate in used_keys:
+                # Deterministic, per-row-unique disambiguation. fact_id is the PK
+                # so "<key>-<fact_id>" can never collide with another row's
+                # disambiguated key; the suffixed form is also outside the uuid5
+                # space so it cannot collide with a future content-derived key.
+                candidate = f"{candidate}-{row['fact_id']}"
+            used_keys.add(candidate)
+            self._conn.execute(
+                "UPDATE facts SET ext_key = ? WHERE fact_id = ?",
+                (candidate, row["fact_id"]),
+            )
+        self._conn.commit()
+
+        # Indexes (idempotent via IF NOT EXISTS). UNIQUE on ext_key enforces the
+        # stable-external-key invariant; the others speed namespace and
+        # validity-window filtering on the read path.
+        self._conn.executescript(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_facts_ext_key
+                ON facts(ext_key);
+            CREATE INDEX IF NOT EXISTS idx_facts_source_store
+                ON facts(source_store);
+            CREATE INDEX IF NOT EXISTS idx_facts_t_invalid
+                ON facts(t_invalid);
+            """
+        )
+        self._conn.commit()
 
     # ------------------------------------------------------------------
     # Public API
@@ -148,34 +376,94 @@ class MemoryStore:
         content: str,
         category: str = "general",
         tags: str = "",
+        *,
+        source_store: str | None = None,
+        defer_enrichment: bool = False,
     ) -> int:
         """Insert a fact and return its fact_id.
 
         Deduplicates by content (UNIQUE constraint). On duplicate, returns
         the existing fact_id without modifying the row. Extracts entities from
         the content and links them to the fact.
+
+        Bi-temporal / namespace fields (Decision C): every insert sets a stable
+        ``ext_key`` (content-hash UUID), ``t_valid`` (now), and ``source_store``
+        (the namespace; defaults to ``orchestrator/self``).
+
+        Two-phase write (``defer_enrichment``):
+          - ``False`` (default, back-compat): the full path runs as before plus
+            entity extraction, HRR encode and the O(n) bank rebuild.
+          - ``True``: ONLY the hot INSERT runs (content, category, tags, trust,
+            ext_key, t_valid, source_store). Entity extraction, HRR encode and
+            bank rebuild are SKIPPED, so the write is cheap and the fact is
+            immediately FTS5-recallable via ``search_facts_readonly``. The
+            enrichment is left for a later background pass.
         """
+        ns = source_store if source_store is not None else _DEFAULT_SOURCE_STORE
         with self._lock:
             content = content.strip()
             if not content:
                 raise ValueError("content must not be empty")
 
+            ext_key = _content_ext_key(content)
+            now = _utc_now_iso()
             try:
                 cur = self._conn.execute(
                     """
-                    INSERT INTO facts (content, category, tags, trust_score)
-                    VALUES (?, ?, ?, ?)
+                    INSERT INTO facts
+                        (content, category, tags, trust_score,
+                         ext_key, t_valid, source_store)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
                     """,
-                    (content, category, tags, self.default_trust),
+                    (content, category, tags, self.default_trust,
+                     ext_key, now, ns),
                 )
                 self._conn.commit()
-                fact_id: int = cur.lastrowid  # type: ignore[assignment]
+                # lastrowid is always an int after a successful INSERT (sqlite3
+                # types it Optional; bind to a local so the narrowing sticks).
+                last_id = cur.lastrowid
+                assert last_id is not None
+                fact_id: int = last_id
             except sqlite3.IntegrityError:
-                # Duplicate content — return existing id
-                row = self._conn.execute(
+                # Two UNIQUE constraints can fire here and they need OPPOSITE
+                # handling, so we MUST distinguish them rather than blindly
+                # treating every IntegrityError as a content duplicate:
+                #   - content UNIQUE  -> the fact already exists: dedup, return
+                #     the existing fact_id (the established behavior).
+                #   - ext_key UNIQUE  -> the CONTENT is NEW but its content-derived
+                #     ext_key collides with an existing row that differs only in
+                #     whitespace (_content_ext_key normalizes; content does not).
+                #     The old code's content lookup found nothing here and crashed
+                #     on int(None["fact_id"]). Instead, re-insert with a FRESH
+                #     unique ext_key and CONTINUE the normal path so the new fact
+                #     is stored, enriched and returned. The store never bricks.
+                existing = self._conn.execute(
                     "SELECT fact_id FROM facts WHERE content = ?", (content,)
                 ).fetchone()
-                return int(row["fact_id"])
+                if existing is not None:
+                    # Duplicate content — return existing id.
+                    return int(existing["fact_id"])
+                # ext_key collision on NEW content: retry with a fresh uuid4 key.
+                cur = self._conn.execute(
+                    """
+                    INSERT INTO facts
+                        (content, category, tags, trust_score,
+                         ext_key, t_valid, source_store)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (content, category, tags, self.default_trust,
+                     _new_ext_key(), now, ns),
+                )
+                self._conn.commit()
+                last_id = cur.lastrowid
+                assert last_id is not None
+                fact_id = last_id
+
+            if defer_enrichment:
+                # Hot write only: skip entity extraction + HRR encode + bank
+                # rebuild. The row is already FTS5-indexed by the AFTER INSERT
+                # trigger, so it is immediately recallable.
+                return fact_id
 
             # Entity extraction and linking
             for name in self._extract_entities(content):
@@ -187,6 +475,161 @@ class MemoryStore:
             self._rebuild_bank(category)
 
             return fact_id
+
+    def invalidate(
+        self,
+        ext_key: str,
+        *,
+        t_invalid: "str | float | int | None" = None,
+    ) -> bool:
+        """Mark a fact invalid (bi-temporal). Never deletes.
+
+        SETS ``t_invalid`` (to ``now`` or the given timestamp) on the row whose
+        ``ext_key`` matches AND that is still currently valid (``t_invalid IS
+        NULL``). The row, its content and its history are preserved; it simply
+        disappears from the default ``search_facts_readonly`` view and reappears
+        under an ``as_of`` earlier than ``t_invalid``.
+
+        Returns ``True`` if a row was invalidated, ``False`` if no matching,
+        still-valid row existed (idempotent: re-invalidating is a no-op False).
+        """
+        ts = (
+            _utc_now_iso()
+            if t_invalid is None
+            else self._normalize_as_of(t_invalid)
+        )
+        with self._lock:
+            cur = self._conn.execute(
+                """
+                UPDATE facts
+                SET t_invalid = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE ext_key = ? AND t_invalid IS NULL
+                """,
+                (ts, ext_key),
+            )
+            self._conn.commit()
+            return cur.rowcount > 0
+
+    def supersede(
+        self,
+        old_ext_key: str,
+        new_content: str,
+        category: str = "general",
+        tags: str = "",
+        *,
+        source_store: str | None = None,
+        defer_enrichment: bool = False,
+        t_invalid: "str | float | int | None" = None,
+    ) -> str:
+        """Replace a fact with a newer one (recency-wins), bi-temporally.
+
+        In ONE transaction: adds the new fact (linking ``supersedes_id =
+        old_ext_key``) AND invalidates the old fact (sets ``t_invalid``). The
+        old fact is never deleted, so it stays recallable via ``as_of`` before
+        its invalidation; the new fact is the one returned by default reads.
+
+        Returns the new fact's ``ext_key``. If the new content duplicates an
+        existing fact (content UNIQUE), that existing row is reused/relinked as
+        the superseding fact rather than inserting a duplicate.
+
+        ``defer_enrichment`` mirrors :meth:`add_fact`: when ``True`` the new
+        fact's entity/HRR/bank enrichment is skipped (hot write only); it is
+        still immediately FTS5-recallable.
+        """
+        ns = source_store if source_store is not None else _DEFAULT_SOURCE_STORE
+        new_content = new_content.strip()
+        if not new_content:
+            raise ValueError("new_content must not be empty")
+
+        new_ext_key = _content_ext_key(new_content)
+        now = _utc_now_iso()
+        invalid_ts = (
+            now if t_invalid is None else self._normalize_as_of(t_invalid)
+        )
+
+        with self._lock:
+            # Insert (or locate) the new fact and invalidate the old one as one
+            # atomic unit so a crash cannot leave the old fact invalidated with
+            # no replacement, or the replacement with the old still valid.
+            try:
+                cur = self._conn.execute(
+                    """
+                    INSERT INTO facts
+                        (content, category, tags, trust_score,
+                         ext_key, t_valid, source_store, supersedes_id)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (new_content, category, tags, self.default_trust,
+                     new_ext_key, now, ns, old_ext_key),
+                )
+                last_id = cur.lastrowid
+                assert last_id is not None
+                new_fact_id: int = last_id
+                inserted = True
+            except sqlite3.IntegrityError:
+                # Same two-UNIQUE-constraint ambiguity as add_fact: distinguish
+                # a content duplicate from an ext_key collision on NEW content.
+                row = self._conn.execute(
+                    "SELECT fact_id, ext_key FROM facts WHERE content = ?",
+                    (new_content,),
+                ).fetchone()
+                if row is not None:
+                    # New content already exists. Reuse that row as the
+                    # superseding fact and stamp the supersedes link / namespace.
+                    new_fact_id = int(row["fact_id"])
+                    new_ext_key = str(row["ext_key"])
+                    self._conn.execute(
+                        """
+                        UPDATE facts
+                        SET supersedes_id = ?, source_store = ?,
+                            updated_at = CURRENT_TIMESTAMP
+                        WHERE fact_id = ?
+                        """,
+                        (old_ext_key, ns, new_fact_id),
+                    )
+                    inserted = False
+                else:
+                    # ext_key collision on NEW content (a whitespace-variant of an
+                    # existing fact's content). Re-insert with a FRESH unique
+                    # ext_key so the new fact is stored rather than bricking; it is
+                    # still a genuine insert, so it follows the inserted=True path
+                    # (entity/HRR enrichment below).
+                    new_ext_key = _new_ext_key()
+                    cur = self._conn.execute(
+                        """
+                        INSERT INTO facts
+                            (content, category, tags, trust_score,
+                             ext_key, t_valid, source_store, supersedes_id)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        (new_content, category, tags, self.default_trust,
+                         new_ext_key, now, ns, old_ext_key),
+                    )
+                    last_id = cur.lastrowid
+                    assert last_id is not None
+                    new_fact_id = last_id
+                    inserted = True
+
+            # Invalidate the old fact (only if still valid) in the same txn.
+            self._conn.execute(
+                """
+                UPDATE facts
+                SET t_invalid = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE ext_key = ? AND t_invalid IS NULL
+                """,
+                (invalid_ts, old_ext_key),
+            )
+            self._conn.commit()
+
+            # Enrichment (skipped for hot writes, and only for a fresh insert).
+            if inserted and not defer_enrichment:
+                for name in self._extract_entities(new_content):
+                    entity_id = self._resolve_entity(name)
+                    self._link_fact_entity(new_fact_id, entity_id)
+                self._compute_hrr_vector(new_fact_id, new_content)
+                self._rebuild_bank(category)
+
+            return new_ext_key
 
     def search_facts(
         self,
@@ -238,6 +681,142 @@ class MemoryStore:
                 self._conn.commit()
 
             return results
+
+    def _get_read_conn(self) -> sqlite3.Connection:
+        """Return a cached read-only WAL connection, opening it on first use.
+
+        The connection is opened with ``mode=ro`` (URI) so it can never write,
+        and WAL lets it read concurrently with the single write connection.
+        Falls back to the existing write connection only if the read-only open
+        fails (e.g. a non-URI-capable build), so the read path always works.
+        """
+        conn = self._read_conn
+        if conn is not None:
+            return conn
+        with self._read_lock:
+            if self._read_conn is None:
+                try:
+                    ro = sqlite3.connect(
+                        f"file:{self.db_path}?mode=ro",
+                        uri=True,
+                        check_same_thread=False,
+                        timeout=10.0,
+                    )
+                    ro.row_factory = sqlite3.Row
+                    self._read_conn = ro
+                except sqlite3.OperationalError:
+                    # Read-only open unavailable; reuse the write connection.
+                    # search_facts_readonly stays a pure read regardless because
+                    # it never issues UPDATE/commit.
+                    self._read_conn = self._conn
+            return self._read_conn
+
+    def search_facts_readonly(
+        self,
+        query: str,
+        category: str | None = None,
+        min_trust: float = 0.3,
+        limit: int = 10,
+        or_expand: bool = False,
+        *,
+        as_of: "str | float | int | None" = None,
+        source_store: str | None = None,
+    ) -> list[dict]:
+        """Pure read-only full-text search over facts (no write on read).
+
+        Mirrors ``search_facts``'s FTS5 SELECT exactly, but:
+          - does NOT issue the ``retrieval_count`` UPDATE+commit (pure read);
+          - does NOT take the write RLock or a write transaction;
+          - runs on a SEPARATE read-only WAL connection, so concurrent recalls
+            do not serialize behind the single write connection + RLock.
+
+        ``query`` may already be OR-expanded by the caller; alternatively set
+        ``or_expand=True`` to expand a natural-language query internally via
+        :func:`_or_expand_query` before the MATCH (the 0.62 -> 1.00 recall fix).
+
+        Bi-temporal / namespace filtering (Decision C):
+          - By DEFAULT only currently-valid facts are returned (``t_invalid IS
+            NULL``). An invalidated/superseded fact disappears from the default
+            view without being deleted.
+          - ``as_of`` (ISO timestamp string or epoch seconds) switches to "as
+            of that instant" reasoning: a fact is included when it was already
+            valid (``t_valid <= as_of``) and not yet invalidated at that instant
+            (``t_invalid IS NULL OR t_invalid > as_of``). This makes a
+            superseded fact recallable as of a time before its invalidation.
+          - ``source_store`` restricts to a single namespace
+            (``orchestrator/self``, ``orchestrator/shared``, ``agent/<slug>``);
+            ``None`` (default) is namespace-agnostic for back-compat.
+
+        Back-compat: ``search_facts`` is unchanged and still writes
+        ``retrieval_count``. ``as_of`` / ``source_store`` default to ``None``,
+        preserving the prior call surface.
+        """
+        query = query.strip()
+        if not query:
+            return []
+        if or_expand:
+            query = _or_expand_query(query)
+
+        params: list = [query, min_trust]
+        category_clause = ""
+        if category is not None:
+            category_clause = "AND f.category = ?"
+            params.append(category)
+
+        # Bi-temporal validity window. Default: only currently-valid facts.
+        if as_of is None:
+            validity_clause = "AND f.t_invalid IS NULL"
+        else:
+            as_of_ts = self._normalize_as_of(as_of)
+            validity_clause = (
+                "AND f.t_valid <= ? "
+                "AND (f.t_invalid IS NULL OR f.t_invalid > ?)"
+            )
+            params.append(as_of_ts)
+            params.append(as_of_ts)
+
+        source_clause = ""
+        if source_store is not None:
+            source_clause = "AND f.source_store = ?"
+            params.append(source_store)
+
+        params.append(limit)
+
+        sql = f"""
+            SELECT f.fact_id, f.content, f.category, f.tags,
+                   f.trust_score, f.retrieval_count, f.helpful_count,
+                   f.created_at, f.updated_at,
+                   f.ext_key, f.t_valid, f.t_invalid,
+                   f.supersedes_id, f.source_store
+            FROM facts f
+            JOIN facts_fts fts ON fts.rowid = f.fact_id
+            WHERE facts_fts MATCH ?
+              AND f.trust_score >= ?
+              {category_clause}
+              {validity_clause}
+              {source_clause}
+            ORDER BY fts.rank, f.trust_score DESC
+            LIMIT ?
+        """
+
+        conn = self._get_read_conn()
+        rows = conn.execute(sql, params).fetchall()
+        return [self._row_to_dict(r) for r in rows]
+
+    @staticmethod
+    def _normalize_as_of(as_of: "str | float | int") -> str:
+        """Normalize an ``as_of`` value to the stored TIMESTAMP text shape.
+
+        Accepts an ISO/SQLite timestamp string (passed through) or an epoch
+        seconds number (converted to UTC ``YYYY-MM-DD HH:MM:SS``). Strings are
+        trusted as-is so callers can pass the exact stored format; this keeps
+        the comparison a plain lexicographic TIMESTAMP compare in SQLite.
+        """
+        if isinstance(as_of, (int, float)):
+            return datetime.fromtimestamp(as_of, tz=timezone.utc).strftime(
+                "%Y-%m-%d %H:%M:%S"
+            )
+        return str(as_of)
 
     def update_fact(
         self,
@@ -458,7 +1037,9 @@ class MemoryStore:
             "INSERT INTO entities (name) VALUES (?)", (name,)
         )
         self._conn.commit()
-        return int(cur.lastrowid)  # type: ignore[return-value]
+        last_id = cur.lastrowid
+        assert last_id is not None
+        return int(last_id)
 
     def _link_fact_entity(self, fact_id: int, entity_id: int) -> None:
         """Insert into fact_entities, silently ignore if the link already exists."""
@@ -568,7 +1149,13 @@ class MemoryStore:
         return dict(row)
 
     def close(self) -> None:
-        """Close the database connection."""
+        """Close the database connection(s)."""
+        # Close the read-only connection first, unless it aliases the write
+        # connection (the fallback case), to avoid a double close.
+        read_conn = self._read_conn
+        if read_conn is not None and read_conn is not self._conn:
+            read_conn.close()
+        self._read_conn = None
         self._conn.close()
 
     def __enter__(self) -> "MemoryStore":
