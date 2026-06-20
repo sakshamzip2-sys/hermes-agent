@@ -110,23 +110,38 @@ def classify(
         return Verdict(run.run_id, "none")
 
     # 1. Dead pid is failure, highest precedence (beats timeout, beats heartbeat).
-    if run.pid and not pid_alive(run.pid, run.pid_start_time):
-        return Verdict(
-            run.run_id, "failed", "process_died",
-            events.build_event(run.run_id, events.RUN_FAILED, source=events.SOURCE_RECONCILER,
-                               payload={"reason": "process_died"}, dedupe_key="reconciler:failed"),
-        )
+    #    The probe is injected and may raise (e.g. psutil throwing). A probe error
+    #    must NOT crash classification or fabricate a terminal: fail safe by
+    #    treating an errored probe as "cannot confirm dead" (alive). One bad probe
+    #    cannot take down the whole reconcile batch.
+    if run.pid:
+        try:
+            alive = pid_alive(run.pid, run.pid_start_time)
+        except Exception:
+            alive = True
+        if not alive:
+            return Verdict(
+                run.run_id, "failed", "process_died",
+                events.build_event(run.run_id, events.RUN_FAILED, source=events.SOURCE_RECONCILER,
+                                   payload={"reason": "process_died"}, dedupe_key="reconciler:terminal"),
+            )
 
     # 2. Absolute wall-clock timeout.
     if run.started_at is not None and (now - run.started_at) > cfg.absolute_timeout:
         return Verdict(
             run.run_id, "failed", "timeout",
             events.build_event(run.run_id, events.RUN_FAILED, source=events.SOURCE_RECONCILER,
-                               payload={"reason": "timeout"}, dedupe_key="reconciler:failed"),
+                               payload={"reason": "timeout"}, dedupe_key="reconciler:terminal"),
         )
 
-    # 3. Startup grace: too young to judge heartbeats yet.
+    # 3. Startup grace: too young to judge heartbeats yet. If started_at is
+    #    unknown we cannot establish age at all, so for a confirmed-alive run we
+    #    must NOT fabricate a stall from missing heartbeats (a brand-new process
+    #    that has not beaten yet). Only an explicit heartbeat that has itself gone
+    #    stale can stall an age-unknown run.
     if run.started_at is not None and (now - run.started_at) < cfg.liveness_window:
+        return Verdict(run.run_id, "none")
+    if run.started_at is None and run.last_liveness_at is None and run.last_progress_at is None:
         return Verdict(run.run_id, "none")
 
     # 4. Heartbeat staleness.
@@ -137,7 +152,7 @@ def classify(
         return Verdict(
             run.run_id, "stalled", "no_heartbeat",
             events.build_event(run.run_id, events.RUN_STALLED, source=events.SOURCE_RECONCILER,
-                               payload={"reason": "no_heartbeat"}, dedupe_key="reconciler:stalled"),
+                               payload={"reason": "no_heartbeat"}, dedupe_key="reconciler:terminal"),
         )
 
     if progress_stale:

@@ -66,10 +66,14 @@ def decompose(
         for entry in raw:
             if len(out) >= cap:
                 break
-            profile = (entry or {}).get("profile")
+            # Tolerate a misbehaving llm: a non-dict entry (a bare string, int,
+            # tuple, None) is garbage, not a subtask. Drop it rather than crash.
+            if not isinstance(entry, dict):
+                continue
+            profile = entry.get("profile")
             if profile not in allowed:
                 continue
-            text = (entry or {}).get("subtask") or _fallback_subtask(goal, profile).subtask
+            text = entry.get("subtask") or _fallback_subtask(goal, profile).subtask
             out.append(Subtask(profile=profile, subtask=text,
                                rationale="model-proposed subtask (validated)"))
         return out
