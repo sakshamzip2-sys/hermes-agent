@@ -62,6 +62,15 @@ class OutcomesStore:
                 conn.execute("ALTER TABLE turn_outcomes ADD COLUMN subagent_id TEXT")
             if "role" not in cols:
                 conn.execute("ALTER TABLE turn_outcomes ADD COLUMN role TEXT")
+            # Explicit user feedback signal in [0, 1] (Part 2, Slice 5). Additive
+            # nullable column; NULL = no explicit feedback yet (the prior behavior).
+            # Folded as a sample-count-weighted running mean by ``record_user_rating``.
+            if "user_rating" not in cols:
+                conn.execute("ALTER TABLE turn_outcomes ADD COLUMN user_rating REAL")
+            if "rating_count" not in cols:
+                conn.execute(
+                    "ALTER TABLE turn_outcomes ADD COLUMN rating_count INTEGER NOT NULL DEFAULT 0"
+                )
             conn.commit()
         finally:
             conn.close()
@@ -208,7 +217,7 @@ class OutcomesStore:
         try:
             cur = conn.execute(
                 "SELECT id, session_id, turn, turn_score, composite, judge, trajectory, "
-                "agent_id, subagent_id, role, ts "
+                "agent_id, subagent_id, role, user_rating, ts "
                 "FROM turn_outcomes WHERE turn_score < ? "
                 "ORDER BY id DESC LIMIT ?",
                 (float(score_below), int(limit)),
@@ -245,6 +254,47 @@ class OutcomesStore:
                 (float(judge), float(turn_score), int(row_id)),
             )
             conn.commit()
+        finally:
+            conn.close()
+
+    def record_user_rating(self, *, session_id: str, turn, signal: float) -> bool:  # noqa: ANN001
+        """Fold one explicit user-feedback ``signal`` in [0, 1] into a turn's running mean.
+
+        Updates the matching ``turn_outcomes`` row's ``user_rating`` (a sample-count-
+        weighted running mean over ``rating_count`` prior signals) without touching
+        ``turn_score`` or any scorer-owned column. Additive and PRAGMA-guarded: if the
+        ``user_rating`` column is absent (an old DB this build never migrated), this is a
+        safe no-op. Returns True when a row was updated, False otherwise (no such turn, or
+        column missing). Never deletes; never trains a model.
+        """
+        conn = self._connect()
+        try:
+            cols = {r[1] for r in conn.execute("PRAGMA table_info(turn_outcomes)")}
+            if "user_rating" not in cols or "rating_count" not in cols:
+                return False
+            cur = conn.execute(
+                "SELECT id, user_rating, rating_count FROM turn_outcomes "
+                "WHERE session_id = ? AND turn = ? ORDER BY id DESC LIMIT 1",
+                (str(session_id), str(turn)),
+            )
+            row = cur.fetchone()
+            if row is None:
+                return False
+            row_id, prev_mean, prev_count = row[0], row[1], row[2]
+            try:
+                prev_count = int(prev_count or 0)
+            except (TypeError, ValueError):
+                prev_count = 0
+            if prev_mean is None or prev_count <= 0:
+                new_mean = float(signal)
+            else:
+                new_mean = (float(prev_mean) * prev_count + float(signal)) / (prev_count + 1)
+            conn.execute(
+                "UPDATE turn_outcomes SET user_rating = ?, rating_count = ? WHERE id = ?",
+                (new_mean, prev_count + 1, int(row_id)),
+            )
+            conn.commit()
+            return True
         finally:
             conn.close()
 

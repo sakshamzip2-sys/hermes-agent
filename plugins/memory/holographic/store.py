@@ -103,6 +103,125 @@ def _clamp_trust(value: float) -> float:
     return max(_TRUST_MIN, min(_TRUST_MAX, value))
 
 
+# ---------------------------------------------------------------------------
+# Controlled entity-type vocabulary (Part 2, extension item 4 / 3b micro-gap)
+# ---------------------------------------------------------------------------
+#
+# The ``entities`` table already carries an ``entity_type`` column that DEFAULTS
+# to the free-text sentinel ``'unknown'`` (see _SCHEMA). The only genuine gap for
+# the "light user knowledge-graph" was that this column is unenforced, so a
+# company / client / project / person could never be typed reliably. This is a
+# LIGHT controlled vocabulary on the EXISTING column, not a new graph DB:
+#   - typing an entity is OPTIONAL and ADDITIVE — untyped legacy entities keep
+#     ``'unknown'`` and every existing code path is unchanged;
+#   - when a type IS given it is validated against this vocabulary and coerced to
+#     ``'other'`` when it is not recognized (never rejected with a crash);
+#   - ``'unknown'`` (the table default, "never classified") and ``'other'``
+#     ("classified, but none of the specific types fit") are BOTH valid and are
+#     deliberately distinct so a never-typed entity is distinguishable from one a
+#     classifier looked at and could not place.
+#
+# Keep this set TINY and intentional. The user asked for primitive reinforcement,
+# not an ontology — do not grow it into a taxonomy and do not train a model.
+ENTITY_TYPES: frozenset[str] = frozenset(
+    {
+        "person",
+        "company",
+        "client",
+        "project",
+        "topic",
+        "preference",
+        "place",
+        "other",
+        "unknown",
+    }
+)
+
+# The fallback when a classifier ran but no specific type fit. Distinct from the
+# table default ``'unknown'`` (never classified).
+ENTITY_TYPE_OTHER = "other"
+
+# The table default — an entity that has never been classified.
+ENTITY_TYPE_UNKNOWN = "unknown"
+
+
+def normalize_entity_type(entity_type: "str | None") -> str:
+    """Validate/coerce a free-text type against :data:`ENTITY_TYPES`.
+
+    Returns a member of :data:`ENTITY_TYPES`:
+      - ``None`` / empty / whitespace -> ``'unknown'`` (treated as "not given");
+      - a recognized type (case-insensitive, surrounding whitespace stripped)
+        -> that canonical lowercase type;
+      - anything else -> ``'other'`` (coerced, never rejected with an error).
+
+    Pure function, no I/O. This is the single choke-point every typed write goes
+    through, so an invalid type can never reach the column.
+    """
+    if entity_type is None:
+        return ENTITY_TYPE_UNKNOWN
+    candidate = str(entity_type).strip().lower()
+    if not candidate:
+        return ENTITY_TYPE_UNKNOWN
+    if candidate in ENTITY_TYPES:
+        return candidate
+    return ENTITY_TYPE_OTHER
+
+
+# Heuristic classification cues. Deliberately tiny and conservative: a cue only
+# fires on a clear, unambiguous surface signal; everything else stays unknown so
+# the caller can decide. Order matters — the first matching rule wins. No model,
+# no network, no I/O; pure string inspection over the entity name (+ optional
+# context text).
+_CLASSIFY_SUFFIXES: tuple[tuple[str, str], ...] = (
+    # company legal-suffix cues
+    (" inc", "company"),
+    (" inc.", "company"),
+    (" llc", "company"),
+    (" ltd", "company"),
+    (" ltd.", "company"),
+    (" corp", "company"),
+    (" corp.", "company"),
+    (" gmbh", "company"),
+    (" co.", "company"),
+    (" plc", "company"),
+)
+_CLASSIFY_KEYWORDS: tuple[tuple[str, str], ...] = (
+    ("client", "client"),
+    ("customer", "client"),
+    ("project", "project"),
+)
+
+
+def classify_entity_type(name: str, context: "str | None" = None) -> str:
+    """Heuristically map an entity to a controlled type, or ``'unknown'``.
+
+    A deliberately conservative, no-model, no-I/O heuristic over the entity
+    ``name`` (and optional ``context`` text). It only fires on a clear surface
+    cue:
+      - a company legal suffix in the name (Inc, LLC, Ltd, Corp, GmbH, ...)
+        -> ``'company'``;
+      - a ``client``/``customer`` or ``project`` keyword in the name or context
+        -> ``'client'`` / ``'project'``.
+    When no cue matches it returns ``'unknown'`` (NOT ``'other'``) so the caller
+    can decide whether to leave it untyped or pass an explicit type. The result
+    is always a member of :data:`ENTITY_TYPES`.
+
+    This is the optional "classify hook": :meth:`MemoryStore.set_entity_type`
+    can use it when no explicit type is given, but it never overrides an explicit
+    type and never reaches the network.
+    """
+    hay_name = f" {(name or '').strip().lower()} "
+    for suffix, etype in _CLASSIFY_SUFFIXES:
+        # Match a legal suffix as a trailing token of the name.
+        if hay_name.rstrip().endswith(suffix.rstrip()):
+            return etype
+    hay = f"{hay_name}{(context or '').strip().lower()}"
+    for keyword, etype in _CLASSIFY_KEYWORDS:
+        if keyword in hay:
+            return etype
+    return ENTITY_TYPE_UNKNOWN
+
+
 # Default namespace for facts written by the orchestrator's own reconcile path
 # (MEMORY-POLICY: source_store column). The promotion path writes
 # 'orchestrator/shared'; per-agent scopes use 'agent/<slug>'.
@@ -1304,6 +1423,99 @@ class MemoryStore:
             (fact_id, entity_id),
         )
         self._conn.commit()
+
+    # ------------------------------------------------------------------
+    # Typed entities — light controlled-vocabulary layer on the EXISTING
+    # entities.entity_type column (Part 2, extension item 4 / 3b micro-gap).
+    # Additive and reversible: untyped entities keep 'unknown', the free-text
+    # column shape is unchanged, and nothing here is on the hot recall path.
+    # ------------------------------------------------------------------
+
+    def set_entity_type(
+        self,
+        name: str,
+        entity_type: "str | None" = None,
+        *,
+        classify: bool = False,
+        context: "str | None" = None,
+    ) -> str:
+        """Assign a controlled ``entity_type`` to an entity (creating it if new).
+
+        Resolves ``name`` to an entity (reusing :meth:`_resolve_entity`, so an
+        existing entity or alias is matched and a new one is created when
+        absent), then stamps a type drawn from :data:`ENTITY_TYPES`:
+
+          - an explicit ``entity_type`` is validated/coerced via
+            :func:`normalize_entity_type` (an unrecognized type becomes
+            ``'other'``, never an error);
+          - if no explicit type is given and ``classify=True``, the heuristic
+            :func:`classify_entity_type` runs over the name (+ ``context``);
+          - otherwise the type defaults to ``'unknown'`` (the table default).
+
+        Returns the canonical type that was written. Purely additive: it only
+        UPDATEs the ``entity_type`` column, never the entity's facts, links, or
+        vectors, so legacy untyped behavior elsewhere is unaffected.
+        """
+        if entity_type is not None:
+            resolved_type = normalize_entity_type(entity_type)
+        elif classify:
+            resolved_type = classify_entity_type(name, context)
+        else:
+            resolved_type = ENTITY_TYPE_UNKNOWN
+        with self._lock:
+            entity_id = self._resolve_entity(name)
+            self._conn.execute(
+                "UPDATE entities SET entity_type = ? WHERE entity_id = ?",
+                (resolved_type, entity_id),
+            )
+            self._conn.commit()
+        return resolved_type
+
+    def get_entity_type(self, name: str) -> "str | None":
+        """Return the stored ``entity_type`` for an entity, or ``None`` if absent.
+
+        Matches by exact name OR alias (case-insensitive), mirroring
+        :meth:`_resolve_entity`'s lookup, but NEVER creates a row — a pure read.
+        Returns the controlled type (``'unknown'`` for a never-typed entity that
+        exists) or ``None`` when no such entity is stored.
+        """
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT entity_type FROM entities WHERE name LIKE ?", (name,)
+            ).fetchone()
+            if row is None:
+                row = self._conn.execute(
+                    """
+                    SELECT entity_type FROM entities
+                    WHERE ',' || aliases || ',' LIKE '%,' || ? || ',%'
+                    """,
+                    (name,),
+                ).fetchone()
+        if row is None:
+            return None
+        return row["entity_type"]
+
+    def entities_by_type(self, entity_type: str, limit: int = 100) -> list[dict]:
+        """List entities of a given controlled ``entity_type`` (pure read).
+
+        ``entity_type`` is validated/coerced via :func:`normalize_entity_type`
+        first, so a query for an unknown type folds into ``'other'`` exactly as
+        a write would (a symmetric round-trip). Returns ``{entity_id, name,
+        entity_type, aliases}`` dicts ordered by name. Never mutates.
+        """
+        wanted = normalize_entity_type(entity_type)
+        with self._lock:
+            rows = self._conn.execute(
+                """
+                SELECT entity_id, name, entity_type, aliases
+                FROM entities
+                WHERE entity_type = ?
+                ORDER BY name
+                LIMIT ?
+                """,
+                (wanted, int(limit)),
+            ).fetchall()
+        return [dict(r) for r in rows]
 
     def _compute_hrr_vector(self, fact_id: int, content: str) -> None:
         """Compute and store HRR vector for a fact. No-op if numpy unavailable."""
