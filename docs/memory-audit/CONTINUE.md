@@ -52,36 +52,39 @@ cd /Users/saksham/Vscode/OpenComputerV2/OC-memory && git branch --show-current &
 - Backups (req #2): ~/.hermes/backups/memory-audit-20260620-111243 (state.db) and
   memory-audit-part2-20260620-161444 (outcomes.db 92 rows). Nothing in live ~/.hermes mutated.
 
-## PROVEN since last save
+## PROVEN since last save (all committed; full integrated baseline 147 passed)
 
 - CAPSTONE proof (req #6): `docs/memory-audit/proof/prove_memory.py` -> 10/10 LOCAL mechanisms
-  PASS (FTS5, holographic bi-temporal supersede, redaction, MergeLayer fusion, A-MemGuard,
-  isolation, eval OR recall@5=1.0). Real output saved as evidence E13. Committed.
-- Safety wave 2 WeakSignal (item 5) DONE: test_memory_injection_suite.py 19 passed;
-  test_memory_reconcile.py 24 passed (the 3 previously-skipped injection shapes are UN-SKIPPED).
+  PASS. Real output saved as evidence E13.
+- Safety wave 2 COMPLETE: WeakSignal (injection suite 19 passed; 3 shapes un-skipped) +
+  DreamFence (cross-feed fence: sanitize+strict-scan+redact, fail-closed, review_mode queues to
+  HMAC review not MEMORY.md; 6 fence + 130 dream tests). Committed 01643948d.
+- Tamper-evident provenance (web-validation safety item 2): SHA-256 content_hash + HMAC signature
+  on the holographic store; MergeTrust gate requires verifiable provenance for a trusted tier ->
+  forged cross-fed source_tier=user_authored is downgraded to untrusted + consensus-suppressed.
+  Committed 3ba68c591.
 
-## IN-FLIGHT (two parallel waves, disjoint files; re-verify on resume)
+## HARD PRECONDITION for the remote-planes wave (O-1) -- do NOT wire remote cross-feed write until fixed
 
-- wf_87ae81a1 DreamFence (safety wave 2 item 4 resume): scan+redact+review_mode in
-  plugins/dream_orchestrator/importer.py before promote_raw + tests/plugins/test_cross_feed_fence.py.
-  config.py review_mode knob already added (uncommitted). Script docs/memory-audit/_wf_dreamfence.js.
-- wf_f413fbf6 Provenance (web-validation safety item 2): SHA-256 + HMAC self-signature on the
-  holographic store + a MergeLayer trust gate that requires valid provenance for a trusted tier
-  (closes the forgeable-source_tier hole). Files store.py + memory_merge.py + new tests. Script
-  docs/memory-audit/_wf_provenance.js.
+- LATENT write-side hole (found by the provenance review, NOT live today): _maybe_sign in
+  plugins/memory/holographic/store.py trusts the caller-supplied source_store, so a future
+  cross-feed WRITE could self-sign by passing source_store="orchestrator/self" and become
+  "trusted". Not exploitable now (remote write is a QUEUE_REMOTE stub; reconcile writes only
+  local content). FIX before remote write is wired: signing eligibility must require an explicit
+  self-generated signal from the caller (e.g. add_fact(sign_as_self=True) set ONLY by the
+  orchestrator's own reconcile path), not be inferable from the source_store string; the remote
+  ingest path must route to a remote namespace (honcho/*, gbrain/*) and never self-sign.
 
 ## NEXT ACTION (do this first on "continue")
 
 1. Run the 3 verify commands above (proof script + baseline) to confirm ground truth.
-2. Re-verify + SELECTIVE-commit the two in-flight waves (DreamFence, Provenance). If either is
-   incomplete, re-run its _wf_*.js script (resumeFromRunId works too).
-3. Then the remaining queue (all local-first, no user decision needed):
+2. Remaining queue (all local-first, no user decision needed):
    - Part 2 Slice 4: reflection PROPOSAL pass on the existing idle fork -> writes PROPOSALS.md +
      the HMAC review queue, NEVER auto-applies. (plugins/dreaming + review.py)
    - Part 2 Slice 5: explicit feedback -> user_rating; utility view; entity_type vocab.
    - Part 1 retention/compaction #9: raw -> summaries -> patterns -> lessons real path.
    - Phase 6: skeptical-staff final review pass; fix top issues; loop until a skeptic approves.
-4. Each wave: self-healing (max 3 attempts), real-output verify, SELECTIVE git add + commit.
+3. Each wave: self-healing (max 3 attempts), real-output verify, SELECTIVE git add + commit.
 
 ## WAITING ON THE USER (non-blocking; do local-first meanwhile)
 
