@@ -74,9 +74,17 @@ runnable proof script; recall@k / precision@k eval with real numbers; all 12 req
 - Baseline: 329 passed, 3 skipped (the 3 skips = weak-signal injection shapes, owed to the
   injection-hardening wave).
 
-## IN FLIGHT
+## IN FLIGHT (two parallel waves, DISJOINT files, selective commits)
 
-- (none currently; the Part 2 recon is being re-launched after the session-limit failure.)
+- wf_4d8d143e (Part 2 local slice): Slice 0 agent_id on turn_outcomes (plugins/outcomes/store.py,
+  engine.py) + Slice 3 skill quality columns (tools/skill_usage.py, curator.py render). Backed up
+  live outcomes.db (92 rows) at ~/.hermes/backups/memory-audit-part2-20260620-161444. Script
+  docs/memory-audit/_wf_part2_slice0.js.
+- wf_74fe8dc2 (safety wave 2): weak-signal injection suite + un-skip the 3 skipped shapes
+  (agent/memory_reconcile.py, tools/memory_redaction.py, tests) + dream-ingest cross-feed fence
+  (plugins/dream_orchestrator/importer.py). Script docs/memory-audit/_wf_safety2.js.
+- On each completion: SELECTIVE git add of that wave's specific files (never -A), verify with real
+  output, commit. The two waves touch different subsystems so they do not collide.
 
 ## DONE since last save
 
