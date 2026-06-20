@@ -195,6 +195,29 @@ class OutcomesStore:
         finally:
             conn.close()
 
+    def recent_low_scoring_rows(
+        self, *, score_below: float = 0.5, limit: int = 50
+    ) -> list[dict]:
+        """Recent rows whose fused turn_score is below ``score_below``, newest-first.
+
+        The reflection PROPOSAL pass reads these to find what failed (low-quality turns)
+        and which agent produced them. Returns full detail (session_id, agent_id, role,
+        turn_score, trajectory) so the pass can cluster patterns. Read-only; never mutates.
+        """
+        conn = self._connect()
+        try:
+            cur = conn.execute(
+                "SELECT id, session_id, turn, turn_score, composite, judge, trajectory, "
+                "agent_id, subagent_id, role, ts "
+                "FROM turn_outcomes WHERE turn_score < ? "
+                "ORDER BY id DESC LIMIT ?",
+                (float(score_below), int(limit)),
+            )
+            cols = [c[0] for c in cur.description]
+            return [dict(zip(cols, row)) for row in cur.fetchall()]
+        finally:
+            conn.close()
+
     def recent_unjudged_rows(self, limit: int = 150) -> list[dict]:
         """Recent rows scored composite-only (judge IS NULL), newest-first.
 
@@ -253,4 +276,24 @@ def recent_turn_scores(limit: int = 150, *, db_path: Path | str | None = None) -
         return OutcomesStore(path).recent_turn_scores(limit=limit)
     except Exception as exc:  # noqa: BLE001
         logger.debug("outcomes: recent_turn_scores read failed (%s)", exc)
+        return []
+
+
+def recent_low_scoring_rows(
+    *, score_below: float = 0.5, limit: int = 50, db_path: Path | str | None = None
+) -> list[dict]:
+    """Module-level seam: recent low-scoring rows without instantiating a store.
+
+    Returns ``[]`` on any error (missing db, no table) so callers degrade gracefully.
+    This is the function the reflection PROPOSAL pass imports.
+    """
+    try:
+        path = Path(db_path) if db_path is not None else default_db_path()
+        if not path.exists():
+            return []
+        return OutcomesStore(path).recent_low_scoring_rows(
+            score_below=score_below, limit=limit
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("outcomes: recent_low_scoring_rows read failed (%s)", exc)
         return []

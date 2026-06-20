@@ -233,6 +233,13 @@ async def run_dream_cycle(
     combined = _merge_summaries(rescore, session_summary)
     st.record_run(combined.counts())
 
+    # SENSE -> REFLECT: opt-in reflection PROPOSAL pass (Slice 4). It reads recent
+    # low-scoring runs and PROPOSES human-readable changes to PROPOSALS.md + the HMAC
+    # review queue; it NEVER edits a skill/prompt/MEMORY.md/fact store and never
+    # auto-applies. Default OFF (dreaming.reflection.enabled). Fail-soft: a reflection
+    # error must never affect the consolidation result the caller sees.
+    await _maybe_run_reflection()
+
     counts = combined.counts()
     if counts["promoted"] or counts["updated"] or counts["held"]:
         logger.info(
@@ -241,6 +248,26 @@ async def run_dream_cycle(
             counts["dropped"], counts["evaluated"],
         )
     return combined
+
+
+async def _maybe_run_reflection() -> None:
+    """Run the opt-in reflection PROPOSAL pass on the idle fork. Fail-soft, no-op if off.
+
+    Kept separate so a reflection error can never affect the consolidation summary the
+    caller already computed. The pass itself is gated by ``dreaming.reflection.enabled``
+    (default OFF) and only ever appends to PROPOSALS.md + the HMAC review queue.
+    """
+    try:
+        from .reflection import load_reflection_config, run_reflection_pass
+
+        rcfg = load_reflection_config()
+        if not rcfg.enabled:
+            return
+        result = await run_reflection_pass(cfg=rcfg)
+        if result.proposed:
+            logger.info("dreaming: reflection queued %d proposal(s)", len(result.proposed))
+    except Exception as exc:  # noqa: BLE001 — reflection must never surface into the cycle
+        logger.debug("dreaming: reflection pass failed: %s", exc)
 
 
 def _build_recall_fn(sdb: Path, fact_by_id: dict[str, str]):
