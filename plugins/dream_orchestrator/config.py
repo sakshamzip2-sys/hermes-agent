@@ -13,6 +13,7 @@ The block is::
       cross_feed:
         enabled: false          # Phase 2 one-way import (honcho -> gbrain -> local)
         dry_run: true           # default: only PREVIEW imported candidates
+        review_mode: true       # hold scanned-clean candidates for review, do NOT auto-promote
         confidence_floor: high  # only import high-confidence upstream outputs
         max_imports_per_run: 20
 
@@ -34,6 +35,7 @@ DEFAULTS = {
     "cross_feed": {
         "enabled": False,
         "dry_run": True,
+        "review_mode": True,
         "confidence_floor": "high",
         "max_imports_per_run": 20,
     },
@@ -44,6 +46,7 @@ DEFAULTS = {
 class CrossFeedConfig:
     enabled: bool = False
     dry_run: bool = True
+    review_mode: bool = True
     confidence_floor: str = "high"
     max_imports_per_run: int = 20
 
@@ -83,6 +86,7 @@ def load_orchestrator_config(block: dict | None = None) -> OrchestratorConfig:
     cross_feed = CrossFeedConfig(
         enabled=bool(cf_raw.get("enabled", cf_def["enabled"])),
         dry_run=bool(cf_raw.get("dry_run", cf_def["dry_run"])),
+        review_mode=bool(cf_raw.get("review_mode", cf_def["review_mode"])),
         confidence_floor=str(cf_raw.get("confidence_floor", cf_def["confidence_floor"])),
         max_imports_per_run=_safe_int(
             cf_raw.get("max_imports_per_run", cf_def["max_imports_per_run"]),

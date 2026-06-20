@@ -76,16 +76,22 @@ class ImportCandidate:
 class ImportSummary:
     previewed: list[str] = field(default_factory=list)   # provenance lines (dry-run or pre-gate)
     promoted: list[str] = field(default_factory=list)    # actually written to MEMORY.md
+    queued_review: list[str] = field(default_factory=list)  # held in the HMAC review queue (review_mode)
     skipped_existing: int = 0                             # already imported (ledger) or in MEMORY
     dropped_diversity: int = 0                            # failed local diversity gate
+    withheld_threat: int = 0                              # dropped: hit a strict-scope threat pattern
+    redacted: int = 0                                     # secrets stripped before any write
     dry_run: bool = True
 
     def to_dict(self) -> dict:
         return {
             "previewed": self.previewed,
             "promoted": self.promoted,
+            "queued_review": self.queued_review,
             "skipped_existing": self.skipped_existing,
             "dropped_diversity": self.dropped_diversity,
+            "withheld_threat": self.withheld_threat,
+            "redacted": self.redacted,
             "dry_run": self.dry_run,
         }
 
@@ -211,12 +217,29 @@ def run_cross_feed(cfg, store) -> ImportSummary:
     diversity_threshold, embed_fn = _local_diversity()
 
     for c in selected:
-        line = c.provenance_line()
+        # SAFETY FENCE (req #2/#3): a fetched cross-feed line is untrusted input
+        # destined for the always-injected MEMORY.md. Threat-scan + redact it
+        # BEFORE it can be previewed, queued, or promoted. A line that hits a
+        # strict-scope threat pattern is WITHHELD entirely (never written).
+        safe_text, was_redacted = _fence_line(c.text)
+        if safe_text is None:
+            summary.withheld_threat += 1
+            # Ledger withheld lines (live runs) so a poisoned upstream row isn't
+            # re-scanned every cycle; additive + reversible (no DROP/DELETE).
+            if not cfg.dry_run:
+                store.mark_imported(c.import_id, source=c.source, ref=c.ref)
+            continue
+        if was_redacted:
+            summary.redacted += 1
+        # Rebuild the candidate from the sanitised + redacted text so the
+        # provenance line that lands in MEMORY.md carries no secret.
+        safe_c = ImportCandidate(c.source, c.ref, safe_text, c.confidence)
+        line = safe_c.provenance_line()
         summary.previewed.append(line)
         if memory_io is None:
             continue
         try:
-            keep = _passes_diversity(c.text, existing, embed_fn, diversity_threshold)
+            keep = _passes_diversity(safe_c.text, existing, embed_fn, diversity_threshold)
         except Exception as exc:  # noqa: BLE001
             logger.debug("diversity check failed (%s); treating as novel", exc)
             keep = True
@@ -224,19 +247,91 @@ def run_cross_feed(cfg, store) -> ImportSummary:
             summary.dropped_diversity += 1
             # Still ledger it so we don't re-evaluate a known-duplicate each run.
             if not cfg.dry_run:
-                store.mark_imported(c.import_id, source=c.source, ref=c.ref)
+                store.mark_imported(safe_c.import_id, source=safe_c.source, ref=safe_c.ref)
             continue
         if cfg.dry_run:
             continue
-        # Promote the PROVENANCE LINE verbatim (promote_raw, NOT promote) so the
-        # marker travels intact into MEMORY.md (the local dreamer excludes it
-        # later) WITHOUT promote() prepending a second "(dreamed …)" prefix.
+        if cfg.review_mode:
+            # review_mode (default): a scanned-clean + redacted line is a PROPOSAL,
+            # not an auto-write. Queue it into the dreaming HMAC review queue so an
+            # operator accepts/rejects it via `hermes dream review`. MEMORY.md is
+            # left untouched here (additive, reversible — req #2/#3).
+            queued = _queue_for_review(line, safe_c)
+            if queued:
+                existing.append(safe_c.text)  # keep the in-run corpus current
+                store.mark_imported(safe_c.import_id, source=safe_c.source, ref=safe_c.ref)
+                summary.queued_review.append(line)
+            continue
+        # review_mode off (back-compat): promote the PROVENANCE LINE verbatim
+        # (promote_raw, NOT promote) so the marker travels intact into MEMORY.md
+        # (the local dreamer excludes it later) WITHOUT promote() prepending a
+        # second "(dreamed …)" prefix.
         memory_io.promote_raw(line)
-        existing.append(c.text)  # keep the in-run corpus current
-        store.mark_imported(c.import_id, source=c.source, ref=c.ref)
+        existing.append(safe_c.text)  # keep the in-run corpus current
+        store.mark_imported(safe_c.import_id, source=safe_c.source, ref=safe_c.ref)
         summary.promoted.append(line)
 
     return summary
+
+
+def _queue_for_review(line: str, candidate: ImportCandidate) -> bool:
+    """Queue a scanned-clean cross-feed line into the dreaming HMAC review queue.
+
+    Returns True on success. The provenance ``line`` is what an operator would
+    accept into MEMORY.md (carrying the cross-feed marker so the local dreamer
+    still excludes it). Fail-soft: a queue error returns False and the caller
+    leaves the line un-ledgered so it can be retried next run.
+    """
+    try:
+        from plugins.dreaming import review
+        from plugins.dreaming.runner import _review_home
+
+        review.queue_pending(
+            _review_home(),
+            text=line,
+            source_event_id=f"crossfeed:{candidate.source}#{candidate.ref}",
+            score=_CONF_RANK.get(candidate.confidence, 2) / 2.0,
+            recall_count=0,
+            diversity_score=0.0,
+        )
+        return True
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("cross-feed: review queue failed for a line: %s", exc)
+        return False
+
+
+def _fence_line(raw_text: str) -> tuple[str | None, bool]:
+    """Threat-scan + redact a fetched cross-feed line before it can reach MEMORY.md.
+
+    Returns ``(safe_text, redacted)``:
+
+    * ``safe_text is None`` -> WITHHELD: the line hit a strict-scope threat
+      pattern (injection / promptware / persistence / exfil) and must NOT be
+      written or queued.
+    * otherwise ``safe_text`` is the sanitised + secret-redacted text, and
+      ``redacted`` is True when at least one secret was stripped.
+
+    The scan mirrors the two write-path fences elsewhere in the engine:
+    ``sanitize_context`` (strip injected context/fence tags) then
+    ``scan_for_threats(scope="strict")`` (the broad, user-mediated-write set).
+    Fail-CLOSED: if the fence modules cannot be imported we WITHHOLD rather than
+    write an unscanned line into the always-injected MEMORY.md.
+    """
+    try:
+        from agent.memory_manager import sanitize_context
+        from tools.memory_redaction import redact
+        from tools.threat_patterns import scan_for_threats
+    except Exception as exc:  # noqa: BLE001 — fail closed, never write unscanned
+        logger.warning("cross-feed fence unavailable (%s); withholding line", exc)
+        return None, False
+
+    cleaned = sanitize_context(raw_text or "")
+    findings = scan_for_threats(cleaned, scope="strict")
+    if findings:
+        logger.warning("cross-feed: WITHHELD a fetched line (threat: %s)", ",".join(findings))
+        return None, False
+    safe, hits = redact(cleaned)
+    return safe, bool(hits)
 
 
 def _local_diversity():

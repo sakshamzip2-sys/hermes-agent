@@ -143,8 +143,10 @@ def test_cross_feed_dry_run_previews_without_writing(crossfeed_env, monkeypatch)
 def test_cross_feed_live_promotes_and_ledgers(crossfeed_env, monkeypatch):
     _stub_sources(monkeypatch, honcho=[ImportCandidate("honcho", "c1", "Fact A", "high")],
                   gbrain=[ImportCandidate("gbrain", "f1", "Fact B", "high")])
-    cf = CrossFeedConfig(enabled=True, dry_run=False, confidence_floor="high",
-                         max_imports_per_run=20)
+    # review_mode=False is the back-compat auto-write path (review_mode now
+    # defaults True -> proposals; that path is covered in test_cross_feed_fence).
+    cf = CrossFeedConfig(enabled=True, dry_run=False, review_mode=False,
+                         confidence_floor="high", max_imports_per_run=20)
     summary = run_cross_feed(cf, crossfeed_env["store"])
     assert len(summary.promoted) == 2
     entries = crossfeed_env["memory_io"].read_memory_entries()
