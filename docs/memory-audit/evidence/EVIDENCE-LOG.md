@@ -337,3 +337,33 @@ Also: federated-dreaming idea evaluated by a 5-company council -> ADOPT-WITH-MOD
 v2's own is_derived_fact guard forbids). Saved `DREAMING-federated-verdict.md`. The verdict refines
 the Wave-4 promotion design with a grounding-pointer + outcome-gate (turn_score).
 
+
+---
+
+## E13 — Capstone proof script (req #6) — RAN, 10/10 LOCAL MECHANISMS PASS
+
+`.venv/bin/python docs/memory-audit/proof/prove_memory.py` (temp dirs only, idempotent, never
+touches live ~/.hermes). Real output:
+```
+PASS  session FTS5: write -> bm25 search recall
+PASS  holographic: add -> dedup -> FTS5 readonly recall
+PASS  holographic: supersede recency-wins (old invalidated, not deleted)
+PASS  redaction: api key replaced, secret not in output
+PASS  redaction: password-only connection string redacted
+PASS  MergeLayer: fuses candidates across planes with a RecallTrace
+PASS  A-MemGuard: poisoned untrusted sole-source is suppressed, not floor-protected
+PASS  isolation: subagent child excluded from parent default lineage scope
+PASS  isolation: child secret not retrievable via parent scoped search
+PASS  eval: OR-expanded retrieval recall@5 >= 0.8 (the recall the MergeLayer uses)
+10/10 local-mechanism proofs passed.
+```
+Remote planes (Honcho/GBrain) DEFERRED pending the paid bring-up (O-1); their code paths proven
+in E5/E6. Every LOCAL mechanism the mission built is now proven runnable end-to-end.
+
+## E14 — Safety wave 2 resume state
+
+WeakSignal (item 5) DONE + committed (wip 3763b486d): tests/agent/test_memory_injection_suite.py
+-> 19 passed; tests/agent/test_memory_reconcile.py -> 24 passed (the 3 previously-skipped
+injection shapes are now UN-SKIPPED and pass). DreamFence (item 4) INCOMPLETE at limit: config.py
+got the review_mode knob (uncommitted), but importer.py was NOT fenced and no test exists ->
+being resumed.

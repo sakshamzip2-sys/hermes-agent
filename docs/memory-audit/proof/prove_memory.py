@@ -197,20 +197,17 @@ try:
     # the eval prints a JSON blob; find it
     start = txt.find("{")
     data = _json.loads(txt[start:]) if start >= 0 else {}
-    # dig out OR-expanded aggregate recall@5 (shape may be modes/or/aggregate)
-    def _find(d, key):
-        if isinstance(d, dict):
-            if key in d and isinstance(d[key], (int, float)):
-                return d[key]
-            for v in d.values():
-                r = _find(v, key)
-                if r is not None:
-                    return r
-        return None
-    r5 = _find(data.get("modes", data), "recall@5")
-    print(f"  eval.py --json ran (exit {out.returncode}); recall@5 found: {r5}")
-    check("eval: retrieval metrics computed (recall@5 present and >= 0.8)",
-          r5 is not None and r5 >= 0.8, f"recall@5={r5}")
+    # The eval reports two retrieval modes: raw NL (implicit-AND, lower) and the
+    # OR-expanded query (the recall the MergeLayer actually uses). Read the
+    # OR-expanded aggregate explicitly at modes/or/aggregate/recall@5.
+    modes = data.get("modes", {})
+    or_agg = (modes.get("or") or {}).get("aggregate", {})
+    nl_agg = (modes.get("nl") or {}).get("aggregate", {})
+    r5 = or_agg.get("recall@5")
+    nl5 = nl_agg.get("recall@5")
+    print(f"  eval.py --json ran (exit {out.returncode}); OR recall@5={r5}  (raw NL recall@5={nl5})")
+    check("eval: OR-expanded retrieval recall@5 >= 0.8 (the recall the MergeLayer uses)",
+          r5 is not None and r5 >= 0.8, f"OR recall@5={r5}")
 except Exception as e:
     check("retrieval eval", False, f"error: {e!r}")
 
