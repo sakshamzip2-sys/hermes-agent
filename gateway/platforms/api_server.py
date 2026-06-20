@@ -4041,6 +4041,24 @@ class APIServerAdapter(BasePlatformAdapter):
             return auth_err
         return web.json_response(self.build_parallel_agents_snapshot())
 
+    async def _handle_parallel_agents_events(self, request: "web.Request") -> "web.StreamResponse":
+        """GET /v1/parallel-agents/events — live SSE stream of the parallel-agents
+        run view: a snapshot on connect, then deltas as run-state lands on the
+        oc_runs spine. Last-Event-ID (or ?cursor=) resumes from the durable spine.
+
+        Backend-agnostic: it reads the spine directly, so it works for the default
+        oc-backend without reviving the dormant, hermes-gated /v1/runs/{id}/events
+        channel. The streaming logic lives in plugins.oc_runs.sse_endpoint so it is
+        unit-tested over real HTTP independently of this server."""
+        auth_err = self._check_auth(request)
+        if auth_err:
+            return auth_err
+        from plugins.oc_runs import sse_endpoint
+
+        origin = request.headers.get("Origin", "")
+        cors = self._cors_headers_for_origin(origin) if origin else None
+        return await sse_endpoint.stream_events(request, extra_headers=cors)
+
     # ------------------------------------------------------------------
     # Parallel-agents drill-down: per-entity detail, control, and the
     # click-to-chat bridge. All read paths reuse the plugin DB accessors;
@@ -5666,6 +5684,7 @@ class APIServerAdapter(BasePlatformAdapter):
             self._app.router.add_post("/api/parallel-agents/agents/{session_id}/send", self._handle_agent_send)
             self._app.router.add_post("/api/parallel-agents/flows/{flow_id}/stop", self._handle_flow_stop)
             self._app.router.add_post("/api/parallel-agents/teams/{team_id}/messages", self._handle_team_send_message)
+            self._app.router.add_get("/v1/parallel-agents/events", self._handle_parallel_agents_events)
             self._app.router.add_get("/api/memory", self._handle_get_memory)
             # Artifacts (claude.ai-style viewer): list + download-by-id. The web
             # BFF proxy calls the /api/v1/ paths; the non-v1 aliases keep parity
