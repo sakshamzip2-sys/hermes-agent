@@ -81,20 +81,26 @@ cd /Users/saksham/Vscode/OpenComputerV2/OC-memory && git branch --show-current &
   proven to NEVER edit a skill/prompt/memory/fact store (author 11 tests + independent reviewer
   29/29 via full-tree-diff + write instrumentation). Default OFF. Committed e79acc776.
 
+## ALSO PROVEN since (committed; full baseline 182 passed)
+
+- Part 2 Slice 5: feedback reward signals -> user_rating; read-only utility view (used x helpful);
+  controlled entity_type vocab on the holographic entities (reuse Honcho + holographic, no
+  separate graph). 24 tests. Committed 2d23be873. PART 2 LOCAL SLICES (0,3,4,5) ALL DONE; only
+  Slices 1-2 (Langfuse trace-linkage + score bridge) remain, blocked on O-P2-1.
+
 ## IN-FLIGHT (re-verify on resume)
 
-- wf_dedb0df1 Part 2 Slice 5: (a) reward signals from feedback -> user_rating; (b) read-only
-  utility view (used x helpful); (c) controlled entity_type vocab on the holographic entities
-  table (reuse Honcho + holographic, no separate graph). Script docs/memory-audit/_wf_slice5.js.
+- wf_f4aee983 retention/compaction (req #9 + extension 5): archive-not-delete eviction +
+  tiered raw->summary->pattern->lesson fold with source provenance + bounded growth, on the idle
+  fork, default OFF, reversible. Script docs/memory-audit/_wf_retention.js.
 
 ## NEXT ACTION (do this first on "continue")
 
 1. Run the 3 verify commands above (proof script + baseline) to confirm ground truth.
-2. Re-verify + SELECTIVE-commit Slice 5 if in-flight/incomplete (re-run _wf_slice5.js).
-3. Remaining queue (all local-first, no user decision needed):
-   - Part 1 retention/compaction #9: raw -> summaries -> patterns -> lessons real path.
-   - Phase 6: skeptical-staff final review pass; fix top issues; loop until a skeptic approves;
-     then flip this file to "DEFINITION OF DONE MET".
+2. Re-verify + SELECTIVE-commit retention/compaction if in-flight (re-run _wf_retention.js).
+3. LAST build item: Phase 6 skeptical-staff final review pass over the WHOLE subsystem; fix the
+   top issues it finds; loop until a skeptic from another company would approve; then flip this
+   file to "DEFINITION OF DONE MET" and write the final summary deliverable.
 4. Each wave: self-healing (max 3 attempts), real-output verify, SELECTIVE git add + commit.
 
 ## WAITING ON THE USER (non-blocking; do local-first meanwhile)
