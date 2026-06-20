@@ -230,6 +230,56 @@ def list_agent_definitions(dirs: Optional[List[Path]] = None) -> List[AgentDefin
     return sorted(load_agent_definitions(dirs).values(), key=lambda d: d.name)
 
 
+def to_manifest_dict(definition: AgentDefinition) -> Dict[str, Any]:
+    """A flat, gallery-friendly view of a definition (identity + capability +
+    display-only extras). Used by the manifests endpoint and the frontend."""
+    return {
+        "name": definition.name,
+        "description": definition.description,
+        "toolsets": definition.toolsets,
+        "model": definition.model,
+        "provider": definition.provider,
+        "permission_mode": definition.permission_mode,
+        "memory": definition.memory,
+        "effort": definition.effort,
+        "max_iterations": definition.max_iterations,
+        "status": (definition.extra.get("status") or "active"),
+        "display_name": definition.extra.get("display_name") or definition.name,
+        "tagline": definition.extra.get("tagline"),
+        "featured": bool(definition.extra.get("featured", False)),
+        "starters": definition.extra.get("starters") or [],
+    }
+
+
+def resolve_agent_overrides(
+    name: str, dirs: Optional[List[Path]] = None
+) -> Optional[Dict[str, Any]]:
+    """Resolve the per-agent runtime overrides a chat turn should apply when it
+    carries ``oc_agent_id=<name>``: toolset, model, provider, permission mode,
+    effort, and turn budget, all set ONCE at conversation creation (set-at-spawn,
+    so per-conversation prompt caching stays intact). Returns None if no manifest
+    matches. This is the pure, testable core of the api_server._create_agent
+    resolve seam (the seam is a single call to this function).
+    """
+    d = get_agent_definition(name, dirs=dirs)
+    if d is None:
+        return None
+    out: Dict[str, Any] = {"status": (d.extra.get("status") or "active")}
+    if d.toolsets is not None:
+        out["toolsets"] = d.toolsets
+    if d.model:
+        out["model"] = d.model
+    if d.provider:
+        out["provider"] = d.provider
+    if d.permission_mode:
+        out["permission_mode"] = d.permission_mode
+    if d.effort:
+        out["effort"] = d.effort
+    if d.max_iterations is not None:
+        out["max_iterations"] = d.max_iterations
+    return out
+
+
 def resolve_memory_dir(definition: AgentDefinition, *, cwd=None) -> Optional[Path]:
     """Return the persistent-memory directory for a definition's ``memory`` scope.
 
