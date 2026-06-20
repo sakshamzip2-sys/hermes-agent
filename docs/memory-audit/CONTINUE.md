@@ -95,11 +95,31 @@ cd /Users/saksham/Vscode/OpenComputerV2/OC-memory && git branch --show-current &
   growth, on the idle fork, default OFF. 19 tests. Review: NO hard-DELETE, NO data loss.
   Committed f87222675. ALL PART 1 + PART 2 LOCAL BUILD ITEMS ARE DONE.
 
-## IN-FLIGHT (re-verify on resume)
+## HONEST RE-SCOPE (2026-06-21): components built but NOT wired live -> see GAPS.md
 
-- wf_f911681a Phase 6 skeptic final review (READ-ONLY): 5 lenses (correctness/concurrency,
-  security, data-safety, scale, honesty/overclaiming) -> a prioritized punch-list. Produces
-  docs/memory-audit/PHASE6-punchlist.md. Script docs/memory-audit/_wf_phase6.js.
+The user correctly called out that the subsystem was NOT integrated into the live agent. GAPS.md
+is the brutal list. Closing every non-money gap now. The ONE genuinely user-gated item:
+GAP-6 paid OpenRouter credits for Honcho deriver / GBrain embeddings (the mission's own
+money guardrail). Everything else is being finished autonomously.
+
+## IN-FLIGHT (two big gap-closing waves, disjoint files; re-verify on resume)
+
+- wf_09b97c09 LIVE WIRING (GAP-1/2/4/9): MergeLayer into memory_manager.prefetch_all (gated) +
+  holographic live plane + reconcile on the background pass + a LIVE E2E test (write->recall
+  through the real prefetch path). Script docs/memory-audit/_wf_livewire.js. THE central deliverable.
+- wf_f28edf4c MEMORY SUPERVISOR (GAP-3, req #12a): plugins/memory_supervisor/ - outage detection
+  (fixes silent degradation), circuit breaker, durable fail-closed write queue, job supervision,
+  watchdog. Script docs/memory-audit/_wf_supervisor.js.
+
+## QUEUED after these (autonomous, no money)
+
+- GAP-7 + GAP-8: fix latent write-side self-signing hole + retention revive(t_invalid) nit (after
+  live-wiring frees memory_reconcile.py). Script: write a fixes wave.
+- GAP-5: build Langfuse Slices 1-2 (subagent_start/stop + create_score bridge) default-OFF.
+- Phase 6: re-run the skeptic review (wf_phase6.js, died on limit) -> punch-list -> fix must-fixes.
+- GAP-6 free path: bring up Docker + GBrain (PGLite) + Honcho connectivity; prove storage; flag
+  the paid-LLM step as the single user-gated remainder.
+- Final summary; flip to DONE-except-the-one-paid-step.
 
 ## NEXT ACTION (do this first on "continue")
 
