@@ -133,6 +133,21 @@ def reconcile_intents(conn, spawn_fn: Callable) -> List[RecoveryResult]:
     return [_execute_intent(conn, r["id"], spawn_fn, attempt_no=int(r["attempt_no"])) for r in rows]
 
 
+def recover_all(conn, spawn_fn: Callable) -> dict:
+    """Restart sweep: re-execute any spawn_intent left 'pending' with no child
+    (a crash during a prior recovery). Safe and idempotent because each pending
+    intent already holds its reservation and recovery claim, so re-execution
+    neither double-reserves nor double-claims. Returns a summary.
+
+    Worker-pid liveness on restart is handled separately by the spine reconciler
+    (agents_adapter.reconcile_agents); this sweep owns only the orchestrator's
+    own in-flight recovery intents.
+    """
+    re_executed = reconcile_intents(conn, spawn_fn)
+    launched = [r for r in re_executed if r.child_id]
+    return {"pending_re_executed": len(re_executed), "launched": len(launched)}
+
+
 def active_reservation_count(conn, run_tree_id: str) -> int:
     row = conn.execute(
         "SELECT COUNT(*) c FROM slot_reservations WHERE run_tree_id=? AND status='reserved'",
