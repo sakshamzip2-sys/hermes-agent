@@ -29,6 +29,15 @@ run "test suite (33 files)" "scripts/run_tests.sh \
 
 echo
 echo "================ LIVE DEMOS (need the gateway + a model) ================"
+# Pre-check the gateway. On a memory-constrained machine the launchd gateway can be
+# OOM-killed under heavy concurrent load (e.g. running this alongside other agent
+# work); a dead gateway makes the live demos fail for an environment reason, not a
+# code reason. Skip the live section (do not count failures) if it is unreachable.
+if ! curl -s -m 5 http://127.0.0.1:8642/v1/health 2>/dev/null | grep -q '"status": "ok"'; then
+  echo "[SKIP] gateway not healthy on :8642 — start it (launchctl kickstart -k gui/\$(id -u)/ai.opencomputer.gateway) and re-run the live section"
+  echo; echo "================ SUMMARY ================"; echo "passed=$PASS failed=$FAIL (live demos skipped: gateway down)"
+  exit "$FAIL"
+fi
 run "Feature B: truth-under-failure spine (real SIGKILL)" "$VENV scripts/demo_parallel_view.py >/dev/null 2>&1"
 run "Orchestrator: recovery (isolated)" "$VENV scripts/demo_orchestrator_recovery.py >/dev/null 2>&1"
 run "Orchestrator: LIVE recovery (real gateway dispatch)" "HERMES_HOME=\$HOME/.hermes $VENV scripts/demo_orchestrator_live.py >/dev/null 2>&1"
