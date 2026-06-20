@@ -1160,6 +1160,7 @@ class APIServerAdapter(BasePlatformAdapter):
         reasoning_config_override: Optional[Dict[str, Any]] = None,
         session_db_override: Optional[Any] = None,
         is_agent_profile: bool = False,
+        replace_system_prompt: bool = False,
     ) -> Any:
         """
         Create an AIAgent instance using the gateway's runtime config.
@@ -1233,6 +1234,9 @@ class APIServerAdapter(BasePlatformAdapter):
             # Profile agents keep their local memory store but skip the external
             # Honcho provider (GBrain toolset already filtered above).
             disable_memory_provider=is_agent_profile,
+            # When the agent overwrites the base prompt, the ephemeral system
+            # prompt replaces (not extends) the base for this turn.
+            ephemeral_system_replaces_base=replace_system_prompt,
         )
         return agent
 
@@ -2440,6 +2444,9 @@ class APIServerAdapter(BasePlatformAdapter):
         # Per-agent profile: a frontend "agent" runs against its own state.db +
         # memory dir (agent-profiles/{slug}). None => default/main chat agent.
         agent_id_slug = self._parse_oc_agent_id(body)
+        # Agent opted to overwrite (not extend) the base system prompt: use the
+        # ephemeral system prompt as the entire system prompt for this turn.
+        replace_system_prompt = bool(body.get("oc_replace_system_prompt"))
 
         completion_id = f"chatcmpl-{uuid.uuid4().hex[:29]}"
         model_name = (model_override or body.get("model") or self._model_name)
@@ -2598,6 +2605,7 @@ class APIServerAdapter(BasePlatformAdapter):
                 reasoning_config_override=reasoning_config_override,
                 approval_notify_callback=_on_approval,
                 agent_id_slug=agent_id_slug,
+                replace_system_prompt=replace_system_prompt,
             ))
             # Ensure SSE drain loops can terminate without relying on polling
             # agent_task.done(), which can race with queue timeout checks. Also
@@ -2625,6 +2633,7 @@ class APIServerAdapter(BasePlatformAdapter):
                 model_override=model_override,
                 reasoning_config_override=reasoning_config_override,
                 agent_id_slug=agent_id_slug,
+                replace_system_prompt=replace_system_prompt,
             )
 
         idempotency_key = request.headers.get("Idempotency-Key")
@@ -4830,6 +4839,7 @@ class APIServerAdapter(BasePlatformAdapter):
         reasoning_config_override: Optional[Dict[str, Any]] = None,
         approval_notify_callback=None,
         agent_id_slug: Optional[str] = None,
+        replace_system_prompt: bool = False,
     ) -> tuple:
         """
         Create an agent and run a conversation in a thread executor.
@@ -4907,6 +4917,7 @@ class APIServerAdapter(BasePlatformAdapter):
                     gateway_session_key=gateway_session_key,
                     session_db_override=_profile_db,
                     is_agent_profile=bool(agent_id_slug),
+                    replace_system_prompt=replace_system_prompt,
                 )
                 if agent_ref is not None:
                     agent_ref[0] = agent

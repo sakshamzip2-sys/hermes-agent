@@ -771,7 +771,12 @@ def run_conversation(
         # stay warm.
         effective_system = active_system_prompt or ""
         if agent.ephemeral_system_prompt:
-            effective_system = (effective_system + "\n\n" + agent.ephemeral_system_prompt).strip()
+            if getattr(agent, "ephemeral_system_replaces_base", False):
+                # Agent opted to overwrite the base prompt: use only the
+                # ephemeral system prompt for this turn.
+                effective_system = agent.ephemeral_system_prompt.strip()
+            else:
+                effective_system = (effective_system + "\n\n" + agent.ephemeral_system_prompt).strip()
         if effective_system:
             api_messages = [{"role": "system", "content": effective_system}] + api_messages
 

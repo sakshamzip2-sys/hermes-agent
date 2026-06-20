@@ -214,6 +214,7 @@ def init_agent(
     load_soul_identity: bool = False,
     skip_memory: bool = False,
     disable_memory_provider: bool = False,
+    ephemeral_system_replaces_base: bool = False,
     session_db=None,
     parent_session_id: str = None,
     iteration_budget: "IterationBudget" = None,
@@ -286,6 +287,9 @@ def init_agent(
     agent.quiet_mode = quiet_mode
     agent.tool_progress_mode = tool_progress_mode
     agent.ephemeral_system_prompt = ephemeral_system_prompt
+    # When set, the ephemeral system prompt REPLACES the base system prompt for
+    # the turn instead of being appended (agent "overwrite base system prompt").
+    agent.ephemeral_system_replaces_base = ephemeral_system_replaces_base
     agent.platform = platform  # "cli", "telegram", "discord", "whatsapp", etc.
     agent._user_id = user_id  # Platform user identifier (gateway sessions)
     agent._user_id_alt = user_id_alt  # Optional stable alternate platform identifier

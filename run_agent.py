@@ -406,6 +406,9 @@ class AIAgent:
         # local on-disk memory store. Used by per-agent profiles, which get
         # their own local SQLite/FTS5/markdown memory but no Honcho/GBrain.
         disable_memory_provider: bool = False,
+        # When True, the ephemeral_system_prompt REPLACES the base system prompt
+        # for the turn instead of being appended to it (agent "overwrite base").
+        ephemeral_system_replaces_base: bool = False,
         session_db=None,
         parent_session_id: str = None,
         iteration_budget: "IterationBudget" = None,
@@ -482,6 +485,7 @@ class AIAgent:
             load_soul_identity=load_soul_identity,
             skip_memory=skip_memory,
             disable_memory_provider=disable_memory_provider,
+            ephemeral_system_replaces_base=ephemeral_system_replaces_base,
             session_db=session_db,
             parent_session_id=parent_session_id,
             iteration_budget=iteration_budget,
