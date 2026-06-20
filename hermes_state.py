@@ -3390,6 +3390,7 @@ class SessionDB:
         offset: int = 0,
         sort: str = None,
         include_inactive: bool = False,
+        session_ids: Optional[List[str]] = None,
         _or_retry: bool = False,
     ) -> List[Dict[str, Any]]:
         """
@@ -3415,6 +3416,15 @@ class SessionDB:
 
         Rewound (``active=0``) rows are excluded by default. Pass
         ``include_inactive=True`` to search every row.
+
+        ``session_ids`` optionally restricts the search to a set of session
+        ids (``WHERE m.session_id IN (...)``). It is the cross-agent leak
+        fence: a delegate child writes under its own ``session_id`` into the
+        shared ``state.db``, so scoping the parent's search to its own session
+        lineage withholds the child's rows. Default ``None`` leaves the search
+        DB-wide (unchanged behaviour, preserves the existing baseline). An
+        empty list also scopes (matches nothing) so a caller that computes an
+        empty lineage set does not silently fall back to DB-wide.
         """
         if not self._fts_enabled:
             return []
@@ -3446,6 +3456,14 @@ class SessionDB:
         else:
             order_by_sql = "ORDER BY rank"
 
+        # Lineage / session scope. ``session_ids=None`` means DB-wide (the
+        # historical default); a list (even empty) restricts to that set. An
+        # empty list yields a never-true ``IN ()`` so an empty lineage scope
+        # matches nothing rather than silently widening to every session.
+        scope_session_ids: Optional[List[str]] = None
+        if session_ids is not None:
+            scope_session_ids = list(session_ids)
+
         # Build WHERE clauses dynamically
         where_clauses = ["messages_fts MATCH ?"]
         params: list = [query]
@@ -3466,6 +3484,14 @@ class SessionDB:
             role_placeholders = ",".join("?" for _ in role_filter)
             where_clauses.append(f"m.role IN ({role_placeholders})")
             params.extend(role_filter)
+
+        if scope_session_ids is not None:
+            if scope_session_ids:
+                scope_placeholders = ",".join("?" for _ in scope_session_ids)
+                where_clauses.append(f"m.session_id IN ({scope_placeholders})")
+                params.extend(scope_session_ids)
+            else:
+                where_clauses.append("0")  # empty scope: match nothing
 
         where_sql = " AND ".join(where_clauses)
         params.extend([limit, offset])
@@ -3542,6 +3568,12 @@ class SessionDB:
                 if role_filter:
                     tri_where.append(f"m.role IN ({','.join('?' for _ in role_filter)})")
                     tri_params.extend(role_filter)
+                if scope_session_ids is not None:
+                    if scope_session_ids:
+                        tri_where.append(f"m.session_id IN ({','.join('?' for _ in scope_session_ids)})")
+                        tri_params.extend(scope_session_ids)
+                    else:
+                        tri_where.append("0")
                 tri_sql = f"""
                     SELECT
                         m.id,
@@ -3599,6 +3631,12 @@ class SessionDB:
                 if role_filter:
                     like_where.append(f"m.role IN ({','.join('?' for _ in role_filter)})")
                     like_params.extend(role_filter)
+                if scope_session_ids is not None:
+                    if scope_session_ids:
+                        like_where.append(f"m.session_id IN ({','.join('?' for _ in scope_session_ids)})")
+                        like_params.extend(scope_session_ids)
+                    else:
+                        like_where.append("0")
                 like_sql = f"""
                     SELECT m.id, m.session_id, m.role,
                            substr(m.content,
@@ -3725,6 +3763,7 @@ class SessionDB:
                     offset=offset,
                     sort=sort,
                     include_inactive=include_inactive,
+                    session_ids=session_ids,
                     _or_retry=True,
                 )
 

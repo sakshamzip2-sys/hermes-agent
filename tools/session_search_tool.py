@@ -33,6 +33,8 @@ import json
 import logging
 from typing import Any, Dict, List, Optional, Union
 
+from tools.threat_patterns import scan_for_threats
+
 # Sources that are excluded from session browsing/searching by default.
 # Third-party integrations tag their sessions with HERMES_SESSION_SOURCE=tool;
 # delegate subagent runs are tagged "subagent" — neither belongs in the
@@ -87,18 +89,127 @@ def _resolve_to_parent(db, session_id: str) -> str:
     return cur
 
 
+def _lineage_session_ids(db, session_id: str) -> Optional[List[str]]:
+    """Compute the set of session ids in the active session's lineage.
+
+    This is the cross-agent leak fence (req #10/#11). The active session, its
+    ancestors, and any branch/delegation descendants that share the same
+    lineage root form one logical conversation; everything else (other roots,
+    and a delegate child writing into the shared ``state.db`` under its OWN
+    root) is out of scope. We resolve the active session to its lineage root,
+    then collect the root plus every session that transitively descends from
+    it.
+
+    Returns a list of session ids to pass to ``search_messages(session_ids=)``.
+    Returns ``None`` when no active session is known (caller falls back to the
+    DB-wide search the historical default expected for an unscoped call).
+    """
+    if not session_id:
+        return None
+
+    root = _resolve_to_parent(db, session_id)
+    if not root:
+        return None
+
+    ids: set = {root, session_id}
+
+    # Walk DOWN from the root to gather descendants (branches + delegations all
+    # carry parent_session_id). Bounded breadth-first expansion over the shared
+    # connection; falls back to just {root, active} on any error so scope never
+    # silently widens to DB-wide.
+    try:
+        conn = getattr(db, "_conn", None)
+        if conn is not None:
+            frontier = list(ids)
+            seen: set = set()
+            for _ in range(1000):  # hard bound: never loop on a cyclic chain
+                if not frontier:
+                    break
+                nxt: List[str] = []
+                for sid in frontier:
+                    if sid in seen:
+                        continue
+                    seen.add(sid)
+                    try:
+                        rows = conn.execute(
+                            "SELECT id, source FROM sessions WHERE parent_session_id = ?",
+                            (sid,),
+                        ).fetchall()
+                    except Exception as e:
+                        logging.debug("descendant lookup failed for %s: %s", sid, e, exc_info=True)
+                        rows = []
+                    for r in rows:
+                        if hasattr(r, "keys"):
+                            child, child_source = r["id"], r["source"]
+                        else:
+                            child, child_source = r[0], r[1]
+                        # Defense in depth: exclude subagent/tool descendants (and
+                        # their whole subtree) from the lineage scope itself, not
+                        # only via the post-query source filter. A delegate child
+                        # writes into the shared state.db under its own session id;
+                        # this keeps it out of the parent's default search even if
+                        # the source filter is ever changed (req #10 leak fence).
+                        if child_source in _HIDDEN_SESSION_SOURCES:
+                            continue
+                        if child and child not in ids:
+                            ids.add(child)
+                            nxt.append(child)
+                frontier = nxt
+    except Exception as e:
+        logging.debug("lineage expansion failed for %s: %s", session_id, e, exc_info=True)
+
+    return list(ids)
+
+
+def _scan_message_content(content: Any) -> bool:
+    """Return True when message content trips a strict threat pattern.
+
+    Only string content is scanned; structured/multimodal content is treated
+    as non-threatening here (the verbatim string payloads are what carry
+    injection text, and those are strings). Closes the req #11 gap: before
+    this, session_search returned FTS5 content with zero threat scanning.
+    """
+    if not isinstance(content, str) or not content:
+        return False
+    try:
+        return bool(scan_for_threats(content, scope="strict"))
+    except Exception as e:
+        logging.debug("scan_for_threats failed; treating row as clean: %s", e, exc_info=True)
+        return False
+
+
+_REDACTED_MARKER = "[BLOCKED: content withheld by session_search threat scan]"
+
+
 def _shape_message(m: Dict[str, Any], anchor_id: Optional[int] = None) -> Dict[str, Any]:
-    """Slim a message row for the tool response. Keeps content even if empty."""
+    """Slim a message row for the tool response. Keeps content even if empty.
+
+    Every row's text content is run through ``scan_for_threats(scope="strict")``
+    before it leaves the tool. A row that trips a pattern keeps its metadata
+    (id/role/timestamp so the model can still scroll/locate it) but its content
+    is replaced with a marker and flagged ``blocked``. This is the req #11 fix:
+    session_search previously returned FTS5 content with zero scanning, so a
+    poisoned stored message recalled verbatim could re-inject on the way out.
+    """
+    content = m.get("content")
+    blocked = _scan_message_content(content)
     entry = {
         "id": m.get("id"),
         "role": m.get("role"),
-        "content": m.get("content"),
+        "content": _REDACTED_MARKER if blocked else content,
         "timestamp": m.get("timestamp"),
     }
+    if blocked:
+        entry["blocked"] = True
     if m.get("tool_name"):
         entry["tool_name"] = m.get("tool_name")
-    if m.get("tool_calls"):
-        entry["tool_calls"] = m.get("tool_calls")
+    # tool_calls / tool_call_id can also carry stored payload text; scan + drop.
+    tc = m.get("tool_calls")
+    if tc:
+        if isinstance(tc, str) and _scan_message_content(tc):
+            entry["blocked"] = True
+        else:
+            entry["tool_calls"] = tc
     if m.get("tool_call_id"):
         entry["tool_call_id"] = m.get("tool_call_id")
     if anchor_id is not None and m.get("id") == anchor_id:
@@ -398,9 +509,28 @@ def _discover(
     limit: int,
     sort: Optional[str],
     current_session_id: str = None,
+    scope: str = "lineage",
 ) -> str:
-    """Discovery shape: FTS5 + anchored window + bookends per hit. Single call."""
+    """Discovery shape: FTS5 + anchored window + bookends per hit. Single call.
+
+    ``scope`` controls how far the FTS5 search reaches:
+
+    - ``"lineage"`` (default): restrict to the ACTIVE session's lineage (root +
+      ancestors + branch/delegation descendants). This is the cross-agent leak
+      fence. A delegate child writes into the shared ``state.db`` under its own
+      root, so a separate-root session is NOT returned by the parent's default
+      search. The active session id itself is still dropped (already in context).
+    - ``"all"``: DB-wide search across every session, skipping only the active
+      session's own lineage (the historical default). Use for the rare explicit
+      cross-session recall.
+    """
     role_list = role_filter if role_filter else ["user", "assistant"]
+
+    # Compute the lineage scope up front. In lineage mode we pass the id set to
+    # search_messages so the DB never even returns out-of-lineage rows.
+    scope_ids: Optional[List[str]] = None
+    if scope != "all" and current_session_id:
+        scope_ids = _lineage_session_ids(db, current_session_id)
 
     try:
         raw_results = db.search_messages(
@@ -410,6 +540,7 @@ def _discover(
             limit=50,  # widen so dedup-by-lineage can find distinct sessions
             offset=0,
             sort=sort,
+            session_ids=scope_ids,
         )
     except Exception as e:
         logging.error("FTS5 search failed: %s", e, exc_info=True)
@@ -420,6 +551,7 @@ def _discover(
             "success": True,
             "mode": "discover",
             "query": query,
+            "scope": scope,
             "results": [],
             "count": 0,
             "message": "No matching sessions found.",
@@ -434,8 +566,11 @@ def _discover(
     for r in raw_results:
         raw_sid = r["session_id"]
         resolved_sid = _resolve_to_parent(db, raw_sid)
-        # Skip the current session lineage
-        if current_lineage_root and resolved_sid == current_lineage_root:
+        # In 'all' scope, skip the active session's whole lineage (already in
+        # context). In 'lineage' scope the DB query is already restricted to
+        # that lineage, so we only drop the exact active session id (its
+        # ancestors / branches / delegation siblings remain the recall target).
+        if scope == "all" and current_lineage_root and resolved_sid == current_lineage_root:
             continue
         if current_session_id and raw_sid == current_session_id:
             continue
@@ -461,6 +596,12 @@ def _discover(
         except Exception:
             session_meta = {}
 
+        # The snippet is verbatim matched text straight from FTS5 — scan it too,
+        # not just the windowed messages, so a poisoned match can't ride out in
+        # the highlight excerpt.
+        raw_snippet = match_info.get("snippet") or ""
+        snippet = _REDACTED_MARKER if _scan_message_content(raw_snippet) else raw_snippet
+
         entry = {
             "session_id": hit_sid,
             "when": _format_timestamp(
@@ -471,7 +612,7 @@ def _discover(
             "title": session_meta.get("title") or None,
             "matched_role": match_info.get("role"),
             "match_message_id": msg_id,
-            "snippet": match_info.get("snippet") or "",
+            "snippet": snippet,
             "bookend_start": [_shape_message(m) for m in (view.get("bookend_start") or [])],
             "messages": [_shape_message(m, anchor_id=msg_id) for m in (view.get("window") or [])],
             "bookend_end": [_shape_message(m) for m in (view.get("bookend_end") or [])],
@@ -486,6 +627,7 @@ def _discover(
         "success": True,
         "mode": "discover",
         "query": query,
+        "scope": scope,
         "results": results,
         "count": len(results),
         "sessions_searched": len(seen_sessions),
@@ -504,6 +646,7 @@ def session_search(
     window: int = 5,
     # Discovery shape
     sort: str = None,
+    scope: Optional[str] = None,
     # Cross-profile (any shape)
     profile: str = None,
 ) -> str:
@@ -513,6 +656,11 @@ def session_search(
     Scroll:    pass ``session_id`` + ``around_message_id``.
     Read:      pass ``session_id`` (no anchor) — dumps the whole session.
     Browse:    pass nothing.
+
+    ``scope`` (discovery only) controls reach: the default (``None`` /
+    ``"lineage"``) restricts the search to the active session's lineage so a
+    delegate child's messages in the shared ``state.db`` are not returned;
+    ``"all"`` searches every session (the rare explicit cross-session recall).
 
     Pass ``profile`` to read another profile's sessions (e.g. resolving an
     ``@session:<profile>/<id>`` link). Scroll wins over read/discovery when an
@@ -606,6 +754,10 @@ def session_search(
         if candidate in ("newest", "oldest"):
             sort_norm = candidate
 
+    # Normalise scope. Default (None / unknown value) is the lineage-scoped
+    # fence; only an explicit "all" opens the DB-wide search.
+    scope_norm = "all" if (isinstance(scope, str) and scope.strip().lower() == "all") else "lineage"
+
     return _discover(
         db=db,
         query=query.strip(),
@@ -613,6 +765,7 @@ def session_search(
         limit=limit,
         sort=sort_norm,
         current_session_id=current_session_id,
+        scope=scope_norm,
     )
 
 
@@ -711,6 +864,18 @@ SESSION_SEARCH_SCHEMA = {
                     "and browse shapes."
                 ),
             },
+            "scope": {
+                "type": "string",
+                "enum": ["lineage", "all"],
+                "description": (
+                    "Discovery shape only. 'lineage' (default) restricts the search to "
+                    "the CURRENT conversation's lineage so a delegate sub-agent's "
+                    "messages and other unrelated sessions are not returned. Set 'all' "
+                    "only when you explicitly want to recall across OTHER past sessions "
+                    "(\"find the session where we did X\"). Ignored in scroll and browse "
+                    "shapes."
+                ),
+            },
             "session_id": {
                 "type": "string",
                 "description": (
@@ -775,6 +940,7 @@ registry.register(
         around_message_id=args.get("around_message_id"),
         window=args.get("window", 5),
         sort=args.get("sort"),
+        scope=args.get("scope"),
         profile=args.get("profile"),
         db=kw.get("db"),
         current_session_id=kw.get("current_session_id"),
