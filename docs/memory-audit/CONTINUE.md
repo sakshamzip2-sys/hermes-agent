@@ -75,16 +75,27 @@ cd /Users/saksham/Vscode/OpenComputerV2/OC-memory && git branch --show-current &
   orchestrator's own reconcile path), not be inferable from the source_store string; the remote
   ingest path must route to a remote namespace (honcho/*, gbrain/*) and never self-sign.
 
+## ALSO PROVEN since (committed; full baseline 158 passed, proof still 10/10)
+
+- Part 2 Slice 4: reflection PROPOSAL pass on the idle fork -> PROPOSALS.md + HMAC review queue,
+  proven to NEVER edit a skill/prompt/memory/fact store (author 11 tests + independent reviewer
+  29/29 via full-tree-diff + write instrumentation). Default OFF. Committed e79acc776.
+
+## IN-FLIGHT (re-verify on resume)
+
+- wf_dedb0df1 Part 2 Slice 5: (a) reward signals from feedback -> user_rating; (b) read-only
+  utility view (used x helpful); (c) controlled entity_type vocab on the holographic entities
+  table (reuse Honcho + holographic, no separate graph). Script docs/memory-audit/_wf_slice5.js.
+
 ## NEXT ACTION (do this first on "continue")
 
 1. Run the 3 verify commands above (proof script + baseline) to confirm ground truth.
-2. Remaining queue (all local-first, no user decision needed):
-   - Part 2 Slice 4: reflection PROPOSAL pass on the existing idle fork -> writes PROPOSALS.md +
-     the HMAC review queue, NEVER auto-applies. (plugins/dreaming + review.py)
-   - Part 2 Slice 5: explicit feedback -> user_rating; utility view; entity_type vocab.
+2. Re-verify + SELECTIVE-commit Slice 5 if in-flight/incomplete (re-run _wf_slice5.js).
+3. Remaining queue (all local-first, no user decision needed):
    - Part 1 retention/compaction #9: raw -> summaries -> patterns -> lessons real path.
-   - Phase 6: skeptical-staff final review pass; fix top issues; loop until a skeptic approves.
-3. Each wave: self-healing (max 3 attempts), real-output verify, SELECTIVE git add + commit.
+   - Phase 6: skeptical-staff final review pass; fix top issues; loop until a skeptic approves;
+     then flip this file to "DEFINITION OF DONE MET".
+4. Each wave: self-healing (max 3 attempts), real-output verify, SELECTIVE git add + commit.
 
 ## WAITING ON THE USER (non-blocking; do local-first meanwhile)
 
