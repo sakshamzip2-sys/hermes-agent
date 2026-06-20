@@ -77,6 +77,28 @@ def db_path() -> Path:
     return root / "oc_runs.db"
 
 
+def _retry_locked(fn, *, attempts: int = 8, base_sleep: float = 0.02):
+    """Run fn(), retrying on a transient SQLite 'database is locked'/'busy'.
+
+    busy_timeout already makes most contention block-and-wait, but the initial
+    WAL-mode switch and first-connect schema DDL are brief exclusive operations
+    that many thread-local connections can race on under heavy concurrency (the
+    gateway, cron, the feeder, and tests all open their own connection). This
+    belt-and-suspenders retry makes the spine robust under that real contention
+    rather than surfacing a spurious lock error to the caller."""
+    last = None
+    for i in range(attempts):
+        try:
+            return fn()
+        except sqlite3.OperationalError as exc:  # noqa: PERF203
+            msg = str(exc).lower()
+            if "locked" not in msg and "busy" not in msg:
+                raise
+            last = exc
+            time.sleep(base_sleep * (2 ** i))  # exponential backoff
+    raise last if last is not None else RuntimeError("retry exhausted")
+
+
 @contextmanager
 def connect() -> Generator[sqlite3.Connection, None, None]:
     path = str(db_path())
@@ -89,10 +111,15 @@ def connect() -> Generator[sqlite3.Connection, None, None]:
                 pass
         conn = sqlite3.connect(path, timeout=30.0)
         conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA busy_timeout=30000")
-        conn.executescript(SCHEMA_SQL)
-        conn.commit()
+        # WAL-mode switch + first-connect schema DDL are brief exclusive ops that
+        # concurrent first-connects can race on; retry on transient lock.
+        _retry_locked(lambda: conn.execute("PRAGMA journal_mode=WAL"))
+
+        def _init():
+            conn.executescript(SCHEMA_SQL)
+            conn.commit()
+        _retry_locked(_init)
         _local.conn = conn
         _local.path = path
     yield conn
@@ -127,35 +154,39 @@ def append_event(event: Dict[str, Any]) -> int:
     """
     run_id = event["run_id"]
     dedupe_key = event.get("dedupe_key")
-    with connect() as conn:
-        cur = conn.execute(
-            """INSERT OR IGNORE INTO run_events
-               (schema_version, ts, run_id, parent_run_id, source, type,
-                agent_id, team_id, payload_json, dedupe_key)
-               VALUES (?,?,?,?,?,?,?,?,?,?)""",
-            (
-                int(event.get("schema_version", SCHEMA_VERSION)),
-                float(event.get("ts") or _now()),
-                run_id,
-                event.get("parent_run_id"),
-                event["source"],
-                event["type"],
-                event.get("agent_id"),
-                event.get("team_id"),
-                json.dumps(event.get("payload") or {}),
-                dedupe_key,
-            ),
-        )
-        if cur.rowcount == 0:
-            # Deduped on UNIQUE(run_id, dedupe_key): return the existing seq.
-            row = conn.execute(
-                "SELECT seq FROM run_events WHERE run_id=? AND dedupe_key IS ?",
-                (run_id, dedupe_key),
-            ).fetchone()
+
+    def _do() -> int:
+        with connect() as conn:
+            cur = conn.execute(
+                """INSERT OR IGNORE INTO run_events
+                   (schema_version, ts, run_id, parent_run_id, source, type,
+                    agent_id, team_id, payload_json, dedupe_key)
+                   VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                (
+                    int(event.get("schema_version", SCHEMA_VERSION)),
+                    float(event.get("ts") or _now()),
+                    run_id,
+                    event.get("parent_run_id"),
+                    event["source"],
+                    event["type"],
+                    event.get("agent_id"),
+                    event.get("team_id"),
+                    json.dumps(event.get("payload") or {}),
+                    dedupe_key,
+                ),
+            )
+            if cur.rowcount == 0:
+                # Deduped on UNIQUE(run_id, dedupe_key): return the existing seq.
+                row = conn.execute(
+                    "SELECT seq FROM run_events WHERE run_id=? AND dedupe_key IS ?",
+                    (run_id, dedupe_key),
+                ).fetchone()
+                conn.commit()
+                return int(row["seq"]) if row else 0
             conn.commit()
-            return int(row["seq"]) if row else 0
-        conn.commit()
-        return int(cur.lastrowid or 0)
+            return int(cur.lastrowid or 0)
+
+    return _retry_locked(_do)
 
 
 def tail_since(seq: int, limit: int = 1000) -> List[Dict[str, Any]]:
