@@ -88,20 +88,30 @@ cd /Users/saksham/Vscode/OpenComputerV2/OC-memory && git branch --show-current &
   separate graph). 24 tests. Committed 2d23be873. PART 2 LOCAL SLICES (0,3,4,5) ALL DONE; only
   Slices 1-2 (Langfuse trace-linkage + score bridge) remain, blocked on O-P2-1.
 
+## ALSO PROVEN since (committed; full baseline 201 passed)
+
+- Retention + tiered compaction (req #9): archive-not-delete eviction (archived_at, reversible)
+  + raw->summary->pattern->lesson fold with source provenance + signed summaries + bounded
+  growth, on the idle fork, default OFF. 19 tests. Review: NO hard-DELETE, NO data loss.
+  Committed f87222675. ALL PART 1 + PART 2 LOCAL BUILD ITEMS ARE DONE.
+
 ## IN-FLIGHT (re-verify on resume)
 
-- wf_f4aee983 retention/compaction (req #9 + extension 5): archive-not-delete eviction +
-  tiered raw->summary->pattern->lesson fold with source provenance + bounded growth, on the idle
-  fork, default OFF, reversible. Script docs/memory-audit/_wf_retention.js.
+- wf_f911681a Phase 6 skeptic final review (READ-ONLY): 5 lenses (correctness/concurrency,
+  security, data-safety, scale, honesty/overclaiming) -> a prioritized punch-list. Produces
+  docs/memory-audit/PHASE6-punchlist.md. Script docs/memory-audit/_wf_phase6.js.
 
 ## NEXT ACTION (do this first on "continue")
 
 1. Run the 3 verify commands above (proof script + baseline) to confirm ground truth.
-2. Re-verify + SELECTIVE-commit retention/compaction if in-flight (re-run _wf_retention.js).
-3. LAST build item: Phase 6 skeptical-staff final review pass over the WHOLE subsystem; fix the
-   top issues it finds; loop until a skeptic from another company would approve; then flip this
-   file to "DEFINITION OF DONE MET" and write the final summary deliverable.
-4. Each wave: self-healing (max 3 attempts), real-output verify, SELECTIVE git add + commit.
+2. Read the Phase 6 punch-list (PHASE6-punchlist.md or the task output). FIX every MUST-FIX via a
+   self-healing wave (include the retention revive(t_invalid) nit). Re-verify, SELECTIVE-commit.
+3. Loop Phase 6 review until a skeptic would APPROVE (no must-fix remaining).
+4. Write the FINAL SUMMARY deliverable (Phase 1-6 recap, verified state of FTS5/G-Brain/Honcho/
+   Hermes, read+write path behavior, how to verify each piece, assumptions + open questions for
+   the user) and flip this file to "DEFINITION OF DONE MET (local); remote gated on O-1".
+5. Remaining = ONLY user-gated: O-1 paid Honcho/GBrain bring-up (+ close the latent write-side
+   signing hole first); O-P2-1 Langfuse default-on vs opt-in (unblocks Part 2 Slices 1-2).
 
 ## WAITING ON THE USER (non-blocking; do local-first meanwhile)
 
