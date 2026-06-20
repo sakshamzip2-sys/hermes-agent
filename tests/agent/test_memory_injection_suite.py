@@ -371,6 +371,10 @@ def test_layer2_trusted_sole_source_is_not_penalized() -> None:
     sole-source fact (the legitimate single source) keeps its floor protection
     and is not demoted. This proves the suppression is trust-gated, not a blanket
     sole-source penalty that would bury legitimate user memory.
+
+    The candidate carries the genuinely-local origin flag: under the provenance
+    hard-trust gate (default on), a claimed user_authored tier is trusted only
+    when backed by provenance, and a real local user fact is exactly that case.
     """
     trusted = Candidate(
         id="1",
@@ -378,7 +382,7 @@ def test_layer2_trusted_sole_source_is_not_penalized() -> None:
         source_store="holographic",
         native_rank=1,
         native_score=None,
-        metadata={"source_tier": "user_authored"},
+        metadata={"source_tier": "user_authored", "local_origin": True},
     )
     ml = MergeLayer(enable_hrr_dedup=False)
     ranked, trace = ml.recall("dark mode editor", stores=[_FakeAdapter("holographic", [trusted])])

@@ -50,14 +50,30 @@ class _FakeAdapter:
         return list(self._candidates[:limit])
 
 
-def _cand(cid, text, store, rank, *, tier="user_authored", score=None):
+def _cand(
+    cid, text, store, rank, *, tier="user_authored", score=None,
+    local_origin=None, is_signed=None,
+):
+    # Provenance backing for the (default-on) require_provenance_for_trust gate.
+    # A hand-built candidate that claims a trusted tier models GENUINELY-LOCAL
+    # content unless a test overrides this, so by default a trusted-tier candidate
+    # carries the local-origin flag (the non-signature backing) and the existing
+    # floor/consensus regressions keep their meaning. A forged candidate (the
+    # cross-fed attack) is built by passing local_origin=False with no signature.
+    meta: dict = {"source_tier": tier}
+    if local_origin is None:
+        local_origin = tier in ("user_authored", "signed_self")
+    if local_origin:
+        meta["local_origin"] = True
+    if is_signed is not None:
+        meta["is_signed"] = bool(is_signed)
     return Candidate(
         id=str(cid),
         text_for_rerank=text,
         source_store=store,
         native_rank=rank,
         native_score=score,
-        metadata={"source_tier": tier},
+        metadata=meta,
     )
 
 
@@ -459,6 +475,9 @@ def test_corroborated_untrusted_candidate_not_penalized():
 def test_consensus_penalty_configurable_and_opt_out():
     # A deployment can opt out by setting consensus_penalty=1.0 (no demotion) and
     # widening floor_trusted_sources to include bulk (restores the old floor).
+    # The legacy floor is the TAG-ONLY gate, so the provenance requirement is also
+    # disabled here (require_provenance_for_trust=False); otherwise the bulk hit,
+    # carrying no signature and no local-origin flag, is correctly downgraded.
     flood = _FakeAdapter("holographic", [
         _cand(f"h{i}", f"User authored exact fact number {i}.", "holographic",
               i + 1, tier="user_authored")
@@ -471,6 +490,7 @@ def test_consensus_penalty_configurable_and_opt_out():
     ml = MergeLayer(
         consensus_penalty=1.0,
         floor_trusted_sources=["user_authored", "signed_self", "bulk"],
+        require_provenance_for_trust=False,
     )
     ranked, trace = ml.recall("fact", stores=[flood, poison])
     present = {c.source_store for c in ranked}

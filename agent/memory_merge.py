@@ -110,6 +110,28 @@ FLOOR_TRUSTED_SOURCES_DEFAULT: frozenset[str] = frozenset({
 })
 CONSENSUS_PENALTY_DEFAULT = 0.5
 
+# Provenance hard-trust gate (web-validation BUILD-QUEUE #2).
+#
+# ``source_tier`` is a FORGEABLE STRING TAG: a cross-fed Honcho/GBrain row can set
+# metadata.source_tier="user_authored" and, on the tag-only gate, bypass both the
+# floor protection AND the consensus penalty. When require_provenance_for_trust is
+# True (the default), a candidate may be treated as TRUSTED for floor protection /
+# consensus exemption ONLY when its claimed trusted tier is BACKED BY PROVENANCE:
+#
+#   (a) it carries a valid tamper-evident signature - either a pre-verified
+#       ``is_signed`` boolean the adapter computed via the store's verify path, or
+#       a ``signature`` + ``content_hash`` pair that a passed ``signature_verifier``
+#       re-verifies here; OR
+#   (b) it carries an explicit genuinely-local origin flag (``local_origin`` True)
+#       that an adapter sets ONLY for provably-local user content (session FTS5
+#       user-role messages, local MEMORY.md) - NEVER for cross-fed/remote planes.
+#
+# A candidate claiming a trusted tier with NEITHER backing is DOWNGRADED to
+# untrusted (a hard trust ceiling): it earns no floor slot and is consensus
+# penalized when sole-source. Set require_provenance_for_trust=False to revert to
+# the legacy tag-only gate (opt-out for a deployment that does not cross-feed).
+PROVENANCE_REQUIRED_DEFAULT = True
+
 # Abstention: if the top fused (post-prior) score is below this, return EMPTY.
 # Ships dark until gold-set-calibrated (PHASE3 mitigation #6 / config note). The
 # default is deliberately low so the LOCAL working slice does not over-abstain
@@ -185,6 +207,20 @@ class Candidate:
         stale flag, hrr_vector bytes for cosine dedup). Never used for ranking
         except the keys this module explicitly reads (``source_tier``,
         ``stale``, ``hrr_vector``).
+
+        Provenance keys (web-validation BUILD-QUEUE #2), read by ``_is_trusted``
+        to back a claimed trusted ``source_tier`` so a forged tag cannot earn
+        floor protection / consensus exemption:
+          - ``is_signed`` (bool): the adapter pre-verified a tamper-evident
+            signature for this row via the store's verify path. The strongest
+            backing; when True, the candidate is provenance-trusted.
+          - ``signature`` / ``content_hash`` (str): the raw provenance pair the
+            adapter copied from the store; re-verified here when a
+            ``signature_verifier`` is supplied and ``is_signed`` is absent.
+          - ``local_origin`` (bool): set ONLY by an adapter for provably-local
+            user content (session FTS5 user-role messages, local MEMORY.md);
+            NEVER for cross-fed/remote planes. Backs a trusted tier WITHOUT a
+            signature (back-compat for genuine local user content).
     """
 
     id: str
@@ -235,6 +271,7 @@ class SessionFTS5Adapter:
         role_filter: Optional[List[str]] = None,
         source_filter: Optional[List[str]] = None,
         exclude_sources: Optional[List[str]] = None,
+        local_origin_roles: Optional[Sequence[str]] = ("user",),
     ) -> None:
         self._db = db
         self.name = name
@@ -242,6 +279,14 @@ class SessionFTS5Adapter:
         self._role_filter = role_filter
         self._source_filter = source_filter
         self._exclude_sources = exclude_sources
+        # Roles whose session messages are PROVABLY-LOCAL user content and so may
+        # carry the genuinely-local origin flag (the non-signature provenance
+        # backing). Defaults to the user role: a user-role message in the local
+        # session store is content the user themselves authored on this install,
+        # never a cross-fed/remote row. Set to None/empty to disable the flag.
+        self._local_origin_roles = (
+            frozenset(local_origin_roles) if local_origin_roles else frozenset()
+        )
 
     def search(self, query: str, *, limit: int) -> List[Candidate]:
         expanded = expand_query_or(query)
@@ -262,12 +307,19 @@ class SessionFTS5Adapter:
             if not isinstance(text, str) or not text.strip():
                 snippet = row.get("snippet") or ""
                 text = snippet.replace(">>>", "").replace("<<<", "")
+            role = row.get("role")
             meta: Dict[str, Any] = {
                 "session_id": row.get("session_id"),
-                "role": row.get("role"),
+                "role": role,
                 "source": row.get("source"),
                 "source_tier": self._source_tier,
             }
+            # Genuinely-local origin: a user-role message in the local session
+            # store is provably-local user content (web-validation BUILD-QUEUE #2),
+            # so it may back a trusted tier WITHOUT a signature. Cross-fed/remote
+            # planes never flow through this adapter, so this flag is sound here.
+            if isinstance(role, str) and role in self._local_origin_roles:
+                meta["local_origin"] = True
             candidates.append(Candidate(
                 id=str(row.get("id")),
                 text_for_rerank=text or "",
@@ -300,12 +352,25 @@ class HolographicAdapter:
         source_tier: str = "user_authored",
         min_trust: float = 0.0,
         category: Optional[str] = None,
+        verify_signatures: bool = True,
+        local_origin: bool = False,
     ) -> None:
         self._store = store
         self.name = name
         self._source_tier = source_tier
         self._min_trust = min_trust
         self._category = category
+        # When True, each row's tamper-evident signature is verified via
+        # ``store.verify_fact(ext_key)`` and the result is stamped into
+        # ``metadata["is_signed"]`` so the MergeLayer's provenance gate can trust
+        # a signed self-fact WITHOUT a forgeable tag. A self-generated, untampered
+        # row verifies True; a cross-fed / unsigned / tampered row verifies False.
+        self._verify_signatures = verify_signatures
+        # The holographic plane is a local store, but its trust is earned by the
+        # SIGNATURE, not by a blanket local-origin flag (so a cross-fed row mirrored
+        # into it cannot ride the plane's locality). Default False; a deployment
+        # that treats the whole holographic plane as provably-local may set True.
+        self._local_origin = local_origin
 
     def search(self, query: str, *, limit: int) -> List[Candidate]:
         # store.search_facts_readonly does the OR-expansion itself when asked;
@@ -317,6 +382,7 @@ class HolographicAdapter:
             limit=limit,
             or_expand=True,
         )
+        verify_fact = getattr(self._store, "verify_fact", None)
         candidates: List[Candidate] = []
         for rank, row in enumerate(rows or [], start=1):
             trust = row.get("trust_score")
@@ -326,6 +392,29 @@ class HolographicAdapter:
                 "trust_score": trust,
                 "source_tier": self._source_tier,
             }
+            # Provenance population (web-validation BUILD-QUEUE #2). Copy the raw
+            # provenance pair through when the read row carries it, and stamp a
+            # pre-verified ``is_signed`` boolean using the store's verify path so a
+            # forged source_tier cannot earn trust without a valid signature.
+            signature = row.get("signature")
+            content_hash = row.get("content_hash")
+            if isinstance(signature, str) and signature:
+                meta["signature"] = signature
+            if isinstance(content_hash, str) and content_hash:
+                meta["content_hash"] = content_hash
+            ext_key = row.get("ext_key")
+            if (
+                self._verify_signatures
+                and callable(verify_fact)
+                and isinstance(ext_key, str)
+                and ext_key
+            ):
+                try:
+                    meta["is_signed"] = bool(verify_fact(ext_key))
+                except Exception:
+                    meta["is_signed"] = False
+            if self._local_origin:
+                meta["local_origin"] = True
             if "hrr_vector" in row and row.get("hrr_vector") is not None:
                 meta["hrr_vector"] = row["hrr_vector"]
             candidates.append(Candidate(
@@ -432,6 +521,8 @@ class MergeLayer:
         per_source_floors: bool = True,
         floor_trusted_sources: Optional[Sequence[str]] = None,
         consensus_penalty: float = CONSENSUS_PENALTY_DEFAULT,
+        require_provenance_for_trust: bool = PROVENANCE_REQUIRED_DEFAULT,
+        signature_verifier: Optional[Callable[[str, str], bool]] = None,
         final_slots: int = FINAL_SLOTS_DEFAULT,
         per_store_limit: int = 20,
         enable_hrr_dedup: bool = True,
@@ -456,6 +547,18 @@ class MergeLayer:
             else FLOOR_TRUSTED_SOURCES_DEFAULT
         )
         self.consensus_penalty = consensus_penalty
+        # Provenance hard-trust gate. When True a claimed trusted tier must be
+        # backed by a verifiable signature or a genuinely-local origin flag;
+        # otherwise the candidate is downgraded to untrusted (no floor slot,
+        # consensus-penalized when sole-source). False reverts to the legacy
+        # tag-only gate.
+        self.require_provenance_for_trust = require_provenance_for_trust
+        # Optional re-verifier for a raw (content_hash, signature) pair carried in
+        # metadata; ``(content_hash, signature) -> bool``. When absent, a
+        # pre-verified ``is_signed`` boolean (set by the adapter) is the signature
+        # backing. Either path proves the signature; the local_origin flag is the
+        # non-signature backing.
+        self.signature_verifier = signature_verifier
         self.final_slots = final_slots
         self.per_store_limit = per_store_limit
         self.enable_hrr_dedup = enable_hrr_dedup and _HRR_AVAILABLE
@@ -474,12 +577,54 @@ class MergeLayer:
                 return True
         return False
 
+    # -- provenance backing: does the candidate carry verifiable provenance?
+    def _has_provenance(self, meta: Dict[str, Any]) -> bool:
+        """True iff the candidate's metadata proves a trusted origin.
+
+        Two independent backings (either suffices):
+          (a) a tamper-evident SIGNATURE - a pre-verified ``is_signed`` boolean
+              the adapter computed via the store's verify path, OR a raw
+              ``signature`` + ``content_hash`` pair that the injected
+              ``signature_verifier`` re-verifies True here;
+          (b) a genuinely-local ORIGIN flag (``local_origin`` True) an adapter
+              sets ONLY for provably-local user content.
+
+        A forged cross-fed row carries NEITHER (it cannot acquire a valid
+        signature, and an adapter never flags a remote plane local_origin), so it
+        fails this check and is downgraded to untrusted by ``_is_trusted``.
+        """
+        # (a) signature backing: pre-verified boolean wins outright.
+        if meta.get("is_signed") is True:
+            return True
+        # (a') raw signature pair re-verified by the injected verifier.
+        verifier = self.signature_verifier
+        if verifier is not None:
+            signature = meta.get("signature")
+            content_hash = meta.get("content_hash")
+            if isinstance(signature, str) and isinstance(content_hash, str):
+                try:
+                    if verifier(content_hash, signature):
+                        return True
+                except Exception:
+                    # A throwing verifier never silently grants trust.
+                    pass
+        # (b) genuinely-local origin flag.
+        return meta.get("local_origin") is True
+
     # -- provenance trust gate: is this candidate's source_tier floor-trusted?
     def _is_trusted(self, cand: Optional[Candidate]) -> bool:
         if cand is None or not cand.metadata:
             return False
         tier = str(cand.metadata.get("source_tier", ""))
-        return tier in self.floor_trusted_sources
+        if tier not in self.floor_trusted_sources:
+            return False
+        # Legacy opt-out: tag-only gate, provenance not required.
+        if not self.require_provenance_for_trust:
+            return True
+        # Hard trust ceiling: a claimed trusted tier must be backed by provenance
+        # (a verifiable signature or a genuinely-local origin flag). A forged tag
+        # with neither is downgraded to untrusted.
+        return self._has_provenance(cand.metadata)
 
     # -- source-tier multiplicative prior for one candidate
     def _tier_multiplier(self, cand: Candidate) -> float:
@@ -792,4 +937,5 @@ __all__ = [
     "FINAL_SLOTS_DEFAULT",
     "FLOOR_TRUSTED_SOURCES_DEFAULT",
     "CONSENSUS_PENALTY_DEFAULT",
+    "PROVENANCE_REQUIRED_DEFAULT",
 ]
