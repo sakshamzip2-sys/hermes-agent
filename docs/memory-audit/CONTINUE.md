@@ -95,54 +95,49 @@ cd /Users/saksham/Vscode/OpenComputerV2/OC-memory && git branch --show-current &
   growth, on the idle fork, default OFF. 19 tests. Review: NO hard-DELETE, NO data loss.
   Committed f87222675. ALL PART 1 + PART 2 LOCAL BUILD ITEMS ARE DONE.
 
-## HONEST RE-SCOPE (2026-06-21): components built but NOT wired live -> see GAPS.md
+## HONEST RE-SCOPE (2026-06-21): see GAPS.md. Use OC-router for models, NOT OpenRouter.
 
-The user correctly called out that the subsystem was NOT integrated into the live agent. GAPS.md
-is the brutal list. Closing every non-money gap now. The ONE genuinely user-gated item:
-GAP-6 paid OpenRouter credits for Honcho deriver / GBrain embeddings (the mission's own
-money guardrail). Everything else is being finished autonomously.
+The user called out that the subsystem was built but NOT wired into the live agent. GAPS.md is the
+brutal list. OC-router (router.tryopencomputer.com, serving claude models) removed the money
+blocker: GBrain/Honcho chat route through it; GBrain runs tsvector/keyword (no OC-router
+embeddings). NO paid OpenRouter needed.
 
-## GAPS CLOSED (committed)
+## GAPS CLOSED + COMMITTED (verified)
 
-- GAP-3 Memory Supervisor (req #12a): 2c02a14a5. 22 tests + breaker smoke. DONE.
-- GAP-5 Langfuse Slices 1-2 (default-off): aa87558e1. 58 tests + independent review. DONE.
+- GAP-3 Memory Supervisor (req #12a): 2c02a14a5. 22 tests + breaker smoke.
+- GAP-5 Langfuse Slices 1-2 (default-off): aa87558e1 + 3294eb69e (entanglement fix). 58 tests.
+- GAP-1/2/4/9 first live-wiring pass: 3efab18bf. MergeLayer in prefetch_all, reconcile worker,
+  E2E test. 295 baseline. BUT see the RE-OPEN below.
+- GAP-7/8 write-side signing hole + retention revive: 52b2148a4. 88 tests + independent review.
+- GBrain proven live (no money): PGLite tsvector store+search + serve --http on :3131 healthy.
 
-## IN-FLIGHT (re-verify on resume)
+## CRITICAL IN-FLIGHT: GAP-1 live wiring was HALF-DONE (proven-live caught it)
 
-- wf_09b97c09 LIVE WIRING (GAP-1/2/4/9): MergeLayer into memory_manager.prefetch_all (gated) +
-  holographic live plane + reconcile on the background pass + a LIVE E2E test (write->recall
-  through the real prefetch path). Script docs/memory-audit/_wf_livewire.js. THE central deliverable.
-  On resume: verify tests/agent/test_merge_live_wiring.py + test_reconcile_live_wiring.py +
-  test_memory_e2e_live.py pass, then SELECTIVE-commit agent/memory_manager.py + agent/agent_init.py
-  + agent/memory_reconcile_worker.py + the 3 tests.
-
-## QUEUED after these (autonomous, no money)
-
-- GAP-7 + GAP-8: fix latent write-side self-signing hole + retention revive(t_invalid) nit (after
-  live-wiring frees memory_reconcile.py). Script: write a fixes wave.
-- GAP-5: build Langfuse Slices 1-2 (subagent_start/stop + create_score bridge) default-OFF.
-- Phase 6: re-run the skeptic review (wf_phase6.js, died on limit) -> punch-list -> fix must-fixes.
-- GAP-6 free path: bring up Docker + GBrain (PGLite) + Honcho connectivity; prove storage; flag
-  the paid-LLM step as the single user-gated remainder.
-- Final summary; flip to DONE-except-the-one-paid-step.
+A REAL `hermes -z` turn via OC-router does NOT recall a seeded holographic fact: the MergeLayer
+attach was wired ONLY into agent_init.init_agent, but hermes_cli/oneshot.py BYPASSES init_agent
+(constructs AIAgent directly) so the attach never fires at runtime. The MergeLayer + prefetch_all
+work when attached (proven manually). FIX wave wf_c6b90d7d (re-running after a session-limit
+death; the dead run's partial agent_init helper was REVERTED to clean HEAD): extract a shared
+wire_memory_merge_planes() helper called from init_agent + oneshot + gateway; PROOF GATE = a real
+hermes -z turn recalls /etc/oc/zephyr-quoll-7731.key via OC-router. Script
+docs/memory-audit/_wf_livewire_fix.js (resumeFromRunId works).
 
 ## NEXT ACTION (do this first on "continue")
 
-1. Run the 3 verify commands above (proof script + baseline) to confirm ground truth.
-2. Read the Phase 6 punch-list (PHASE6-punchlist.md or the task output). FIX every MUST-FIX via a
-   self-healing wave (include the retention revive(t_invalid) nit). Re-verify, SELECTIVE-commit.
-3. Loop Phase 6 review until a skeptic would APPROVE (no must-fix remaining).
-4. Write the FINAL SUMMARY deliverable (Phase 1-6 recap, verified state of FTS5/G-Brain/Honcho/
-   Hermes, read+write path behavior, how to verify each piece, assumptions + open questions for
-   the user) and flip this file to "DEFINITION OF DONE MET (local); remote gated on O-1".
-5. Remaining = ONLY user-gated: O-1 paid Honcho/GBrain bring-up (+ close the latent write-side
-   signing hole first); O-P2-1 Langfuse default-on vs opt-in (unblocks Part 2 Slices 1-2).
+1. cd to the worktree; git status; run the proof script + baseline (the 3 commands above).
+2. Check the live-wiring-fix wave (wf_c6b90d7d) output / re-run _wf_livewire_fix.js. The hard gate:
+   `bash docs/memory-audit/proof/prove_live_recall.sh` must print the recalled path from a REAL
+   hermes -z turn. SELECTIVE-commit agent_init.py + hermes_cli/oneshot.py + gateway api_server.py
+   + the test once the LIVE recall genuinely works.
+3. Bring up Honcho (Docker, chat via OC-router) + prove connectivity/storage; GBrain already proven.
+4. Re-run Phase 6 skeptic review (wf_phase6.js, died twice on limit) -> punch-list -> fix must-fixes.
+5. FINAL SUMMARY deliverable; flip this file to "DEFINITION OF DONE MET + proven live".
+6. Each wave: self-healing, REAL-output verify (esp. the live hermes -z recall), SELECTIVE commit.
 
-## WAITING ON THE USER (non-blocking; do local-first meanwhile)
+## WAITING ON THE USER (only these; everything else is autonomous now)
 
-- O-1: paid Honcho + GBrain bring-up (Docker + OpenRouter credits) for the remote-planes proof.
 - O-P2-1: enable Langfuse tracing by default via config vs strictly opt-in (outbound telemetry
-  policy). Recommend local-first now, Langfuse opt-in. Blocks Part 2 Slices 1-2 going default-on.
+  policy). Code is DONE default-off; only the enablement policy is yours.
 - O-P2-3: which observer schema string is canonical (hermes.observer.v1 vs opencomputer.observer.v1).
 - Final integration: how the memory mission + the agents mission merge into the product line.
 
