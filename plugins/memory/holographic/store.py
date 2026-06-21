@@ -271,6 +271,53 @@ _SELF_SOURCE_STORES: frozenset[str] = frozenset(
     {"orchestrator/self", "orchestrator/shared"}
 )
 
+
+class RemoteNamespaceViolation(ValueError):
+    """A remote-origin write tried to target a self-generated namespace.
+
+    Raised by :func:`assert_not_self_namespace` (GAP-7 layer 2). It is a
+    ``ValueError`` subclass so existing ``except ValueError`` handlers keep
+    working, but a distinct type so the remote-ingest seam can catch it
+    specifically and route the write to a remote namespace instead of crashing.
+    """
+
+
+def is_self_namespace(source_store: "str | None") -> bool:
+    """True iff ``source_store`` is a SELF-generated namespace.
+
+    The self namespaces are exactly :data:`_SELF_SOURCE_STORES`
+    (``orchestrator/self`` / ``orchestrator/shared``). ``None`` resolves to the
+    default self namespace (:data:`_DEFAULT_SOURCE_STORE`), so a ``None`` write
+    is treated as self. Pure function, no I/O.
+    """
+    ns = source_store if source_store is not None else _DEFAULT_SOURCE_STORE
+    return ns in _SELF_SOURCE_STORES
+
+
+def assert_not_self_namespace(source_store: "str | None") -> str:
+    """GAP-7 layer 2: forbid a REMOTE-ORIGIN write from using a self namespace.
+
+    The write-side namespace-integrity guard. Any remote-origin ingest path (the
+    reconcile QUEUE_REMOTE handling, a future cross-feed importer that ever
+    writes facts into the store) MUST funnel its ``source_store`` through this
+    helper FIRST, so a remote-origin row can NEVER land in ``orchestrator/self``
+    / ``orchestrator/shared`` and therefore can never be self-signed. This is the
+    structural backstop that closes the write-side self-signing hole even if a
+    caller forgets to pass ``self_generated=False``.
+
+    Returns ``source_store`` unchanged when it is a non-self (remote) namespace
+    (``honcho/*``, ``gbrain/*``, ``agent/<slug>``, ...). Raises
+    :class:`RemoteNamespaceViolation` when it is ``None`` or a self namespace,
+    because a remote-origin write has no business there. Pure function, no I/O.
+    """
+    if source_store is None or is_self_namespace(source_store):
+        raise RemoteNamespaceViolation(
+            "remote-origin write may not target a self-generated namespace "
+            f"(got {source_store!r}); route it to a remote namespace "
+            "(honcho/*, gbrain/*, agent/<slug>)"
+        )
+    return source_store
+
 # Stable per-install signing key, lazily created under $HERMES_HOME. Reuses the
 # dreaming review HMAC key when present so there is one local memory-signing
 # secret; otherwise a dedicated 0600 key file is created once. Cached per
@@ -778,18 +825,34 @@ class MemoryStore:
         self._conn.commit()
 
     def _maybe_sign(
-        self, ext_key: str, content: str, source_store: str
+        self,
+        ext_key: str,
+        content: str,
+        source_store: str,
+        *,
+        self_generated: bool = True,
     ) -> "tuple[str, str | None]":
         """Return ``(content_hash, signature_or_None)`` for a fact being written.
 
-        ``content_hash`` is always computed. ``signature`` is computed ONLY for
-        self-generated namespaces (:data:`_SELF_SOURCE_STORES`); for any other
-        namespace (cross-fed Honcho/GBrain rows, per-agent scopes) it is None so
-        the row stays unsigned and cannot be trusted by a downstream floor gate.
+        ``content_hash`` is always computed. ``signature`` is computed ONLY when
+        BOTH conditions hold (GAP-7 layer 1, the write-side self-signing gate):
+          - ``self_generated`` is True (the CALLER asserts this row's content was
+            authored by THIS install's own reconcile / promotion / memory-tool
+            path, NOT relayed in from a remote store); AND
+          - ``source_store`` is a self-generated namespace
+            (:data:`_SELF_SOURCE_STORES`).
+
+        For any other case (a remote-origin write that passes
+        ``self_generated=False``, or any non-self namespace) ``signature`` is
+        None, so the row stays unsigned and cannot be trusted by a downstream
+        floor gate. This closes the hole where a caller-supplied
+        ``source_store="orchestrator/self"`` alone produced a VALID signature on
+        remote-origin (forgeable) content: the namespace tag is no longer
+        sufficient; an explicit self-generated SIGNAL is also required.
         """
         content_hash = _compute_content_hash(content)
         signature: str | None = None
-        if source_store in _SELF_SOURCE_STORES:
+        if self_generated and source_store in _SELF_SOURCE_STORES:
             signature = _compute_signature(ext_key, content_hash, source_store)
         return content_hash, signature
 
@@ -843,6 +906,7 @@ class MemoryStore:
         source_store: str | None = None,
         defer_enrichment: bool = False,
         tier: str = TIER_RAW,
+        self_generated: bool = True,
     ) -> int:
         """Insert a fact and return its fact_id.
 
@@ -853,6 +917,17 @@ class MemoryStore:
         Bi-temporal / namespace fields (Decision C): every insert sets a stable
         ``ext_key`` (content-hash UUID), ``t_valid`` (now), and ``source_store``
         (the namespace; defaults to ``orchestrator/self``).
+
+        Provenance (GAP-7 layer 1): ``self_generated`` (default ``True``) is the
+        caller's assertion that THIS install authored the content. A row is
+        signed ONLY when ``self_generated`` is True AND ``source_store`` is a
+        self namespace; a remote-origin caller MUST pass ``self_generated=False``
+        (and, structurally, a remote namespace via
+        :func:`assert_not_self_namespace`) so relayed content can never be
+        self-signed. The default stays ``True`` so every existing self-writer
+        (the memory tool / fact_store, the reconcile engine writing the
+        orchestrator's own facts, the compaction summary writer) keeps signing
+        exactly as before.
 
         Two-phase write (``defer_enrichment``):
           - ``False`` (default, back-compat): the full path runs as before plus
@@ -871,7 +946,9 @@ class MemoryStore:
 
             ext_key = _content_ext_key(content)
             now = _utc_now_iso()
-            content_hash, signature = self._maybe_sign(ext_key, content, ns)
+            content_hash, signature = self._maybe_sign(
+                ext_key, content, ns, self_generated=self_generated
+            )
             try:
                 cur = self._conn.execute(
                     """
@@ -913,7 +990,7 @@ class MemoryStore:
                 # The signature binds the ext_key, so re-sign against the new key.
                 retry_ext_key = _new_ext_key()
                 retry_hash, retry_sig = self._maybe_sign(
-                    retry_ext_key, content, ns
+                    retry_ext_key, content, ns, self_generated=self_generated
                 )
                 cur = self._conn.execute(
                     """
@@ -993,6 +1070,7 @@ class MemoryStore:
         defer_enrichment: bool = False,
         t_invalid: "str | float | int | None" = None,
         tier: str = TIER_RAW,
+        self_generated: bool = True,
     ) -> str:
         """Replace a fact with a newer one (recency-wins), bi-temporally.
 
@@ -1004,6 +1082,13 @@ class MemoryStore:
         Returns the new fact's ``ext_key``. If the new content duplicates an
         existing fact (content UNIQUE), that existing row is reused/relinked as
         the superseding fact rather than inserting a duplicate.
+
+        Provenance (GAP-7 layer 1): ``self_generated`` (default ``True``) mirrors
+        :meth:`add_fact` — the superseding row is signed ONLY when
+        ``self_generated`` is True AND ``source_store`` is a self namespace. A
+        remote-origin supersede MUST pass ``self_generated=False`` so relayed
+        content can never be self-signed. The default stays ``True`` so the
+        compaction summary writer and the reconcile UPDATE path keep signing.
 
         ``defer_enrichment`` mirrors :meth:`add_fact`: when ``True`` the new
         fact's entity/HRR/bank enrichment is skipped (hot write only); it is
@@ -1024,7 +1109,9 @@ class MemoryStore:
             # Insert (or locate) the new fact and invalidate the old one as one
             # atomic unit so a crash cannot leave the old fact invalidated with
             # no replacement, or the replacement with the old still valid.
-            content_hash, signature = self._maybe_sign(new_ext_key, new_content, ns)
+            content_hash, signature = self._maybe_sign(
+                new_ext_key, new_content, ns, self_generated=self_generated
+            )
             try:
                 cur = self._conn.execute(
                     """
@@ -1058,7 +1145,7 @@ class MemoryStore:
                     # ext_key + content_hash + source_store, so recompute both
                     # against the reused row's existing ext_key and new namespace.
                     reuse_hash, reuse_sig = self._maybe_sign(
-                        new_ext_key, new_content, ns
+                        new_ext_key, new_content, ns, self_generated=self_generated
                     )
                     self._conn.execute(
                         """
@@ -1080,7 +1167,7 @@ class MemoryStore:
                     # (entity/HRR enrichment below).
                     new_ext_key = _new_ext_key()
                     retry_hash, retry_sig = self._maybe_sign(
-                        new_ext_key, new_content, ns
+                        new_ext_key, new_content, ns, self_generated=self_generated
                     )
                     cur = self._conn.execute(
                         """
@@ -1166,28 +1253,68 @@ class MemoryStore:
             self._conn.commit()
             return cur.rowcount > 0
 
-    def restore_fact(self, ext_key: str) -> bool:
-        """Un-archive a fact by ``ext_key`` (clears ``archived_at``). Reversible.
+    def restore_fact(self, ext_key: str, *, revive: bool = False) -> bool:
+        """Un-archive (and optionally revive) a fact by ``ext_key``. Reversible.
 
-        Clears ``archived_at`` back to NULL on the row whose ``ext_key`` matches
-        AND that is currently archived (``archived_at IS NOT NULL``), so the fact
-        returns to the default :meth:`search_facts_readonly` view exactly as it
-        was, with its content intact. This is the inverse of :meth:`archive_fact`
-        and is what makes eviction reversible (NO data loss).
+        Two modes, both reversible and NON-DESTRUCTIVE (no row is ever deleted):
 
-        Returns ``True`` if a row was restored, ``False`` if no matching,
-        currently-archived row existed (idempotent: restoring an active fact is a
-        no-op ``False``).
+          - ``revive=False`` (DEFAULT, unchanged behavior): clears ``archived_at``
+            back to NULL on the row whose ``ext_key`` matches AND that is
+            currently archived (``archived_at IS NOT NULL``). The fact's
+            bi-temporal state is untouched, so a fact that was ALSO invalidated
+            (``t_invalid`` set) stays invalidated and does NOT return to the
+            default view -- only its archived-hide is lifted. This is the exact
+            inverse of :meth:`archive_fact`.
+
+          - ``revive=True`` (full reversal, closes GAP-8): clears BOTH
+            ``archived_at`` AND ``t_invalid`` back to NULL on the matching row,
+            and also clears its ``supersedes_id`` link so the revived fact is no
+            longer chained as a superseding row. This is the one-call recovery
+            for a FOLDED COMPACTION SOURCE, which a tiered-compaction fold leaves
+            BOTH archived (``archived_at`` set) AND invalidated (``t_invalid``
+            set). With ``revive`` the fact returns to the DEFAULT
+            :meth:`search_facts_readonly` view (which requires ``archived_at IS
+            NULL`` AND ``t_invalid IS NULL``) in a single call, content intact.
+            The matching row is any row whose ``ext_key`` matches AND that is
+            currently hidden by EITHER state (``archived_at IS NOT NULL`` OR
+            ``t_invalid IS NOT NULL``).
+
+        Canonical full-recovery READ (no mutation, when you would rather inspect a
+        folded source than revive it): a folded source is hidden from the default
+        view by BOTH states, so to read it WITHOUT changing anything pass both
+        ``include_archived=True`` (lift the archive filter) and an ``as_of``
+        earlier than its ``t_invalid`` (re-open the validity window) to
+        :meth:`search_facts_readonly`. ``revive=True`` is the destructive-free
+        equivalent that instead restores the fact to the live default view.
+
+        Returns ``True`` if a row was updated, ``False`` if no matching,
+        currently-hidden row existed (idempotent: restoring/reviving an already
+        active+valid fact is a no-op ``False``).
         """
-        with self._lock:
-            cur = self._conn.execute(
-                """
+        if revive:
+            # Full reversal: clear both the archive hide AND the invalidation (and
+            # unlink the supersedes chain) so the fact returns to the DEFAULT view
+            # in one call. Match any row hidden by EITHER state so a folded source
+            # (hidden by both) or a purely-archived / purely-invalidated row all
+            # revive. Additive + reversible: no row is deleted; only nullable
+            # state columns are cleared.
+            sql = """
+                UPDATE facts
+                SET archived_at = NULL, t_invalid = NULL, supersedes_id = NULL,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE ext_key = ?
+                  AND (archived_at IS NOT NULL OR t_invalid IS NOT NULL)
+            """
+        else:
+            # Back-compat: un-archive only. A still-invalidated fact stays out of
+            # the default view (its t_invalid is untouched).
+            sql = """
                 UPDATE facts
                 SET archived_at = NULL, updated_at = CURRENT_TIMESTAMP
                 WHERE ext_key = ? AND archived_at IS NOT NULL
-                """,
-                (ext_key,),
-            )
+            """
+        with self._lock:
+            cur = self._conn.execute(sql, (ext_key,))
             self._conn.commit()
             return cur.rowcount > 0
 

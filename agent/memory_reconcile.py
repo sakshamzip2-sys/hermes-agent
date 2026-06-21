@@ -65,6 +65,47 @@ except Exception:  # pragma: no cover - defensive import only
     def _or_expand(query: str) -> str:
         return query
 
+# Namespace-integrity guard (GAP-7 layer 2). A remote-origin write MUST route to
+# a remote namespace and is structurally forbidden from a self namespace. The
+# defensive fallback re-implements the same rule so the guard can never silently
+# become a no-op if the plugin import path is trimmed. The fallback symbols are
+# defined FIRST (unconditionally typed) and only OVERRIDDEN by the real store
+# implementation when the import succeeds, so there is one stable type for each.
+_FALLBACK_SELF_NS = frozenset({"orchestrator/self", "orchestrator/shared"})
+
+
+class RemoteNamespaceViolation(ValueError):
+    """Fallback mirror of the store's guard exception (see that module).
+
+    Overridden by the store's class when the plugin import path is available, so
+    a remote-ingest seam can catch the same type whether the real store module
+    is importable or not.
+    """
+
+
+def assert_not_self_namespace(source_store: "str | None") -> str:
+    """Fallback namespace-integrity guard (see the store module's docstring)."""
+    if source_store is None or source_store in _FALLBACK_SELF_NS:
+        raise RemoteNamespaceViolation(
+            "remote-origin write may not target a self-generated namespace "
+            f"(got {source_store!r})"
+        )
+    return source_store
+
+
+try:  # Prefer the real store implementation when importable.
+    from plugins.memory.holographic.store import (
+        RemoteNamespaceViolation as _StoreRemoteNamespaceViolation,
+    )
+    from plugins.memory.holographic.store import (
+        assert_not_self_namespace as _store_assert_not_self_namespace,
+    )
+
+    RemoteNamespaceViolation = _StoreRemoteNamespaceViolation  # type: ignore[misc,assignment]
+    assert_not_self_namespace = _store_assert_not_self_namespace
+except Exception:  # pragma: no cover - defensive import only; keep the fallbacks
+    pass
+
 # HRR cosine for semantic near-dup retrieve-similar. Numpy may be ABSENT, in
 # which case _HRR_AVAILABLE is False and the engine uses FTS5 + text-hash only.
 try:
@@ -86,6 +127,7 @@ OP_NOOP = "NOOP"
 OP_SKIP = "SKIP"            # threat-scanned out (req #11) or store/not-store reject
 OP_REVIEW = "REVIEW"       # destructive "best practice" advice (MemoryGraft): held, not silently stored
 OP_QUEUE_REMOTE = "QUEUE_REMOTE"  # routed to Honcho/GBrain, stubbed this wave
+OP_REJECT_SELF_NS = "REJECT_SELF_NS"  # GAP-7: remote-origin write aimed at a self namespace
 
 
 @dataclass
@@ -420,6 +462,7 @@ def write_fact_now(
     tags: str = "",
     source_store: str = "orchestrator/self",
     redact_first: bool = True,
+    self_generated: bool = True,
 ) -> "str | None":
     """Read-your-writes: hot-INSERT a fact so it is recallable immediately.
 
@@ -433,6 +476,12 @@ def write_fact_now(
     INSERT so a just-stated secret is never persisted raw (req #8). Returns the
     fact's stable ``ext_key`` on success, or ``None`` when the content is empty
     / not storable.
+
+    ``self_generated`` (GAP-7 layer 1, default ``True``) flows to the store's
+    signing gate. The default suits this function's normal caller (the
+    orchestrator persisting its OWN just-stated fact into ``orchestrator/self``,
+    which should be signed). A remote relay must pass ``self_generated=False``
+    AND a remote ``source_store`` so relayed content is never self-signed.
     """
     if redact_first:
         content, _ = _redact(content)
@@ -447,6 +496,7 @@ def write_fact_now(
         tags=tags,
         source_store=source_store,
         defer_enrichment=True,
+        self_generated=self_generated,
     )
     # Derive the same stable ext_key the store assigns (content-hash UUID).
     try:
@@ -504,6 +554,77 @@ def reconcile(
     return results
 
 
+def reconcile_remote(
+    candidates: Sequence[str],
+    store: Any,
+    *,
+    source_store: str,
+    model: Any = None,
+) -> List[OpRecord]:
+    """Ingest REMOTE-ORIGIN fact candidates into a REMOTE namespace (GAP-7 L2).
+
+    This is the dedicated entry point for any cross-store relay (a future
+    Honcho/GBrain importer, the QUEUE_REMOTE drainer) that writes fetched
+    upstream content INTO the holographic store. It is the structural backstop
+    for the write-side self-signing hole:
+
+      1. ``source_store`` is funneled through
+         :func:`plugins.memory.holographic.store.assert_not_self_namespace`
+         FIRST. A remote-origin write aimed at ``orchestrator/self`` /
+         ``orchestrator/shared`` (or ``None``) is REJECTED outright
+         (``OP_REJECT_SELF_NS``), never written, never signed. So a remote relay
+         that forgets / forges a self namespace cannot land there.
+      2. Every write this path performs passes ``self_generated=False`` to the
+         store, so even a future bug that let a self namespace slip past step 1
+         would STILL never produce a valid signature (defense in depth: the two
+         layers are independent).
+
+    Aside from the namespace gate + the self_generated=False flag this reuses the
+    exact same per-candidate pipeline as :func:`reconcile` (threat scan ->
+    redaction -> store/not-store -> retrieve-similar -> ADD/UPDATE/NOOP), so
+    relayed remote content gets the same safety treatment as self content.
+
+    Returns one :class:`OpRecord` per candidate, in order. If the namespace is a
+    self namespace, EVERY candidate returns ``OP_REJECT_SELF_NS`` (the whole
+    batch is refused) rather than silently downgrading the namespace, so the
+    misroute is loud.
+    """
+    conn = _store_conn(store)
+    _ensure_ops_table(conn)
+
+    # Namespace-integrity gate (layer 2). A self namespace is refused for the
+    # whole batch; the violation is recorded per candidate so it is auditable.
+    try:
+        assert_not_self_namespace(source_store)
+    except RemoteNamespaceViolation as exc:
+        reason = f"remote_into_self_ns:{source_store}"
+        results: List[OpRecord] = []
+        for raw in candidates:
+            op_id = _op_id(source_store, raw or "", OP_REJECT_SELF_NS)
+            rec = OpRecord(
+                op=OP_REJECT_SELF_NS,
+                ext_key=None,
+                content="[REJECTED:remote-into-self-namespace]",
+                op_id=op_id,
+                reason=reason,
+                metadata={"violation": str(exc)},
+            )
+            _record_op(conn, rec, source_store)
+            results.append(rec)
+        return results
+
+    results = []
+    for raw in candidates:
+        results.append(
+            _reconcile_one(
+                raw, store, conn,
+                source_store=source_store,
+                self_generated=False,
+            )
+        )
+    return results
+
+
 def _store_conn(store: Any) -> sqlite3.Connection:
     """Return the store's write connection for the op-queue table.
 
@@ -528,8 +649,16 @@ def _reconcile_one(
     conn: sqlite3.Connection,
     *,
     source_store: str,
+    self_generated: bool = True,
 ) -> OpRecord:
-    """Reconcile a single candidate. See :func:`reconcile` for the contract."""
+    """Reconcile a single candidate. See :func:`reconcile` for the contract.
+
+    ``self_generated`` (GAP-7 layer 1) flows straight to the store on every
+    write this candidate performs. The self path (:func:`reconcile`) leaves it
+    ``True`` (the orchestrator's own facts are signed); the remote path
+    (:func:`reconcile_remote`) passes ``False`` so relayed content is never
+    self-signed even though it reuses this same pipeline.
+    """
     original = raw or ""
 
     # --- 1. injection fence (req #11): scan the RAW candidate, strict scope. ---
@@ -674,6 +803,7 @@ def _reconcile_one(
             tags=str(superseded.get("tags") or ""),
             source_store=source_store,
             defer_enrichment=True,
+            self_generated=self_generated,
         )
         rec = OpRecord(
             op=OP_UPDATE,
@@ -694,6 +824,7 @@ def _reconcile_one(
         tags="",
         source_store=source_store,
         defer_enrichment=True,
+        self_generated=self_generated,
     )
     new_ext_key = _derive_ext_key(content)
     rec = OpRecord(
@@ -719,6 +850,7 @@ def _derive_ext_key(content: str) -> "str | None":
 
 __all__ = [
     "reconcile",
+    "reconcile_remote",
     "write_fact_now",
     "OpRecord",
     "OP_ADD",
@@ -727,4 +859,7 @@ __all__ = [
     "OP_SKIP",
     "OP_REVIEW",
     "OP_QUEUE_REMOTE",
+    "OP_REJECT_SELF_NS",
+    "RemoteNamespaceViolation",
+    "assert_not_self_namespace",
 ]

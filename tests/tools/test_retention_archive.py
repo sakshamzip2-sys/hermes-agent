@@ -354,6 +354,157 @@ def test_invalidated_fact_is_archivable_but_recallable_as_of(store):
 
 
 # ----------------------------------------------------------------------------
+# (f) GAP-8: restore_fact(revive=True) fully reverses a FOLDED COMPACTION SOURCE
+#     (archived AND invalidated) back to the DEFAULT view in one call, while
+#     restore_fact(revive=False) keeps the current behavior (un-archive only).
+# ----------------------------------------------------------------------------
+
+def _fold_source(
+    store: MemoryStore,
+    source_ext_key: str,
+    *,
+    t_invalid: str = "2099-01-01 00:00:00",
+) -> str:
+    """Mimic a tiered-compaction fold of one source fact.
+
+    A fold leaves the source BOTH invalidated (superseded by the folded higher
+    tier) AND archived (evicted from the active working set). That is exactly the
+    GAP-8 state: hidden from the default view by two independent flags, so a
+    plain un-archive is not enough to recover it. The source is invalidated at an
+    explicit future ``t_invalid`` so the as_of validity window
+    (``t_valid < as_of < t_invalid``) is well-defined for the canonical
+    full-recovery read. Returns the folded fact's ext_key.
+    """
+    folded_ext = store.supersede(
+        source_ext_key,
+        "Folded summary of the source facts",
+        category="summary",
+        tier="summary",
+        t_invalid=t_invalid,
+    )
+    store.archive_fact(source_ext_key)
+    return folded_ext
+
+
+def test_restore_revive_recovers_folded_source_to_default_view(store):
+    src = store.add_fact(
+        "Raw note: the backup job runs at 02:00 UTC", category="ops"
+    )
+    src_ext = _ext_key_of(store, src)
+
+    # Fold it: the source is now archived AND invalidated (folded compaction
+    # source). It is hidden from the default view by BOTH flags.
+    _fold_source(store, src_ext)
+    row = store._conn.execute(
+        "SELECT t_invalid, archived_at FROM facts WHERE fact_id = ?", (src,)
+    ).fetchone()
+    assert row["archived_at"] is not None, "fold must archive the source"
+    assert row["t_invalid"] is not None, "fold must invalidate (supersede) the source"
+
+    # Gone from the DEFAULT view (neither un-archive nor as_of alone suffices).
+    default_view = store.search_facts_readonly("backup job", min_trust=0.0, limit=10)
+    assert all(r["fact_id"] != src for r in default_view), (
+        "a folded source must be hidden from the default view"
+    )
+
+    # revive=True clears BOTH archived_at and t_invalid in one call, returning
+    # the fact to the DEFAULT view with content intact (full reversal).
+    assert store.restore_fact(src_ext, revive=True) is True
+    revived = store.search_facts_readonly("backup job", min_trust=0.0, limit=10)
+    assert any(r["fact_id"] == src for r in revived), (
+        "restore_fact(revive=True) must return a folded source to the DEFAULT view"
+    )
+    revived_row = store._conn.execute(
+        "SELECT content, archived_at, t_invalid, supersedes_id "
+        "FROM facts WHERE fact_id = ?",
+        (src,),
+    ).fetchone()
+    assert revived_row["content"] == "Raw note: the backup job runs at 02:00 UTC"
+    assert revived_row["archived_at"] is None, "revive must clear archived_at"
+    assert revived_row["t_invalid"] is None, "revive must clear t_invalid"
+    assert revived_row["supersedes_id"] is None, "revive must unlink the chain"
+
+
+def test_restore_no_revive_keeps_invalidated_out_of_default_view(store):
+    src = store.add_fact(
+        "Raw note: the cron timezone is Asia/Kolkata", category="ops"
+    )
+    src_ext = _ext_key_of(store, src)
+    _fold_source(store, src_ext)
+
+    # revive=False (DEFAULT) un-archives ONLY: archived_at cleared, but t_invalid
+    # is untouched, so the fact stays superseded/invalidated and does NOT return
+    # to the default view (current behavior is preserved).
+    assert store.restore_fact(src_ext) is True
+    row = store._conn.execute(
+        "SELECT archived_at, t_invalid FROM facts WHERE fact_id = ?", (src,)
+    ).fetchone()
+    assert row["archived_at"] is None, "revive=False must still un-archive"
+    assert row["t_invalid"] is not None, (
+        "revive=False must NOT clear t_invalid (stays invalidated)"
+    )
+
+    # Still hidden from the default view (only its archive-hide was lifted).
+    default_view = store.search_facts_readonly("cron timezone", min_trust=0.0, limit=10)
+    assert all(r["fact_id"] != src for r in default_view), (
+        "restore_fact(revive=False) must keep an invalidated fact out of the "
+        "default view"
+    )
+
+    # But it IS recoverable for reading via the canonical full-recovery read:
+    # include_archived + as_of inside its validity window (t_valid < as_of <
+    # t_invalid). The fold invalidated at the explicit future 2099 timestamp.
+    t_valid = store._conn.execute(
+        "SELECT t_valid FROM facts WHERE fact_id = ?", (src,)
+    ).fetchone()["t_valid"]
+    t_invalid = store._conn.execute(
+        "SELECT t_invalid FROM facts WHERE fact_id = ?", (src,)
+    ).fetchone()["t_invalid"]
+    as_of_between = "2098-01-01 00:00:00"
+    assert t_valid < as_of_between < t_invalid
+    readback = store.search_facts_readonly(
+        "cron timezone",
+        min_trust=0.0,
+        limit=10,
+        as_of=as_of_between,
+        include_archived=True,
+    )
+    assert any(r["fact_id"] == src for r in readback), (
+        "the canonical include_archived + as_of read must still surface the fact"
+    )
+
+
+def test_restore_revive_un_archived_plain_invalidated_fact(store):
+    # A purely-invalidated (never archived) fact also revives: revive matches a
+    # row hidden by EITHER flag.
+    fid = store.add_fact("The API base path is /v1", category="config")
+    ext = _ext_key_of(store, fid)
+    assert store.invalidate(ext) is True
+
+    # Hidden from default view (invalidated), but never archived.
+    assert all(
+        r["fact_id"] != fid
+        for r in store.search_facts_readonly("API base path", min_trust=0.0, limit=10)
+    )
+
+    assert store.restore_fact(ext, revive=True) is True
+    assert any(
+        r["fact_id"] == fid
+        for r in store.search_facts_readonly("API base path", min_trust=0.0, limit=10)
+    ), "revive=True must un-invalidate a purely-invalidated fact"
+
+
+def test_restore_revive_is_idempotent_noop_on_active_fact(store):
+    fid = store.add_fact("An already active and valid fact", category="misc")
+    ext = _ext_key_of(store, fid)
+
+    # Already active+valid: revive is a no-op False (nothing hidden to recover).
+    assert store.restore_fact(ext, revive=True) is False
+    # Reviving an unknown ext_key never raises, returns False.
+    assert store.restore_fact("does-not-exist", revive=True) is False
+
+
+# ----------------------------------------------------------------------------
 # (e) bounded-growth helper returns the lowest-value overflow; pure read
 # ----------------------------------------------------------------------------
 
