@@ -1292,6 +1292,20 @@ class APIServerAdapter(BasePlatformAdapter):
             # prompt replaces (not extends) the base for this turn.
             ephemeral_system_replaces_base=replace_system_prompt,
         )
+
+        # Attach the combine-on-read MergeLayer + holographic write plane for
+        # this turn. AIAgent.__init__ -> init_agent already ran this wiring with
+        # the agent's own _memory_manager + _session_db, so this call is
+        # idempotent (no-op when already attached or when the
+        # merge/holographic/reconcile gates are all off, the live default). It
+        # is belt-and-braces to guarantee the gateway turn gets the same recall
+        # plane the CLI does. See agent_init.wire_memory_merge_planes.
+        try:
+            from agent.agent_init import wire_memory_merge_planes
+            wire_memory_merge_planes(agent, user_config)
+        except Exception as _merge_exc:  # noqa: BLE001 — never block a turn on this
+            logger.debug("[%s] gateway merge-plane wiring skipped: %s", self.name, _merge_exc)
+
         return agent
 
     def _parse_oc_overrides(self, body: Dict[str, Any]) -> tuple:

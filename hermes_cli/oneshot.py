@@ -509,6 +509,19 @@ def _run_agent(
         clarify_callback=_oneshot_clarify_callback,
     )
 
+    # Oneshot bypasses HermesCLI._init_agent() AND constructs AIAgent directly,
+    # but AIAgent.__init__ -> init_agent already ran the merge-plane wiring with
+    # the agent's own _memory_manager + _session_db. This call is idempotent
+    # (no-op when already attached or when the merge/holographic/reconcile gates
+    # are all off, which is the live default), so it is purely belt-and-braces
+    # to guarantee the holographic MergeLayer recall plane is attached for the
+    # -z turn. See agent_init.wire_memory_merge_planes.
+    try:
+        from agent.agent_init import wire_memory_merge_planes
+        wire_memory_merge_planes(agent, cfg)
+    except Exception as _merge_exc:  # noqa: BLE001 — never block a oneshot on this
+        logging.debug("Oneshot merge-plane wiring skipped: %s", _merge_exc)
+
     # Belt-and-braces: make sure AIAgent doesn't invoke any streaming
     # display callbacks that would bypass our stdout capture.
     agent.suppress_status_output = True
