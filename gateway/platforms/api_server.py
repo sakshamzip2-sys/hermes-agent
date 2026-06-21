@@ -40,6 +40,7 @@ import os
 import socket as _socket
 import re
 import sqlite3
+import threading
 import time
 import uuid
 from pathlib import Path
@@ -635,8 +636,41 @@ def _humanize_agent_error(raw: str) -> str:
                 "Check the provider login or API key.")
     if "rate limit" in low or "http 429" in low:
         return "The model provider is rate-limiting requests. Try again shortly."
+    # Model not served by this provider/router (e.g. the OC router 404s a GPT id
+    # or Fable 5 with {"message":"model: <id>","type":"server_error"}, or returns
+    # "<model> is not available"). Map it to actionable guidance instead of
+    # leaking a raw "server_error" string.
+    if (
+        "http 404" in low
+        or "model not found" in low
+        or "no such model" in low
+        or "is not available" in low
+        or ("server_error" in low and "model:" in low)
+    ):
+        return ("That model isn't available on this provider right now. "
+                "Pick another model from the picker.")
     msg = " ".join((raw or "The model request failed.").split())
     return msg[:240] + ("…" if len(msg) > 240 else "")
+
+
+def _is_openai_family_model(model: str) -> bool:
+    """True for OpenAI-family model ids (gpt-*/o-series/codex/chatgpt).
+
+    The OC Router binds ONE platform per API key (a key's group is anthropic OR
+    openai), so a combined picker must select the KEY by the model's provider,
+    not just swap the model string. OpenAI-family ids need an OpenAI-group key;
+    claude-* keep the default (Anthropic) key. See _create_agent.
+    """
+    m = (model or "").strip().lower()
+    return (
+        m.startswith("gpt-")
+        or m.startswith("gpt5")
+        or m.startswith("chatgpt")
+        or m.startswith("o1")
+        or m.startswith("o3")
+        or m.startswith("o4")
+        or "codex" in m
+    )
 
 
 if AIOHTTP_AVAILABLE:
@@ -828,6 +862,22 @@ class APIServerAdapter(BasePlatformAdapter):
         # in-flight run by run_id.
         self._run_approval_sessions: Dict[str, str] = {}
         self._session_db: Optional[Any] = None  # Lazy-init SessionDB for session continuity
+        # Per-agent profile SessionDBs (frontend "agents" each get their own
+        # state.db at agent-profiles/{slug}/state.db). Cached per slug.
+        self._agent_profile_dbs: Dict[str, Any] = {}
+        # Guards _agent_profile_dbs: reachable from the event loop thread (read
+        # handlers) and executor worker threads (_run_agent) at once, so the
+        # check-then-open-then-cache must be atomic or two threads would open
+        # (and leak) two SQLite connections for the same slug.
+        self._agent_profile_dbs_lock = threading.Lock()
+        # Artifact registry (in-memory, per running gateway). write_file/patch
+        # completions register a descriptor here so the web UI can (a) receive a
+        # live ``artifact.created`` SSE event and (b) download the file by id via
+        # ``/api/v1/sessions/{sid}/artifacts/{aid}/download``. artifact_id is an
+        # unguessable capability token; downloads only ever serve a path we
+        # recorded ourselves (no client-supplied path → no traversal surface).
+        self._session_artifacts: Dict[str, list] = {}      # session_id -> [descriptor]
+        self._artifacts_by_id: Dict[str, Dict[str, Any]] = {}  # artifact_id -> rec(+path,+session)
 
     @staticmethod
     def _parse_cors_origins(value: Any) -> tuple[str, ...]:
@@ -1060,6 +1110,71 @@ class APIServerAdapter(BasePlatformAdapter):
         return self._session_db
 
     # ------------------------------------------------------------------
+    # Per-agent profiles: each frontend "agent" gets its own backend profile
+    # = its own state.db (sessions/history/FTS5) + its own memory dir, isolated
+    # from the default/main chat agent (which keeps Honcho + GBrain). Activated
+    # when a request carries ``oc_agent_id``.
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _parse_oc_agent_id(body: Dict[str, Any]) -> Optional[str]:
+        """Validate the optional ``oc_agent_id`` profile slug from a request.
+
+        Returns a safe slug (``[a-z0-9][a-z0-9-]*``, <=64 chars, no path
+        traversal) or None. None means "use the default/main agent".
+        """
+        raw = body.get("oc_agent_id")
+        if not isinstance(raw, str):
+            return None
+        slug = raw.strip().lower()
+        if not slug or len(slug) > 64:
+            return None
+        if not re.fullmatch(r"[a-z0-9][a-z0-9-]*", slug):
+            return None
+        return slug
+
+    def _get_agent_profile_db(self, slug: Optional[str]):
+        """Return a cached SessionDB for an agent profile's own state.db.
+
+        Path: ``{hermes_home}/agent-profiles/{slug}/state.db`` — its own
+        sessions, message history, and FTS5 search, fully isolated per agent.
+        Returns None for the default agent (no slug) or on failure.
+        """
+        if not slug:
+            return None
+        cached = self._agent_profile_dbs.get(slug)
+        if cached is not None:
+            return cached
+        # Double-checked locking: hold the lock across the open so only one
+        # SessionDB (one sqlite connection) is ever created per slug, even when
+        # the event loop and an executor thread race on first use.
+        with self._agent_profile_dbs_lock:
+            cached = self._agent_profile_dbs.get(slug)
+            if cached is not None:
+                return cached
+            try:
+                from hermes_constants import get_hermes_home
+                from hermes_state import SessionDB
+                profile_dir = get_hermes_home() / "agent-profiles" / slug
+                profile_dir.mkdir(parents=True, exist_ok=True)
+                db = SessionDB(db_path=profile_dir / "state.db")
+                self._agent_profile_dbs[slug] = db
+                return db
+            except Exception as e:
+                logger.warning("Failed to open agent-profile DB for %s: %s", slug, e)
+                return None
+
+    def _agent_db_for_request(self, request: "web.Request"):
+        """Return the profile SessionDB for the request's agent, or None.
+
+        Reads the ``X-OpenComputer-Agent-Id`` header so session reads/deletes can
+        be routed to the same per-agent profile db that the chat turns persist
+        to (fixes "resume an agent chat shows no messages"). None => shared db.
+        """
+        raw = request.headers.get("X-OpenComputer-Agent-Id", "")
+        slug = self._parse_oc_agent_id({"oc_agent_id": raw})
+        return self._get_agent_profile_db(slug) if slug else None
+
+    # ------------------------------------------------------------------
     # Agent creation helper
     # ------------------------------------------------------------------
 
@@ -1076,6 +1191,10 @@ class APIServerAdapter(BasePlatformAdapter):
         gateway_session_key: Optional[str] = None,
         model_override: Optional[str] = None,
         reasoning_config_override: Optional[Dict[str, Any]] = None,
+        session_db_override: Optional[Any] = None,
+        is_agent_profile: bool = False,
+        replace_system_prompt: bool = False,
+        agent_def_slug: Optional[str] = None,
     ) -> Any:
         """
         Create an AIAgent instance using the gateway's runtime config.
@@ -1112,6 +1231,43 @@ class APIServerAdapter(BasePlatformAdapter):
         user_config = _load_gateway_config()
         enabled_toolsets = sorted(_get_platform_tools(user_config, "api_server"))
 
+        # Per-MODEL credential routing (the OC Router binds one platform per API
+        # key). When the selected model is OpenAI-family (gpt-*/o-series/codex)
+        # and the user has configured a `providers.openai` entry in config.yaml
+        # (the OpenAI-group router key + base_url), use ITS credentials for this
+        # turn so GPT models actually route to the OpenAI group instead of 404-ing
+        # against the default Anthropic-group key. claude-* turns are untouched.
+        if _is_openai_family_model(model):
+            _providers = user_config.get("providers")
+            _oai = _providers.get("openai") if isinstance(_providers, dict) else None
+            if isinstance(_oai, dict) and _oai.get("api_key"):
+                runtime_kwargs = dict(runtime_kwargs)
+                runtime_kwargs["api_key"] = _oai["api_key"]
+                if _oai.get("base_url"):
+                    runtime_kwargs["base_url"] = _oai["base_url"]
+                runtime_kwargs["provider"] = _oai.get("provider", "custom")
+                runtime_kwargs["api_mode"] = _oai.get("api_mode", "chat_completions")
+                logger.info(
+                    "[%s] OpenAI-family model %s → providers.openai credentials",
+                    self.name, model,
+                )
+
+        # Per-agent profiles are local-only: they get their own
+        # SQLite/FTS5/markdown memory but NOT the shared external memory plane
+        # (Honcho provider + GBrain MCP), which stays exclusive to the main
+        # agent. Drop the gbrain toolset here; the Honcho provider is skipped
+        # via disable_memory_provider below. The local `memory` toolset stays.
+        if is_agent_profile:
+            enabled_toolsets = [t for t in enabled_toolsets if t != "gbrain"]
+
+        # Specialized-agent manifest resolution (Feature A): when a turn carries an
+        # oc_agent_id that matches a shipped .hermes/agents/<slug>.md manifest,
+        # apply that agent's declared capability at conversation creation
+        # (set-at-spawn, so per-conversation prompt caching stays intact).
+        if agent_def_slug:
+            enabled_toolsets, model = self._apply_agent_def(
+                agent_def_slug, enabled_toolsets, model, model_override)
+
         max_iterations = int(os.getenv("HERMES_MAX_ITERATIONS", "90"))
 
         # Load fallback provider chain so the API server platform has the
@@ -1134,12 +1290,45 @@ class APIServerAdapter(BasePlatformAdapter):
             tool_start_callback=tool_start_callback,
             tool_complete_callback=tool_complete_callback,
             status_callback=status_callback,
-            session_db=self._ensure_session_db(),
+            session_db=session_db_override or self._ensure_session_db(),
             fallback_model=fallback_model,
             reasoning_config=reasoning_config,
             gateway_session_key=gateway_session_key,
+            # Profile agents keep their local memory store but skip the external
+            # Honcho provider (GBrain toolset already filtered above).
+            disable_memory_provider=is_agent_profile,
+            # When the agent overwrites the base prompt, the ephemeral system
+            # prompt replaces (not extends) the base for this turn.
+            ephemeral_system_replaces_base=replace_system_prompt,
         )
         return agent
+
+    @staticmethod
+    def _apply_agent_def(slug, enabled_toolsets, model, model_override):
+        """Resolve a .hermes/agents/<slug>.md manifest into (toolsets, model) at
+        spawn. Pure + testable: the manifest toolsets are INTERSECTED with the
+        platform-available set (a bogus/archived grant can never empty or break
+        the toolset), and the manifest model is honored only when the picker did
+        not already pin one. Never raises: a missing/bad manifest is a no-op."""
+        try:
+            from tools.agent_defs import resolve_agent_overrides
+
+            ov = resolve_agent_overrides(slug)
+            if not ov:
+                return enabled_toolsets, model
+            ts = ov.get("toolsets")
+            if ts:
+                avail = set(enabled_toolsets)
+                resolved = [t for t in ts if t in avail]
+                if resolved:
+                    enabled_toolsets = resolved
+            if ov.get("model") and not (model_override and str(model_override).strip()):
+                model = ov["model"]
+            logger.info("agent-def %s resolved: toolsets=%s model=%s",
+                        slug, enabled_toolsets, model)
+        except Exception as exc:  # noqa: BLE001 - never break a turn on resolve
+            logger.debug("agent-def resolve for %s failed: %s", slug, exc)
+        return enabled_toolsets, model
 
     def _parse_oc_overrides(self, body: Dict[str, Any]) -> tuple:
         """Parse the prompt-bar model-picker fields from a request body.
@@ -1375,6 +1564,35 @@ class APIServerAdapter(BasePlatformAdapter):
             "data": skills,
         })
 
+    async def _handle_skills_usage(self, request: "web.Request") -> "web.Response":
+        """GET /v1/skills/usage — per-skill usage track record.
+
+        Read-only. Returns ``tools.skill_usage.usage_report()`` verbatim: one
+        row per skill on disk with use_count, view_count, last_used_at,
+        last_activity_at, activity_count, state, pinned, and provenance. This is
+        a usage track record (frequency + recency + lifecycle state), NOT a
+        success rate — there is no per-skill outcome counter yet. Powers the
+        workspace skill-health view and the intent-dispatcher's tie-breaking.
+        """
+        auth_err = self._check_auth(request)
+        if auth_err:
+            return auth_err
+
+        try:
+            from tools.skill_usage import usage_report
+            rows = usage_report()
+        except Exception:
+            logger.exception("GET /v1/skills/usage failed")
+            return web.json_response(
+                _openai_error("Failed to read skill usage", err_type="server_error"),
+                status=500,
+            )
+
+        return web.json_response({
+            "object": "list",
+            "data": rows,
+        })
+
     async def _handle_toolsets(self, request: "web.Request") -> "web.Response":
         """GET /v1/toolsets — list toolsets and their resolved tools.
 
@@ -1481,8 +1699,8 @@ class APIServerAdapter(BasePlatformAdapter):
             return {}, web.json_response(_openai_error("Request body must be a JSON object"), status=400)
         return body, None
 
-    def _get_existing_session_or_404(self, session_id: str) -> tuple[Optional[Dict[str, Any]], Optional["web.Response"]]:
-        db = self._ensure_session_db()
+    def _get_existing_session_or_404(self, session_id: str, db: Optional[Any] = None) -> tuple[Optional[Dict[str, Any]], Optional["web.Response"]]:
+        db = db if db is not None else self._ensure_session_db()
         if db is None:
             return None, web.json_response(_openai_error("Session database unavailable", code="session_db_unavailable"), status=503)
         session = db.get_session(session_id)
@@ -1637,16 +1855,49 @@ class APIServerAdapter(BasePlatformAdapter):
         return web.json_response({"object": "hermes.session", "session": self._session_response(session)})
 
     async def _handle_delete_session(self, request: "web.Request") -> "web.Response":
-        """DELETE /api/sessions/{session_id}."""
+        """DELETE /api/sessions/{session_id}.
+
+        An agent-scoped chat has its metadata row in the shared db (created
+        there for the global session list) and its turns persisted in the
+        agent's own profile db. Delete from BOTH so no orphaned messages are
+        left behind in the profile db when the chat is removed.
+        """
         auth_err = self._check_auth(request)
         if auth_err:
             return auth_err
         session_id = request.match_info["session_id"]
-        session, err = self._get_existing_session_or_404(session_id)
-        if err:
-            return err
-        db = self._ensure_session_db()
-        deleted = db.delete_session(session_id)
+
+        shared_db = self._ensure_session_db()
+        agent_db = self._agent_db_for_request(request)
+        # Distinct db objects to act on (agent_db may be None or, defensively,
+        # the same object as shared_db — dedupe by identity).
+        targets = [shared_db]
+        if agent_db is not None and agent_db is not shared_db:
+            targets.append(agent_db)
+
+        # 404 only if the session exists in NONE of the candidate dbs.
+        existed = False
+        for db in targets:
+            try:
+                if db is not None and db.get_session(session_id) is not None:
+                    existed = True
+                    break
+            except Exception:
+                continue
+        if not existed:
+            return web.json_response(_openai_error(f"Session not found: {session_id}", code="session_not_found"), status=404)
+
+        deleted = False
+        for db in targets:
+            if db is None:
+                continue
+            try:
+                if db.delete_session(session_id):
+                    deleted = True
+            except Exception:
+                # Best-effort cleanup across dbs; one failing db must not block
+                # the others or leave the caller with a 500 on a real delete.
+                continue
         return web.json_response({"object": "hermes.session.deleted", "id": session_id, "deleted": bool(deleted)})
 
     async def _handle_session_messages(self, request: "web.Request") -> "web.Response":
@@ -1655,10 +1906,12 @@ class APIServerAdapter(BasePlatformAdapter):
         if auth_err:
             return auth_err
         session_id = request.match_info["session_id"]
-        _, err = self._get_existing_session_or_404(session_id)
+        # Route to the agent's profile db when the request is agent-scoped, so a
+        # resumed agent chat returns the messages persisted by its turns.
+        db = self._agent_db_for_request(request) or self._ensure_session_db()
+        _, err = self._get_existing_session_or_404(session_id, db)
         if err:
             return err
-        db = self._ensure_session_db()
         resolved_id = db.resolve_resume_session_id(session_id)
         messages = db.get_messages(resolved_id)
         return web.json_response({
@@ -1666,6 +1919,252 @@ class APIServerAdapter(BasePlatformAdapter):
             "session_id": resolved_id,
             "data": [self._message_response(m) for m in messages],
         })
+
+    # ---- Artifacts -------------------------------------------------------
+    # write_file / patch completions register the file they produced so the web
+    # UI can present it (claude.ai-style card → panel) and download it by id.
+
+    @staticmethod
+    def _artifact_kind(suffix: str, mime: str) -> str:
+        """Coarse category the web UI uses to pick a preview renderer."""
+        s = (suffix or "").lower().lstrip(".")
+        if s == "svg":
+            return "svg"
+        if mime.startswith("image/"):
+            return "image"
+        if s in ("md", "markdown"):
+            return "markdown"
+        if s == "pdf":
+            return "pdf"
+        if s == "csv":
+            return "csv"
+        if s in ("xlsx", "xls"):
+            return "xlsx"
+        if s in ("docx", "doc"):
+            return "docx"
+        if s in (
+            "py", "js", "ts", "tsx", "jsx", "go", "rs", "java", "c", "cc",
+            "cpp", "h", "hpp", "rb", "sh", "bash", "zsh", "json", "yaml",
+            "yml", "toml", "html", "css", "scss", "sql", "xml", "kt", "swift",
+        ):
+            return "code"
+        return "file"
+
+    @staticmethod
+    def _extract_written_paths(function_result: Any) -> list:
+        """Absolute file paths a write_file/patch result reports (best-effort)."""
+        data = function_result
+        if isinstance(data, str):
+            try:
+                data = json.loads(data)
+            except Exception:
+                return []
+        if not isinstance(data, dict):
+            return []
+        paths: list = []
+        fm = data.get("files_modified")
+        if isinstance(fm, list):
+            paths.extend(str(x) for x in fm if x)
+        rp = data.get("resolved_path")
+        if rp and str(rp) not in paths:
+            paths.append(str(rp))
+        return paths
+
+    @staticmethod
+    def _artifact_id_for(session_id: Optional[str], path: str) -> str:
+        """Deterministic artifact id for a (session, path).
+
+        Stable across reloads AND gateway restarts, so a card minted live
+        during a turn and one re-hydrated from message history later resolve to
+        the SAME id (and the same download URL). This is what makes artifacts
+        durable — "create a file, leave, come back" still shows + downloads it.
+        """
+        import hashlib
+        h = hashlib.sha1(f"{session_id or ''}:{path}".encode("utf-8")).hexdigest()
+        return f"art-{h[:20]}"
+
+    def _build_artifact_descriptor(self, session_id: Optional[str], path: str) -> Optional[Dict[str, Any]]:
+        """Build a wire descriptor for a produced file (deterministic id) and
+        cache it in-memory for the live turn. Returns None for non-files."""
+        import mimetypes
+        import pathlib
+        p = pathlib.Path(path)
+        # Only present real files (skip dirs / phantom paths from diff output).
+        if not p.is_file():
+            return None
+        try:
+            size = p.stat().st_size
+        except OSError:
+            size = None
+        mime = mimetypes.guess_type(str(p))[0] or "application/octet-stream"
+        artifact_id = self._artifact_id_for(session_id, str(p))
+        descriptor = {
+            "artifact_id": artifact_id,
+            "title": p.name,
+            "kind": self._artifact_kind(p.suffix, mime),
+            "path": str(p),
+            "mime_type": mime,
+            "size_bytes": size,
+        }
+        rec = dict(descriptor)
+        rec["session_id"] = session_id or ""
+        self._artifacts_by_id[artifact_id] = rec
+        key = session_id or "_none"
+        lst = self._session_artifacts.setdefault(key, [])
+        if not any(r.get("artifact_id") == artifact_id for r in lst):
+            lst.append(rec)
+            if len(lst) > 200:  # bound memory: keep the most recent
+                del lst[:-200]
+        return descriptor
+
+    # Streaming emit calls this on write_file/patch completion.
+    def _register_artifact(self, session_id: Optional[str], path: str) -> Optional[Dict[str, Any]]:
+        return self._build_artifact_descriptor(session_id, path)
+
+    def _artifacts_from_history(self, session_id: str) -> List[Dict[str, Any]]:
+        """Durable artifact list derived from persisted write_file/patch tool
+        results in the session's message history. Survives restarts/reloads
+        because state.db is the source of truth, not the in-memory cache."""
+        out: List[Dict[str, Any]] = []
+        seen: set = set()
+        try:
+            db = self._ensure_session_db()
+            if db is None:
+                return out
+            resolved = db.resolve_resume_session_id(session_id)
+            messages = db.get_messages(resolved)
+        except Exception:
+            return out
+        for m in messages:
+            if m.get("role") != "tool" or m.get("tool_name") not in ("write_file", "patch"):
+                continue
+            for path in self._extract_written_paths(m.get("content")):
+                if path in seen:
+                    continue
+                seen.add(path)
+                desc = self._build_artifact_descriptor(session_id, path)
+                if desc:
+                    out.append(desc)
+        return out
+
+    def _collect_session_artifacts(self, session_id: str) -> List[Dict[str, Any]]:
+        """Merge durable (history) + live (in-memory, current turn) artifacts,
+        deduped by deterministic id."""
+        merged: Dict[str, Dict[str, Any]] = {}
+        for rec in self._artifacts_from_history(session_id):
+            merged[rec["artifact_id"]] = dict(rec, session_id=session_id)
+        for rec in self._session_artifacts.get(session_id, []):
+            merged[rec["artifact_id"]] = rec
+        return list(merged.values())
+
+    async def _handle_artifact_list(self, request: "web.Request") -> "web.Response":
+        """GET /api/(v1/)sessions/{session_id}/artifacts — descriptors for the browser grid."""
+        auth_err = self._check_auth(request)
+        if auth_err:
+            return auth_err
+        session_id = request.match_info["session_id"]
+        items = self._collect_session_artifacts(session_id)
+        data = [
+            {k: v for k, v in rec.items() if k not in ("path", "session_id")}
+            for rec in items
+        ]
+        return web.json_response({"object": "list", "session_id": session_id, "data": data})
+
+    async def _handle_artifact_download(self, request: "web.Request") -> "web.Response":
+        """GET /api/(v1/)sessions/{session_id}/artifacts/{artifact_id}/download."""
+        import pathlib
+        auth_err = self._check_auth(request)
+        if auth_err:
+            return auth_err
+        session_id = request.match_info.get("session_id") or ""
+        artifact_id = request.match_info["artifact_id"]
+        # Resolve id -> path among THIS session's artifacts (durable history +
+        # live cache). This both survives restarts and acts as the auth guard:
+        # we only ever serve a file the session actually produced.
+        rec = None
+        for cand in self._collect_session_artifacts(session_id):
+            if cand.get("artifact_id") == artifact_id:
+                rec = cand
+                break
+        if not rec:
+            return web.json_response(
+                _openai_error("Artifact not found", code="artifact_not_found"), status=404
+            )
+        p = pathlib.Path(rec["path"])
+        if not p.is_file():
+            return web.json_response(
+                _openai_error("Artifact file no longer available", code="artifact_gone"), status=410
+            )
+        try:
+            body = p.read_bytes()
+        except OSError:
+            return web.json_response(
+                _openai_error("Artifact unreadable", code="artifact_unreadable"), status=500
+            )
+        # Quote the filename defensively (strip CR/LF) for the header.
+        safe_name = re.sub(r"[\r\n\"]", "_", p.name)
+        return web.Response(
+            body=body,
+            content_type=rec.get("mime_type") or "application/octet-stream",
+            headers={"Content-Disposition": f'attachment; filename="{safe_name}"'},
+        )
+
+    async def _handle_oc_image_file(self, request: "web.Request") -> "web.Response":
+        """GET /api/files/{file_id} — serve a generated image from the images cache.
+
+        The web image-generation flow saves images under
+        ``$HERMES_HOME/cache/images/<filename>`` (see
+        agent.image_gen_provider.save_b64_image); the frontend references each by
+        that bare filename. We serve ONLY files inside that directory, resolved
+        by basename, so this route can never read an arbitrary path (the choke
+        point that previously left generated images unservable — the BFF proxies
+        ``/api/chat/file/{id}`` here, and nothing answered).
+        """
+        import pathlib
+        import mimetypes
+        auth_err = self._check_auth(request)
+        if auth_err:
+            return auth_err
+        file_id = request.match_info.get("file_id") or ""
+        # Basename-only guard: reject anything that could escape the cache dir.
+        if (
+            not file_id
+            or "/" in file_id
+            or "\\" in file_id
+            or ".." in file_id
+            or "\x00" in file_id
+        ):
+            return web.json_response(
+                _openai_error("Invalid file id", code="invalid_file_id"), status=400
+            )
+        try:
+            from agent.image_gen_provider import _images_cache_dir
+            base = _images_cache_dir().resolve()
+        except Exception:
+            return web.json_response(
+                _openai_error("Image cache unavailable", code="image_cache_unavailable"),
+                status=500,
+            )
+        p = (base / file_id).resolve()
+        # Confine strictly to the images cache directory.
+        if p.parent != base or not p.is_file():
+            return web.json_response(
+                _openai_error("File not found", code="file_not_found"), status=404
+            )
+        try:
+            body = p.read_bytes()
+        except OSError:
+            return web.json_response(
+                _openai_error("File unreadable", code="file_unreadable"), status=500
+            )
+        ctype = mimetypes.guess_type(str(p))[0] or "application/octet-stream"
+        safe_name = re.sub(r'[\r\n"]', "_", p.name)
+        # `inline` (not attachment) so the browser <img> renders it.
+        return web.Response(
+            body=body,
+            content_type=ctype,
+            headers={"Content-Disposition": f'inline; filename="{safe_name}"'},
+        )
 
     async def _handle_fork_session(self, request: "web.Request") -> "web.Response":
         """POST /api/sessions/{session_id}/fork — branch via current SessionDB primitives."""
@@ -2034,7 +2533,12 @@ class APIServerAdapter(BasePlatformAdapter):
                 )
             session_id = provided_session_id
             try:
-                db = self._ensure_session_db()
+                _agent_slug = self._parse_oc_agent_id(body)
+                db = (
+                    self._get_agent_profile_db(_agent_slug)
+                    if _agent_slug
+                    else self._ensure_session_db()
+                )
                 if db is not None:
                     history = db.get_messages_as_conversation(session_id)
             except Exception as e:
@@ -2056,6 +2560,12 @@ class APIServerAdapter(BasePlatformAdapter):
         # Per-request model / reasoning overrides from the prompt-bar model
         # picker (shared parser — see _parse_oc_overrides; /v1/responses uses it too).
         model_override, reasoning_config_override = self._parse_oc_overrides(body)
+        # Per-agent profile: a frontend "agent" runs against its own state.db +
+        # memory dir (agent-profiles/{slug}). None => default/main chat agent.
+        agent_id_slug = self._parse_oc_agent_id(body)
+        # Agent opted to overwrite (not extend) the base system prompt: use the
+        # ephemeral system prompt as the entire system prompt for this turn.
+        replace_system_prompt = bool(body.get("oc_replace_system_prompt"))
 
         completion_id = f"chatcmpl-{uuid.uuid4().hex[:29]}"
         model_name = (model_override or body.get("model") or self._model_name)
@@ -2146,6 +2656,22 @@ class APIServerAdapter(BasePlatformAdapter):
                     # dropped → every "Response" box rendered empty.
                     "result": _tool_result_to_text(function_result),
                 }))
+                # Artifact presentation: when a file-producing tool completes,
+                # register the file and emit a named ``artifact.created`` event
+                # the web UI renders as a claude.ai-style card → panel. Purely
+                # observational (no model tool / system-prompt change → prompt
+                # cache prefix untouched).
+                if function_name in ("write_file", "patch"):
+                    try:
+                        for _apath in self._extract_written_paths(function_result):
+                            _desc = self._register_artifact(session_id, _apath)
+                            if _desc:
+                                _stream_q.put(("__artifact__", {
+                                    "tool_name": function_name,
+                                    "artifact": _desc,
+                                }))
+                    except Exception:
+                        logger.debug("artifact emit failed", exc_info=True)
 
             # Surface an escalated approval (smart mode) as a named
             # ``approval.requested`` SSE event the WebUI renders as an Approve
@@ -2197,6 +2723,8 @@ class APIServerAdapter(BasePlatformAdapter):
                 model_override=model_override,
                 reasoning_config_override=reasoning_config_override,
                 approval_notify_callback=_on_approval,
+                agent_id_slug=agent_id_slug,
+                replace_system_prompt=replace_system_prompt,
             ))
             # Ensure SSE drain loops can terminate without relying on polling
             # agent_task.done(), which can race with queue timeout checks. Also
@@ -2223,6 +2751,8 @@ class APIServerAdapter(BasePlatformAdapter):
                 gateway_session_key=gateway_session_key,
                 model_override=model_override,
                 reasoning_config_override=reasoning_config_override,
+                agent_id_slug=agent_id_slug,
+                replace_system_prompt=replace_system_prompt,
             )
 
         idempotency_key = request.headers.get("Idempotency-Key")
@@ -2401,6 +2931,14 @@ class APIServerAdapter(BasePlatformAdapter):
                     event_data = json.dumps(item[1])
                     await response.write(
                         f"event: approval.requested\ndata: {event_data}\n\n".encode()
+                    )
+                elif isinstance(item, tuple) and len(item) == 2 and item[0] == "__artifact__":
+                    # A file-producing tool completed → ``event: artifact.created``,
+                    # which the WebUI (oc-openai-stream → oc-translator) turns into
+                    # an artifact_created packet rendered as a card + side panel.
+                    event_data = json.dumps(item[1])
+                    await response.write(
+                        f"event: artifact.created\ndata: {event_data}\n\n".encode()
                     )
                 elif isinstance(item, tuple) and len(item) == 2 and item[0] == "__reasoning__":
                     # Extended-thinking delta → ``delta.reasoning_content`` chunk.
@@ -3568,6 +4106,59 @@ class APIServerAdapter(BasePlatformAdapter):
             return auth_err
         return web.json_response(self.build_parallel_agents_snapshot())
 
+    @staticmethod
+    def build_agent_manifests(include_archived: bool = False) -> dict:
+        """Read-only list of specialized-agent manifests (.hermes/agents/*.md) as
+        gallery-ready metadata. Powers the frontend gallery (merged additively onto
+        the hardcoded presets) and the manifest endpoint. Pure + testable; a
+        malformed manifest is surfaced in ``errors`` rather than crashing the list."""
+        manifests: list = []
+        error = None
+        try:
+            from tools.agent_defs import list_agent_definitions, to_manifest_dict
+
+            for d in list_agent_definitions():
+                m = to_manifest_dict(d)
+                status = (m.get("status") or "active")
+                if status == "archived" and not include_archived:
+                    continue
+                manifests.append(m)
+        except Exception as exc:  # noqa: BLE001
+            error = str(exc)
+        return {
+            "object": "hermes.agent_manifests",
+            "manifests": manifests,
+            "error": error,
+            "timestamp": int(time.time()),
+        }
+
+    async def _handle_agent_manifests(self, request: "web.Request") -> "web.Response":
+        """GET /api/agents/manifests — read-only specialized-agent manifest metadata
+        (status-filtered; archived hidden unless ?include_archived=1)."""
+        auth_err = self._check_auth(request)
+        if auth_err:
+            return auth_err
+        inc = request.query.get("include_archived") in ("1", "true", "yes")
+        return web.json_response(self.build_agent_manifests(include_archived=inc))
+
+    async def _handle_parallel_agents_events(self, request: "web.Request") -> "web.StreamResponse":
+        """GET /v1/parallel-agents/events — live SSE stream of the parallel-agents
+        run view: a snapshot on connect, then deltas as run-state lands on the
+        oc_runs spine. Last-Event-ID (or ?cursor=) resumes from the durable spine.
+
+        Backend-agnostic: it reads the spine directly, so it works for the default
+        oc-backend without reviving the dormant, hermes-gated /v1/runs/{id}/events
+        channel. The streaming logic lives in plugins.oc_runs.sse_endpoint so it is
+        unit-tested over real HTTP independently of this server."""
+        auth_err = self._check_auth(request)
+        if auth_err:
+            return auth_err
+        from plugins.oc_runs import sse_endpoint
+
+        origin = request.headers.get("Origin", "")
+        cors = self._cors_headers_for_origin(origin) if origin else None
+        return await sse_endpoint.stream_events(request, extra_headers=cors)
+
     # ------------------------------------------------------------------
     # Parallel-agents drill-down: per-entity detail, control, and the
     # click-to-chat bridge. All read paths reuse the plugin DB accessors;
@@ -4419,6 +5010,8 @@ class APIServerAdapter(BasePlatformAdapter):
         model_override: Optional[str] = None,
         reasoning_config_override: Optional[Dict[str, Any]] = None,
         approval_notify_callback=None,
+        agent_id_slug: Optional[str] = None,
+        replace_system_prompt: bool = False,
     ) -> tuple:
         """
         Create an agent and run a conversation in a thread executor.
@@ -4450,6 +5043,29 @@ class APIServerAdapter(BasePlatformAdapter):
                 session_key=gateway_session_key or session_id or "",
                 session_id=session_id or "",
             )
+            # Per-agent profile isolation: scope this run's home to the agent's
+            # profile dir so memory (and any home-scoped state) load from
+            # agent-profiles/{slug}/ instead of the shared default home. The
+            # session DB is passed explicitly (DEFAULT_DB_PATH is frozen at
+            # import, so the override alone would not redirect it).
+            _home_token = None
+            _profile_db = None
+            if agent_id_slug:
+                from hermes_constants import (
+                    get_hermes_home,
+                    set_hermes_home_override,
+                )
+                _profile_db = self._get_agent_profile_db(agent_id_slug)
+                # Fail closed: never silently fall back to the shared main db for
+                # an agent-scoped turn. Doing so would leak this agent's
+                # conversation into the main agent's history and break resume
+                # (reads route to the agent's profile db, which would be empty).
+                if _profile_db is None:
+                    raise RuntimeError(
+                        f"agent-profile db unavailable for {agent_id_slug!r}"
+                    )
+                _profile_dir = get_hermes_home() / "agent-profiles" / agent_id_slug
+                _home_token = set_hermes_home_override(str(_profile_dir))
             _notify_registered = False
             if approval_notify_callback is not None and _approval_skey:
                 try:
@@ -4471,6 +5087,10 @@ class APIServerAdapter(BasePlatformAdapter):
                     model_override=model_override,
                     reasoning_config_override=reasoning_config_override,
                     gateway_session_key=gateway_session_key,
+                    session_db_override=_profile_db,
+                    is_agent_profile=bool(agent_id_slug),
+                    replace_system_prompt=replace_system_prompt,
+                    agent_def_slug=agent_id_slug,
                 )
                 if agent_ref is not None:
                     agent_ref[0] = agent
@@ -4500,8 +5120,21 @@ class APIServerAdapter(BasePlatformAdapter):
                     except Exception:
                         pass
                 clear_session_vars(tokens)
+                if _home_token is not None:
+                    try:
+                        from hermes_constants import reset_hermes_home_override
+                        reset_hermes_home_override(_home_token)
+                    except Exception:
+                        pass
 
-        return await loop.run_in_executor(None, _run)
+        # Run inside a copied context so any ContextVar mutation in _run (e.g.
+        # the agent-profile home override) is sandboxed to a throwaway context
+        # and can never leak into other tasks sharing the executor's threads —
+        # matching gateway/run.py's _run_in_executor_with_context pattern.
+        from contextvars import copy_context
+
+        _ctx = copy_context()
+        return await loop.run_in_executor(None, _ctx.run, _run)
 
     # ------------------------------------------------------------------
     # /v1/runs — structured event streaming
@@ -5061,6 +5694,24 @@ class APIServerAdapter(BasePlatformAdapter):
 
         return web.json_response({"run_id": run_id, "status": "stopping"})
 
+    async def _reconcile_runs_loop(self) -> None:
+        """Always-on run-state reconciliation (Feature B truth-under-failure).
+
+        Drains the engine outboxes into the spine and runs the reconciler over
+        live oc_agents sessions on a fixed interval, so a crashed/hung worker
+        flips to failed/stalled even when NObody has the cockpit open (the
+        read-triggered feeder only fires on an SSE/snapshot read). Best-effort and
+        defensive: a transient error never kills the loop. Runs the blocking DB
+        work in a thread so it cannot stall the event loop."""
+        interval = float(os.getenv("HERMES_RECONCILE_INTERVAL", "15"))
+        while True:
+            await asyncio.sleep(interval)
+            try:
+                from plugins.oc_runs import feeder
+                await asyncio.to_thread(feeder.feed)
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("[api_server] reconcile loop tick failed: %s", exc)
+
     async def _sweep_orphaned_runs(self) -> None:
         """Periodically clean up run streams that were never consumed."""
         while True:
@@ -5117,6 +5768,7 @@ class APIServerAdapter(BasePlatformAdapter):
             self._app.router.add_get("/v1/oc/model_availability", self._handle_oc_model_availability)
             self._app.router.add_get("/v1/capabilities", self._handle_capabilities)
             self._app.router.add_get("/v1/skills", self._handle_skills)
+            self._app.router.add_get("/v1/skills/usage", self._handle_skills_usage)
             self._app.router.add_get("/v1/toolsets", self._handle_toolsets)
             # Session/client control surface (thin wrappers over SessionDB + _run_agent)
             self._app.router.add_get("/api/sessions", self._handle_list_sessions)
@@ -5152,7 +5804,20 @@ class APIServerAdapter(BasePlatformAdapter):
             self._app.router.add_post("/api/parallel-agents/agents/{session_id}/send", self._handle_agent_send)
             self._app.router.add_post("/api/parallel-agents/flows/{flow_id}/stop", self._handle_flow_stop)
             self._app.router.add_post("/api/parallel-agents/teams/{team_id}/messages", self._handle_team_send_message)
+            self._app.router.add_get("/v1/parallel-agents/events", self._handle_parallel_agents_events)
+            self._app.router.add_get("/api/agents/manifests", self._handle_agent_manifests)
             self._app.router.add_get("/api/memory", self._handle_get_memory)
+            # Artifacts (claude.ai-style viewer): list + download-by-id. The web
+            # BFF proxy calls the /api/v1/ paths; the non-v1 aliases keep parity
+            # with the rest of the /api/sessions surface.
+            self._app.router.add_get("/api/v1/sessions/{session_id}/artifacts", self._handle_artifact_list)
+            self._app.router.add_get("/api/v1/sessions/{session_id}/artifacts/{artifact_id}/download", self._handle_artifact_download)
+            self._app.router.add_get("/api/sessions/{session_id}/artifacts", self._handle_artifact_list)
+            self._app.router.add_get("/api/sessions/{session_id}/artifacts/{artifact_id}/download", self._handle_artifact_download)
+            # Generated-image serving: the web BFF proxies /api/chat/file/{id}
+            # here so <img> tags can load images the image_generate tool saved to
+            # $HERMES_HOME/cache/images/. Served by basename, confined to that dir.
+            self._app.router.add_get("/api/files/{file_id}", self._handle_oc_image_file)
             # Authenticated passthrough to the on-box Open Design daemon so the
             # workspace "Open Design" panel reaches it over the agent's existing
             # tunnel without exposing the daemon publicly.
@@ -5178,6 +5843,21 @@ class APIServerAdapter(BasePlatformAdapter):
                 pass
             if hasattr(sweep_task, "add_done_callback"):
                 sweep_task.add_done_callback(self._background_tasks.discard)
+
+            # Always-on run-state reconciliation: flip crashed/hung workers to
+            # failed/stalled on the spine even with no cockpit reader. Opt-out via
+            # HERMES_RECONCILE_DISABLED=1 (e.g. tests / minimal deployments).
+            if os.getenv("HERMES_RECONCILE_DISABLED", "").strip() not in ("1", "true", "yes"):
+                reconcile_task = asyncio.create_task(self._reconcile_runs_loop())
+                try:
+                    self._background_tasks.add(reconcile_task)
+                except TypeError:
+                    pass
+                if hasattr(reconcile_task, "add_done_callback"):
+                    reconcile_task.add_done_callback(self._background_tasks.discard)
+                logger.info(
+                    "[%s] always-on run-state reconciler started (interval=%ss)",
+                    self.name, os.getenv("HERMES_RECONCILE_INTERVAL", "15"))
 
             # Refuse to start without authentication. The API server can
             # dispatch terminal-capable agent work, so every deployment needs
@@ -5300,12 +5980,20 @@ class APIServerAdapter(BasePlatformAdapter):
 # ---------------------------------------------------------------------------
 
 _DEFAULT_AVAIL_MODELS = (
+    # Anthropic
     "claude-fable-5",
     "claude-opus-4-8",
     "claude-opus-4-7",
     "claude-opus-4-6",
     "claude-sonnet-4-6",
     "claude-haiku-4-5",
+    # OpenAI (via OC Router) — curated chat/reasoning set surfaced in the
+    # prompt-bar picker. Probed live so the UI reflects what the router serves.
+    "gpt-5.5",
+    "gpt-5.4",
+    "gpt-5.4-mini",
+    "gpt-5.3-codex",
+    "gpt-5.2-pro",
 )
 _MODEL_AVAIL_TTL_SECONDS = 600.0
 # key: frozenset(model ids) -> (monotonic_ts, result_dict). Best-effort, no

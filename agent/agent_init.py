@@ -27,7 +27,7 @@ import threading
 import time
 import uuid
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 from urllib.parse import urlparse, parse_qs, urlunparse
 
 from agent.context_compressor import ContextCompressor
@@ -195,6 +195,7 @@ def init_agent(
     status_callback: callable = None,
     notice_callback: callable = None,
     notice_clear_callback: callable = None,
+    event_callback: Optional[Callable[[str, dict], None]] = None,
     max_tokens: int = None,
     reasoning_config: Dict[str, Any] = None,
     service_tier: str = None,
@@ -212,6 +213,8 @@ def init_agent(
     skip_context_files: bool = False,
     load_soul_identity: bool = False,
     skip_memory: bool = False,
+    disable_memory_provider: bool = False,
+    ephemeral_system_replaces_base: bool = False,
     session_db=None,
     parent_session_id: str = None,
     iteration_budget: "IterationBudget" = None,
@@ -284,6 +287,9 @@ def init_agent(
     agent.quiet_mode = quiet_mode
     agent.tool_progress_mode = tool_progress_mode
     agent.ephemeral_system_prompt = ephemeral_system_prompt
+    # When set, the ephemeral system prompt REPLACES the base system prompt for
+    # the turn instead of being appended (agent "overwrite base system prompt").
+    agent.ephemeral_system_replaces_base = ephemeral_system_replaces_base
     agent.platform = platform  # "cli", "telegram", "discord", "whatsapp", etc.
     agent._user_id = user_id  # Platform user identifier (gateway sessions)
     agent._user_id_alt = user_id_alt  # Optional stable alternate platform identifier
@@ -299,6 +305,7 @@ def init_agent(
     # would mangle the escape sequences.  None = use builtins.print.
     agent._print_fn = None
     agent.background_review_callback = None  # Optional sync callback for gateway delivery
+    agent.memory_notifications = "on"  # Memory update notifications: "off", "on", "verbose"
     agent.skip_context_files = skip_context_files
     agent.load_soul_identity = load_soul_identity
     agent.pass_session_id = pass_session_id
@@ -425,6 +432,7 @@ def init_agent(
     agent.status_callback = status_callback
     agent.notice_callback = notice_callback
     agent.notice_clear_callback = notice_clear_callback
+    agent.event_callback = event_callback
     agent.tool_gen_callback = tool_gen_callback
 
     
@@ -481,6 +489,22 @@ def init_agent(
     
     # Model response configuration
     agent.max_tokens = max_tokens  # None = use model default
+    # When no reasoning_config was passed in (e.g. the CLI -z oneshot path, which
+    # doesn't thread one through), fall back to config ``agent.reasoning_effort`` so
+    # reasoning-capable routes (e.g. the OC Router for gpt-5.x) actually receive a
+    # top-level reasoning_effort. Without this the effort defaults to None and the
+    # custom provider emits no reasoning at all. An explicit reasoning_config (web
+    # picker, /reasoning) still wins. Best-effort: never block agent construction.
+    if reasoning_config is None:
+        try:
+            from hermes_cli.config import load_config as _load_cfg
+            _agent_cfg = (_load_cfg() or {}).get("agent")
+            if isinstance(_agent_cfg, dict):
+                _cfg_eff = str(_agent_cfg.get("reasoning_effort") or "").strip().lower()
+                if _cfg_eff and _cfg_eff != "none":
+                    reasoning_config = {"effort": _cfg_eff}
+        except Exception:
+            pass
     agent.reasoning_config = reasoning_config  # None = use default (medium for OpenRouter)
     agent.service_tier = service_tier
     agent.request_overrides = dict(request_overrides or {})
@@ -596,6 +620,7 @@ def init_agent(
     # (e.g. CLI voice mode adds a temporary prefix for the live call only).
     agent._persist_user_message_idx = None
     agent._persist_user_message_override = None
+    agent._persist_user_message_timestamp = None
 
     # Cache anthropic image-to-text fallbacks per image payload/URL so a
     # single tool loop does not repeatedly re-run auxiliary vision on the
@@ -1138,8 +1163,11 @@ def init_agent(
 
     # Memory provider plugin (external — one at a time, alongside built-in)
     # Reads memory.provider from config to select which plugin to activate.
+    # disable_memory_provider skips ONLY this external provider (e.g. Honcho)
+    # while keeping the local on-disk memory store above — per-agent profiles
+    # get local SQLite/FTS5/markdown memory but no Honcho/GBrain.
     agent._memory_manager = None
-    if not skip_memory:
+    if not skip_memory and not disable_memory_provider:
         try:
             _mem_provider_name = mem_config.get("provider", "") if mem_config else ""
 
@@ -1157,6 +1185,9 @@ def init_agent(
                         "hermes_home": str(get_hermes_home()),
                         "agent_context": "primary",
                     }
+                    if _init_kwargs["platform"] == "cli":
+                        _init_kwargs["warning_callback"] = agent._emit_warning
+                        _init_kwargs["status_callback"] = agent._emit_status
                     # Thread session title for memory provider scoping
                     # (e.g. honcho uses this to derive chat-scoped session keys)
                     if agent._session_db:
@@ -1225,11 +1256,34 @@ def init_agent(
     # targets.
     agent._task_completion_guidance = bool(_agent_section.get("task_completion_guidance", True))
 
+    # Universal parallel-tool-call guidance toggle.  Default True.  Separate
+    # flag from task_completion_guidance because a user may want one but not
+    # the other.  Steers the model to batch independent tool calls into a
+    # single turn; the runtime already executes such batches concurrently.
+    agent._parallel_tool_call_guidance = bool(_agent_section.get("parallel_tool_call_guidance", True))
+
     # Local Python toolchain probe toggle.  Default True.  When False,
     # the probe is skipped entirely (no subprocess calls, no system-prompt
     # line).  Useful for users on exotic setups where the probe heuristics
     # are noisy.
     agent._environment_probe = bool(_agent_section.get("environment_probe", True))
+
+    # Per-platform prompt-hint overrides (config.yaml → platform_hints).
+    # Lets an enterprise admin append to or replace Hermes' built-in
+    # platform hint for a single messaging platform (e.g. WhatsApp) without
+    # affecting other platforms. Shape:
+    #   platform_hints:
+    #     whatsapp:
+    #       append: "When tabular output would help, invoke the ... skill."
+    #     slack:
+    #       replace: "Custom Slack hint that fully replaces the default."
+    # Stored verbatim; resolution happens in agent/system_prompt.py against
+    # the active platform. Invalid shapes are ignored defensively so a bad
+    # config entry can never break prompt assembly.
+    _platform_hints_cfg = _agent_cfg.get("platform_hints", {})
+    if not isinstance(_platform_hints_cfg, dict):
+        _platform_hints_cfg = {}
+    agent._platform_hint_overrides = _platform_hints_cfg
 
     # App-level API retry count (wraps each model API call).  Default 3,
     # overridable via agent.api_max_retries in config.yaml.  See #11616.

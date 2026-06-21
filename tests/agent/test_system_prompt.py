@@ -31,7 +31,7 @@ def _captured_context_cwd(agent):
     """The cwd build_system_prompt_parts hands to build_context_files_prompt."""
     captured = {}
 
-    def fake_context_files(cwd=None, skip_soul=False):
+    def fake_context_files(cwd=None, skip_soul=False, context_length=None):
         captured["cwd"] = cwd
         return ""
 
@@ -96,3 +96,26 @@ class TestCodingContextBlock:
         monkeypatch.setenv("TERMINAL_CWD", str(tmp_path))
         agent = _make_agent(valid_tool_names=[], platform="cli")
         assert "coding agent" not in _stable_prompt(agent)
+
+
+class TestContextReferenceGuidance:
+    """Deictic-reference nudge: resolve 'this'/'the above' to recent content
+    instead of claiming the user pasted nothing (Bug 4, 2026-06-20)."""
+
+    def test_present_by_default(self, monkeypatch):
+        # On by default, and NOT gated on tools (applies to plain chats too).
+        monkeypatch.delenv("TERMINAL_CWD", raising=False)
+        agent = _make_agent(valid_tool_names=[], platform="cli")
+        stable = _stable_prompt(agent)
+        assert "Referring to earlier content" in stable
+        # Conditional phrasing that prevents masking a genuine failed paste.
+        assert "genuinely no matching referent" in stable
+
+    def test_absent_when_disabled(self, monkeypatch):
+        monkeypatch.delenv("TERMINAL_CWD", raising=False)
+        agent = _make_agent(
+            valid_tool_names=[],
+            platform="cli",
+            _context_reference_guidance=False,
+        )
+        assert "Referring to earlier content" not in _stable_prompt(agent)

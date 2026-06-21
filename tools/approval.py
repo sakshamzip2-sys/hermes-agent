@@ -9,6 +9,7 @@ This module is the single source of truth for the dangerous command system:
 """
 
 import contextvars
+import fnmatch
 import logging
 import os
 import re
@@ -917,6 +918,43 @@ def load_permanent(patterns: set):
         _permanent_approved.update(patterns)
 
 
+_ALLOWLIST_SHELL_OPERATOR_RE = re.compile(r"(?:\n|&&|\|\||[;&|<>`]|\$\()")
+
+
+def _has_allowlist_shell_operator(command: str) -> bool:
+    """Return True when a command is too compound for the allowlist shortcut."""
+    return bool(_ALLOWLIST_SHELL_OPERATOR_RE.search(command or ""))
+
+
+def _command_matches_permanent_allowlist(command: str) -> bool:
+    """Return True when command_allowlist contains this command or a glob.
+
+    Permanent approvals historically store dangerous-pattern keys such as
+    ``recursive delete``. Manual entries in ``command_allowlist`` are command
+    text, and may include shell-style wildcards like ``podman *``.
+    """
+    command = (command or "").strip()
+    if not command:
+        return False
+    if _has_allowlist_shell_operator(command):
+        return False
+
+    with _lock:
+        patterns = tuple(_permanent_approved)
+
+    for pattern in patterns:
+        if not isinstance(pattern, str):
+            continue
+        pattern = pattern.strip()
+        if not pattern:
+            continue
+        if command == pattern:
+            return True
+        if any(ch in pattern for ch in "*?[") and fnmatch.fnmatchcase(command, pattern):
+            return True
+    return False
+
+
 
 # =========================================================================
 # Config persistence for permanent allowlist
@@ -1222,6 +1260,9 @@ def check_dangerous_command(command: str, env_type: str,
     if _YOLO_MODE_FROZEN or is_current_session_yolo_enabled():
         return {"approved": True, "message": None}
 
+    if _command_matches_permanent_allowlist(command):
+        return {"approved": True, "message": None}
+
     is_dangerous, pattern_key, description = detect_dangerous_command(command)
     if not is_dangerous:
         return {"approved": True, "message": None}
@@ -1425,6 +1466,123 @@ def _await_gateway_decision(session_key: str, notify_cb, approval_data: dict,
     return {"resolved": resolved, "choice": choice}
 
 
+def _describe_tool_call(tool_name: str, args: Optional[dict]) -> str:
+    """Compact human-readable summary of a tool call for the approval card."""
+    if not isinstance(args, dict):
+        return tool_name
+    action = (
+        args.get("action")
+        or args.get("operation")
+        or args.get("subcommand")
+        or ""
+    )
+    ident = ""
+    for key in ("id", "name", "job_id", "path", "file_path", "slug", "target"):
+        v = args.get(key)
+        if v:
+            ident = str(v)
+            break
+    parts = [tool_name]
+    if action:
+        parts.append(str(action))
+    if ident:
+        parts.append(ident)
+    return " ".join(parts)
+
+
+def check_tool_approval(tool_name: str, args: Optional[dict],
+                        session_id: str = "") -> dict:
+    """Gateway approval gate for a destructive/consequential TOOL call.
+
+    The terminal approval path only covers shell commands; a direct tool call
+    (e.g. ``cronjob(action='remove')``) would otherwise fire with no
+    confirmation. This closes that hole using the SAME approval-card machinery:
+    when ``permissions.ask`` matches the tool call AND we are in an interactive
+    gateway context, it surfaces the approval card and BLOCKS the agent thread
+    until the user resolves it.
+
+    Returns ``{"approved": bool, "message": Optional[str]}``. It NEVER blocks
+    outside a gateway context (CLI/cron/non-interactive return approved
+    immediately) so it cannot hang headless or scheduled runs.
+    """
+    # Only interactive gateway/API sessions have a human + an approval channel.
+    # Cron and plain non-interactive runs return immediately (no hang).
+    if not _is_gateway_approval_context():
+        return {"approved": True, "message": None}
+
+    # Subagents already run under their own auto-approve contract.
+    try:
+        if _get_session_platform() == "subagent" and _subagent_auto_approve_enabled():
+            return {"approved": True, "message": None}
+    except Exception:  # noqa: BLE001
+        pass
+
+    # Consult the declarative policy. Only ``ask`` is handled here; deny/plan are
+    # enforced upstream in the central pre-tool gate.
+    try:
+        from tools.permission_rules import (
+            evaluate_tool_call as _perm_eval,
+            current_mode as _perm_current_mode,
+        )
+        sid = session_id or get_current_session_key("default")
+        if _perm_current_mode(sid) == "yolo":
+            return {"approved": True, "message": None}
+        decision = _perm_eval(tool_name, args if isinstance(args, dict) else {}, sid)
+    except Exception:  # noqa: BLE001 — policy must never wedge dispatch
+        return {"approved": True, "message": None}
+
+    if getattr(decision, "action", "normal") != "ask":
+        return {"approved": True, "message": None}
+
+    summary = _describe_tool_call(tool_name, args)
+    session_key = get_current_session_key()
+    with _lock:
+        notify_cb = _gateway_notify_cbs.get(session_key)
+
+    # Gateway context but no approval channel registered: deny-by-default for a
+    # destructive action rather than running it silently. We do NOT block on a
+    # decision that can never arrive.
+    if notify_cb is None:
+        return {
+            "approved": False,
+            "message": (
+                f"BLOCKED: '{summary}' requires your confirmation, but no "
+                "approval channel is available right now. Do NOT retry; tell the "
+                "user to confirm in the web UI."
+            ),
+        }
+
+    approval_data = {
+        "command": summary,
+        "pattern_key": f"tool:{tool_name}",
+        "pattern_keys": [f"tool:{tool_name}"],
+        "description": getattr(decision, "reason", "") or f"Confirm {summary}",
+        "tool_name": tool_name,
+        "allow_permanent": True,
+    }
+    decision2 = _await_gateway_decision(
+        session_key, notify_cb, approval_data, surface="gateway"
+    )
+    if decision2.get("notify_failed"):
+        return {
+            "approved": False,
+            "message": (
+                f"BLOCKED: failed to request approval for '{summary}'. Do NOT retry."
+            ),
+        }
+    resolved = decision2.get("resolved")
+    choice = decision2.get("choice")
+    if not resolved or choice is None or choice == "deny":
+        return {
+            "approved": False,
+            "message": (
+                f"BLOCKED: '{summary}' was denied or not confirmed by the user. "
+                "Do NOT retry; this is a hard stop."
+            ),
+        }
+    return {"approved": True, "message": None}
+
+
 def check_all_command_guards(command: str, env_type: str,
                              approval_callback=None) -> dict:
     """Run all pre-exec command guards and record the decision to the audit log.
@@ -1488,6 +1646,9 @@ def _check_all_command_guards_impl(command: str, env_type: str,
     # Gateway /yolo is session-scoped; CLI --yolo remains process-scoped.
     approval_mode = _get_approval_mode()
     if _YOLO_MODE_FROZEN or is_current_session_yolo_enabled() or approval_mode == "off":
+        return {"approved": True, "message": None}
+
+    if _command_matches_permanent_allowlist(command):
         return {"approved": True, "message": None}
 
     # Subagents (platform=="subagent") auto-approve when the user opted them in

@@ -359,6 +359,16 @@ def extract_target(tool_name: str, args: Optional[dict]) -> str:
             if v:
                 return str(v)
         return ""
+    # Action-style tools (cronjob, skill_manage, memory, ...) carry their verb in
+    # an ``action``/``operation``/``subcommand`` arg. Surfacing it lets a rule
+    # like ``cronjob(remove)`` gate one verb without gating the whole tool, so a
+    # destructive TOOL call can be put behind approval the same way a terminal
+    # command is. Falls back to "" for tools with no such arg (bare-tool rules
+    # still match those via specifier=None).
+    for key in ("action", "operation", "subcommand", "cmd"):
+        v = args.get(key)
+        if v:
+            return str(v)
     return ""
 
 

@@ -127,7 +127,7 @@ def _normalize_toolsets(frontmatter: Dict[str, Any]) -> Optional[List[str]]:
     return None
 
 
-def skill_run(
+def _skill_run_impl(
     name: str,
     context: Optional[str] = None,
     *,
@@ -262,6 +262,40 @@ def skill_run(
         {"success": True, "name": name, "context": "fork", "result": parsed},
         ensure_ascii=False,
     )
+
+
+def skill_run(
+    name: str,
+    context: Optional[str] = None,
+    *,
+    task_id: Optional[str] = None,
+    parent_agent: Any = None,
+) -> str:
+    """Public skill_run: times the execution and records the outcome to the usage
+    store (success + latency) so the Skill Health view and the router tie-break
+    have a real track record. Telemetry is best-effort and never alters the
+    result returned to the caller."""
+    import time
+
+    t0 = time.monotonic()
+    result = _skill_run_impl(name, context, task_id=task_id, parent_agent=parent_agent)
+    try:
+        latency_ms = int((time.monotonic() - t0) * 1000)
+        success = True
+        try:
+            parsed = json.loads(result)
+            if isinstance(parsed, dict) and parsed.get("success") is False:
+                success = False
+        except (ValueError, TypeError):
+            pass
+        nm = (name or "").strip()
+        if nm and ":" not in nm:
+            from tools.skill_usage import record_run
+
+            record_run(nm, success=success, latency_ms=latency_ms)
+    except Exception:  # noqa: BLE001 — telemetry must never break a skill run
+        pass
+    return result
 
 
 registry.register(

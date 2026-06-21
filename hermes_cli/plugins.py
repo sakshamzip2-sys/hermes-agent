@@ -1930,6 +1930,21 @@ def get_pre_tool_call_block_message(
     except Exception:  # noqa: BLE001
         pass
 
+    # Tool-level ``ask``: destructive/consequential TOOL calls (e.g.
+    # cronjob remove, skill_manage delete) require explicit confirmation, not
+    # just terminal commands. In an interactive gateway context this surfaces the
+    # approval card and blocks until the user resolves it; a deny returns a block
+    # message so the tool never fires silently. No-op outside gateway contexts so
+    # CLI/cron never hang.  Wrapped so a policy error can never wedge dispatch.
+    try:
+        from tools.approval import check_tool_approval
+
+        _ta = check_tool_approval(tool_name, args, session_id or "")
+        if not _ta.get("approved", True):
+            return _ta.get("message") or f"Tool '{tool_name}' requires confirmation."
+    except Exception:  # noqa: BLE001
+        pass
+
     hook_results = invoke_hook(
         "pre_tool_call",
         tool_name=tool_name,

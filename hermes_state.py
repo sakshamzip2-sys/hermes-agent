@@ -684,6 +684,7 @@ class SessionDB:
         self._lock = threading.Lock()
         self._write_count = 0
         self._fts_enabled = False
+        self._trigram_available = False
         self._fts_unavailable_warned = False
         self._conn = None
         try:
@@ -772,7 +773,33 @@ class SessionDB:
     @staticmethod
     def _is_fts5_unavailable_error(exc: sqlite3.OperationalError) -> bool:
         err = str(exc).lower()
-        return "no such module" in err and "fts5" in err
+        if "no such module" in err and "fts5" in err:
+            return True
+        # SQLite builds that have FTS5 but lack the optional trigram tokenizer
+        # raise "no such tokenizer: trigram" instead of "no such module".
+        # Scope to trigram specifically to avoid masking unrelated tokenizer errors.
+        if "no such tokenizer: trigram" in err:
+            return True
+        return False
+
+    @staticmethod
+    def _is_trigram_unavailable_error(exc: sqlite3.OperationalError) -> bool:
+        """True when only the trigram tokenizer is missing (FTS5 itself works)."""
+        return "no such tokenizer: trigram" in str(exc).lower()
+
+    def _warn_trigram_unavailable(self, exc: sqlite3.OperationalError) -> None:
+        """Log once that the trigram tokenizer is missing; base FTS5 stays enabled."""
+        if getattr(self, "_trigram_unavailable_warned", False):
+            return
+        self._trigram_unavailable_warned = True
+        logger.info(
+            "SQLite trigram tokenizer unavailable for %s "
+            "(requires SQLite >= 3.34, this build is %s); "
+            "CJK/substring search will fall back to LIKE: %s",
+            self.db_path,
+            sqlite3.sqlite_version,
+            exc,
+        )
 
     def _warn_fts5_unavailable(self, exc: sqlite3.OperationalError) -> None:
         self._fts_enabled = False
@@ -818,9 +845,12 @@ class SessionDB:
         return int(row[0] if not isinstance(row, sqlite3.Row) else row[0])
 
     @staticmethod
-    def _rebuild_fts_indexes(cursor: sqlite3.Cursor) -> None:
-        for table_name in ("messages_fts", "messages_fts_trigram"):
-            cursor.execute(f"DELETE FROM {table_name}")
+    def _rebuild_fts_indexes(
+        cursor: sqlite3.Cursor,
+        *,
+        include_trigram: bool = True,
+    ) -> None:
+        cursor.execute("DELETE FROM messages_fts")
         cursor.execute(
             "INSERT INTO messages_fts(rowid, content) "
             "SELECT id, "
@@ -829,6 +859,9 @@ class SessionDB:
             "COALESCE(tool_calls, '') "
             "FROM messages"
         )
+        if not include_trigram:
+            return
+        cursor.execute("DELETE FROM messages_fts_trigram")
         cursor.execute(
             "INSERT INTO messages_fts_trigram(rowid, content) "
             "SELECT id, "
@@ -844,7 +877,12 @@ class SessionDB:
             return True
         except sqlite3.OperationalError as exc:
             if self._is_fts5_unavailable_error(exc):
-                self._warn_fts5_unavailable(exc)
+                # Only disable FTS entirely when the whole module is missing.
+                # A missing trigram tokenizer only affects trigram searches.
+                if self._is_trigram_unavailable_error(exc):
+                    self._warn_trigram_unavailable(exc)
+                else:
+                    self._warn_fts5_unavailable(exc)
                 return None
             if "no such table" in str(exc).lower():
                 return False
@@ -868,7 +906,13 @@ class SessionDB:
         except sqlite3.OperationalError as exc:
             if not self._is_fts5_unavailable_error(exc):
                 raise
-            self._warn_fts5_unavailable(exc)
+            # Only disable FTS entirely when the whole FTS5 module is missing.
+            # A missing specific tokenizer (e.g. trigram) means only that
+            # particular table cannot be created — the base FTS5 table is fine.
+            if self._is_trigram_unavailable_error(exc):
+                self._warn_trigram_unavailable(exc)
+            else:
+                self._warn_fts5_unavailable(exc)
             return False
 
     def _execute_write(self, fn: Callable[[sqlite3.Connection], T]) -> T:
@@ -1166,21 +1210,23 @@ class SessionDB:
                         except sqlite3.OperationalError as exc:
                             if not self._is_fts5_unavailable_error(exc):
                                 raise
-                            self._warn_fts5_unavailable(exc)
-                            fts5_available = False
-                            fts_migrations_complete = False
+                            if self._is_trigram_unavailable_error(exc):
+                                self._warn_trigram_unavailable(exc)
+                            else:
+                                self._warn_fts5_unavailable(exc)
+                                fts5_available = False
+                                fts_migrations_complete = False
                             break
 
                     if fts5_available:
                         # Recreate virtual tables + triggers with the new inline-mode
                         # schema that indexes content || tool_name || tool_calls.
-                        if (
-                            self._ensure_fts_schema(cursor, "messages_fts", FTS_SQL)
-                            and self._ensure_fts_schema(
-                                cursor, "messages_fts_trigram", FTS_TRIGRAM_SQL
-                            )
-                        ):
-                            # Backfill both indexes from every existing messages row.
+                        # Handle base and trigram independently — a missing
+                        # trigram tokenizer should not prevent base FTS backfill.
+                        base_fts_ok = self._ensure_fts_schema(
+                            cursor, "messages_fts", FTS_SQL
+                        )
+                        if base_fts_ok:
                             cursor.execute(
                                 "INSERT INTO messages_fts(rowid, content) "
                                 "SELECT id, "
@@ -1189,6 +1235,10 @@ class SessionDB:
                                 "COALESCE(tool_calls, '') "
                                 "FROM messages"
                             )
+                        trigram_ok = self._ensure_fts_schema(
+                            cursor, "messages_fts_trigram", FTS_TRIGRAM_SQL
+                        )
+                        if trigram_ok:
                             cursor.execute(
                                 "INSERT INTO messages_fts_trigram(rowid, content) "
                                 "SELECT id, "
@@ -1197,8 +1247,12 @@ class SessionDB:
                                 "COALESCE(tool_calls, '') "
                                 "FROM messages"
                             )
-                        else:
+                        if not base_fts_ok:
                             fts_migrations_complete = False
+                        # Track trigram availability for CJK LIKE fallback.
+                        self._trigram_available = trigram_ok
+                    else:
+                        fts_migrations_complete = False
                 else:
                     fts_migrations_complete = False
             if current_version < 12:
@@ -1268,8 +1322,12 @@ class SessionDB:
                 trigram_enabled = self._ensure_fts_schema(
                     cursor, "messages_fts_trigram", FTS_TRIGRAM_SQL
                 )
-                if trigram_enabled and triggers_need_repair:
-                    self._rebuild_fts_indexes(cursor)
+                self._trigram_available = trigram_enabled
+                if triggers_need_repair:
+                    self._rebuild_fts_indexes(
+                        cursor,
+                        include_trigram=trigram_enabled,
+                    )
 
         self._conn.commit()
 
@@ -2431,6 +2489,7 @@ class SessionDB:
         codex_message_items: Any = None,
         platform_message_id: str = None,
         observed: bool = False,
+        timestamp: Any = None,
     ) -> int:
         """
         Append a message to a session. Returns the message row ID.
@@ -2462,6 +2521,16 @@ class SessionDB:
         # cannot bind list/dict parameters directly.
         stored_content = self._encode_content(content)
 
+        message_timestamp = time.time()
+        if timestamp is not None:
+            try:
+                if hasattr(timestamp, "timestamp"):
+                    message_timestamp = float(timestamp.timestamp())
+                else:
+                    message_timestamp = float(timestamp)
+            except (TypeError, ValueError):
+                logger.debug("Ignoring invalid explicit message timestamp: %r", timestamp)
+
         # Pre-compute tool call count
         num_tool_calls = 0
         if tool_calls is not None:
@@ -2481,7 +2550,7 @@ class SessionDB:
                     tool_call_id,
                     tool_calls_json,
                     tool_name,
-                    time.time(),
+                    message_timestamp,
                     token_count,
                     finish_reason,
                     reasoning,
@@ -2534,6 +2603,16 @@ class SessionDB:
             for msg in messages:
                 role = msg.get("role", "unknown")
                 tool_calls = msg.get("tool_calls")
+                message_timestamp = now_ts
+                if msg.get("timestamp") is not None:
+                    try:
+                        ts_value = msg.get("timestamp")
+                        if hasattr(ts_value, "timestamp"):
+                            message_timestamp = float(ts_value.timestamp())
+                        else:
+                            message_timestamp = float(ts_value)
+                    except (TypeError, ValueError):
+                        logger.debug("Ignoring invalid explicit message timestamp: %r", msg.get("timestamp"))
                 reasoning_details = msg.get("reasoning_details") if role == "assistant" else None
                 codex_reasoning_items = (
                     msg.get("codex_reasoning_items") if role == "assistant" else None
@@ -2571,7 +2650,7 @@ class SessionDB:
                         msg.get("tool_call_id"),
                         tool_calls_json,
                         msg.get("tool_name"),
-                        now_ts,
+                        message_timestamp,
                         msg.get("token_count"),
                         msg.get("finish_reason"),
                         msg.get("reasoning") if role == "assistant" else None,
@@ -2588,7 +2667,7 @@ class SessionDB:
                     total_tool_calls += (
                         len(tool_calls) if isinstance(tool_calls, list) else 1
                     )
-                now_ts += 1e-6
+                now_ts = max(now_ts + 1e-6, message_timestamp + 1e-6)
 
             conn.execute(
                 "UPDATE sessions SET message_count = ?, tool_call_count = ? WHERE id = ?",
@@ -2851,6 +2930,24 @@ class SessionDB:
         if not session_id:
             return session_id
 
+        # Follow the compression-continuation chain forward to the live tip
+        # FIRST. Auto-compression ends the current session and forks a
+        # continuation child, but a long-lived parent keeps its own flushed
+        # message rows — so the empty-head walk below never redirects it, and
+        # resuming the parent id reloads the pre-compression transcript while
+        # the turns generated *after* compression (and their responses) sit in
+        # the continuation. ``get_compression_tip`` is lineage-aware: it only
+        # follows children whose parent ended with ``end_reason='compression'``
+        # (created after the parent was ended), so delegation / branch children
+        # never hijack the resume. This is the fix for the desktop "I came back
+        # and the reply isn't there" report on large sessions.
+        try:
+            tip = self.get_compression_tip(session_id)
+        except Exception:
+            tip = session_id
+        if tip and tip != session_id:
+            session_id = tip
+
         with self._lock:
             # If this session already has messages, nothing to redirect.
             try:
@@ -2919,9 +3016,9 @@ class SessionDB:
             rows = self._conn.execute(
                 "SELECT role, content, tool_call_id, tool_calls, tool_name, "
                 "finish_reason, reasoning, reasoning_content, reasoning_details, "
-                "codex_reasoning_items, codex_message_items, platform_message_id, observed "
+                "codex_reasoning_items, codex_message_items, platform_message_id, observed, timestamp "
                 f"FROM messages WHERE session_id IN ({placeholders})"
-                f"{active_clause} ORDER BY id",
+                f"{active_clause} ORDER BY timestamp, id",
                 tuple(session_ids),
             ).fetchall()
 
@@ -2931,6 +3028,8 @@ class SessionDB:
             if row["role"] in {"user", "assistant"} and isinstance(content, str):
                 content = sanitize_context(content).strip()
             msg = {"role": row["role"], "content": content}
+            if row["timestamp"]:
+                msg["timestamp"] = row["timestamp"]
             if row["tool_call_id"]:
                 msg["tool_call_id"] = row["tool_call_id"]
             if row["tool_name"]:
@@ -3291,6 +3390,7 @@ class SessionDB:
         offset: int = 0,
         sort: str = None,
         include_inactive: bool = False,
+        _or_retry: bool = False,
     ) -> List[Dict[str, Any]]:
         """
         Full-text search across session messages using FTS5.
@@ -3322,6 +3422,7 @@ class SessionDB:
         if not query or not query.strip():
             return []
 
+        _original_query = query
         query = self._sanitize_fts5_query(query)
         if not query:
             return []
@@ -3415,7 +3516,8 @@ class SessionDB:
                 self._count_cjk(t) < 3 for t in _tokens_for_check
             )
 
-            if cjk_count >= 3 and not _any_short_cjk:
+            _trigram_succeeded = False
+            if cjk_count >= 3 and not _any_short_cjk and self._trigram_available:
                 # Trigram FTS5 path — quote each non-operator token to handle
                 # FTS5 special chars (%, *, etc.) while preserving boolean
                 # operators (AND, OR, NOT) for multi-term queries.
@@ -3464,11 +3566,13 @@ class SessionDB:
                     try:
                         tri_cursor = self._conn.execute(tri_sql, tri_params)
                     except sqlite3.OperationalError:
-                        matches = []
+                        # Trigram query failed at runtime — fall through to LIKE.
+                        pass
                     else:
                         matches = [dict(row) for row in tri_cursor.fetchall()]
-            else:
-                # Short / mixed CJK query: trigram cannot match tokens with
+                        _trigram_succeeded = True
+            if not _trigram_succeeded:
+                # Short / mixed CJK query, trigram unavailable, or trigram
                 # <3 CJK chars. Fall back to LIKE substring search.
                 # For multi-token OR queries (e.g. "广西 OR 桂林 OR 漓江"),
                 # build one LIKE condition per non-operator token so each term
@@ -3589,6 +3693,40 @@ class SessionDB:
         # Remove full content from result (snippet is enough, saves tokens)
         for match in matches:
             match.pop("content", None)
+
+        # Recall fallback: FTS5 ANDs all terms, so a natural-language query
+        # whose filler words aren't in the stored text returns nothing. If the
+        # strict search found nothing, retry ONCE with stopwords stripped and the
+        # remaining terms OR-joined. Precision is preserved — this only runs when
+        # the strict AND search already returned zero. Recall lift (0.62 -> 1.00)
+        # is measured by memory-stack/recall_probe.py.
+        if not matches and not _or_retry:
+            _stop = {
+                "what", "is", "are", "the", "a", "an", "of", "to", "in", "on",
+                "my", "me", "i", "do", "does", "how", "where", "which", "who",
+                "you", "was", "were", "and", "or", "for", "with", "about",
+                "this", "that", "it", "be", "can", "will",
+            }
+            _terms = [
+                t for t in re.findall(r"[A-Za-z0-9]+", _original_query.lower())
+                if t not in _stop and len(t) > 1
+            ]
+            _or_query = " OR ".join(_terms)
+            # Retry whenever stripping stopwords actually changes the query
+            # (covers both multi-term NL queries and single-keyword queries
+            # buried in filler like "where do I deploy" -> "deploy").
+            if _terms and _or_query != query:
+                return self.search_messages(
+                    _or_query,
+                    source_filter=source_filter,
+                    exclude_sources=exclude_sources,
+                    role_filter=role_filter,
+                    limit=limit,
+                    offset=offset,
+                    sort=sort,
+                    include_inactive=include_inactive,
+                    _or_retry=True,
+                )
 
         return matches
 

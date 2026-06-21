@@ -38,6 +38,19 @@ class CustomProfile(ProviderProfile):
             if _effort == "none" or _enabled is False:
                 # Ollama-style off switch (ignored by remote OpenAI-compat routers).
                 extra_body["think"] = False
+                # Remote OpenAI-compat routers (the OpenComputer router) ignore
+                # ``think`` but DO honor a top-level ``reasoning_effort``; "none"
+                # is the documented OpenAI off switch (GPT-5.x) which the router
+                # maps to "disable reasoning" for the providers it proxies.
+                # Without this, toggling Thinking OFF was a no-op — ``think`` was
+                # dropped and, with no effort sent, the router fell back to the
+                # model default (reasoning ON). Haiku is excluded because the
+                # router 400s on the effort parameter for it (it already runs
+                # with no reasoning, so OFF is the effective default anyway).
+                if ctx.get("supports_reasoning") and "haiku" not in (
+                    ctx.get("model") or ""
+                ).lower():
+                    top_level["reasoning_effort"] = "none"
             elif ctx.get("supports_reasoning") and "haiku" not in (
                 ctx.get("model") or ""
             ).lower():
@@ -87,12 +100,13 @@ class CustomProfile(ProviderProfile):
         self,
         *,
         api_key: str | None = None,
+        base_url: str | None = None,
         timeout: float = 8.0,
     ) -> list[str] | None:
         """Custom/Ollama: base_url is user-configured; fetch if set."""
-        if not self.base_url:
+        if not (base_url or self.base_url):
             return None
-        return super().fetch_models(api_key=api_key, timeout=timeout)
+        return super().fetch_models(api_key=api_key, base_url=base_url, timeout=timeout)
 
 
 custom = CustomProfile(

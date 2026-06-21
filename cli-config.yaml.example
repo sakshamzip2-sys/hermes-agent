@@ -724,7 +724,7 @@ platform_toolsets:
 #     # allowed_chats: ["-1001234567890"]
 #     extra:
 #       disable_link_previews: false  # Set true to suppress Telegram URL previews in bot messages
-#       rich_messages: false          # Opt in to Bot API 10.1 rich messages; default uses legacy MarkdownV2
+#       rich_messages: false          # Bot API 10.1 rich messages (tables/task lists/details/math); default true, set false to force legacy MarkdownV2
 #
 # Discord-specific settings (config.yaml top-level, not under platforms:):
 #
@@ -913,6 +913,14 @@ stt:
 code_execution:
   timeout: 300         # Max seconds per script before kill (default: 300 = 5 min)
   max_tool_calls: 50   # Max RPC tool calls per execution (default: 50)
+  # Extra tools (beyond the built-in 7: web_search, web_extract, read_file,
+  # write_file, search_files, patch, terminal) that execute_code scripts may
+  # call via RPC. Each is intersected with the session's enabled tools, so you
+  # can never expose a tool the session lacks. Tools without a hardcoded stub
+  # get a generic name(**kwargs) passthrough. Collapses multi-step browser/MCP
+  # pipelines into a single execute_code turn.
+  # extra_tools: [browser_navigate, browser_click, browser_snapshot]
+  extra_tools: []      # default: only the built-in 7
 
 # =============================================================================
 # Subagent Delegation

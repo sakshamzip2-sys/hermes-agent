@@ -33,6 +33,7 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Dict, List, Optional
 
 from agent.memory_provider import MemoryProvider
+from agent.skill_commands import extract_user_instruction_from_skill_message
 from tools.registry import tool_error
 
 logger = logging.getLogger(__name__)
@@ -299,6 +300,27 @@ def build_memory_context_block(raw_context: str) -> str:
     clean = sanitize_context(raw_context)
     if clean != raw_context:
         logger.warning("memory provider returned pre-wrapped context; stripped")
+    # Threat-scan provider output before injecting it as "authoritative
+    # reference data". Provider memory (Honcho dialectic output, GBrain pages)
+    # is untrusted: a poisoned past session could embed prompt-injection text
+    # that this block would otherwise hand the model as trusted memory
+    # (Hermes #3943). sanitize_context() only strips re-injected fence tags —
+    # it is NOT a payload scan. On a hit, withhold the body entirely.
+    try:
+        from tools.threat_patterns import scan_for_threats
+        threats = scan_for_threats(clean, scope="strict")
+    except Exception:  # pragma: no cover - scanner must never break recall
+        threats = []
+    if threats:
+        logger.warning(
+            "memory context contained threat patterns %s; withheld from prompt",
+            sorted(set(threats)),
+        )
+        clean = (
+            "[BLOCKED: recalled memory context matched injection/threat "
+            f"patterns ({', '.join(sorted(set(threats)))}) and was withheld "
+            "from the prompt.]"
+        )
     return (
         "<memory-context>\n"
         "[System note: The following is recalled memory context, "
@@ -430,16 +452,37 @@ class MemoryManager:
 
     # -- Prefetch / recall ---------------------------------------------------
 
+    @staticmethod
+    def _strip_skill_scaffolding(text: str) -> Optional[str]:
+        """Return memory-worthy user text, or None to skip the turn.
+
+        When a user invokes a /skill or /bundle, Hermes expands the turn into
+        a model-facing message that embeds the entire skill body. Feeding that
+        verbatim to memory providers pollutes their stores/embeddings with
+        prompt scaffolding instead of what the user actually asked. We recover
+        just the user's instruction here, once, for every provider — so this
+        is fixed for the whole provider fan-out, not per backend.
+
+        - Non-skill messages pass through unchanged.
+        - Skill turns with a user instruction return that instruction.
+        - Bare skill invocations (no instruction) return None → callers skip
+          the turn, since there is no user content worth remembering.
+        """
+        return extract_user_instruction_from_skill_message(text)
+
     def prefetch_all(self, query: str, *, session_id: str = "") -> str:
         """Collect prefetch context from all providers.
 
         Returns merged context text labeled by provider. Empty providers
         are skipped. Failures in one provider don't block others.
         """
+        clean_query = self._strip_skill_scaffolding(query)
+        if not clean_query:
+            return ""
         parts = []
         for provider in self._providers:
             try:
-                result = provider.prefetch(query, session_id=session_id)
+                result = provider.prefetch(clean_query, session_id=session_id)
                 if result and result.strip():
                     parts.append(result)
             except Exception as e:
@@ -460,10 +503,14 @@ class MemoryManager:
         if not providers:
             return
 
+        clean_query = self._strip_skill_scaffolding(query)
+        if not clean_query:
+            return
+
         def _run() -> None:
             for provider in providers:
                 try:
-                    provider.queue_prefetch(query, session_id=session_id)
+                    provider.queue_prefetch(clean_query, session_id=session_id)
                 except Exception as e:
                     logger.debug(
                         "Memory provider '%s' queue_prefetch failed (non-fatal): %s",
@@ -514,6 +561,11 @@ class MemoryManager:
         providers = list(self._providers)
         if not providers:
             return
+
+        clean_user_content = self._strip_skill_scaffolding(user_content)
+        if not clean_user_content:
+            return
+        user_content = clean_user_content
 
         def _run() -> None:
             for provider in providers:

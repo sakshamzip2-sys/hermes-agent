@@ -24,6 +24,51 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Dict, Generator, List, Optional
 
+# The run-event spine (Feature B). Emission is best-effort and defensive: if the
+# oc_runs plugin is ever absent, oc_agents keeps working with no spine events
+# (graceful degrade, matches the migration-ordering open item). Events are
+# enqueued into a per-DB outbox in the SAME transaction as the state mutation,
+# then a single drainer moves them to the spine.
+try:
+    from plugins.oc_runs import events as _run_events
+    from plugins.oc_runs import outbox as _run_outbox
+
+    _SPINE_ENABLED = True
+except Exception:  # pragma: no cover - exercised only when oc_runs is removed
+    _SPINE_ENABLED = False
+
+
+def _emit(
+    conn,
+    event_type: str,
+    session_id: str,
+    *,
+    payload: Optional[Dict[str, Any]] = None,
+    dedupe_key: Optional[str] = None,
+    parent_id: str = "",
+    agent_id: str = "",
+) -> None:
+    """Enqueue one spine event into the outbox on this connection (same txn as
+    the caller's mutation). Never raises: a spine hiccup must not break a run."""
+    if not _SPINE_ENABLED:
+        return
+    try:
+        _run_outbox.enqueue(
+            conn,
+            _run_events.build_event(
+                f"agents:{session_id}",
+                event_type,
+                source=_run_events.SOURCE_AGENTS,
+                parent_run_id=(f"agents:{parent_id}" if parent_id else None),
+                agent_id=agent_id or None,
+                payload=payload,
+                dedupe_key=dedupe_key,
+            ),
+        )
+    except Exception:  # pragma: no cover - defensive
+        pass
+
+
 # Session lifecycle states (mirrors agent-view semantics).
 STATE_PENDING = "pending"
 STATE_WORKING = "working"
@@ -131,6 +176,11 @@ def connect() -> Generator[sqlite3.Connection, None, None]:
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA busy_timeout=30000")
         conn.executescript(SCHEMA_SQL)
+        if _SPINE_ENABLED:
+            try:
+                _run_outbox.ensure_outbox(conn)
+            except Exception:  # pragma: no cover - defensive
+                pass
         conn.commit()
         _local.conn = conn
         _local.path = path
@@ -181,6 +231,13 @@ def create_session(
                 json.dumps(meta) if meta else None,
             ),
         )
+        _emit(
+            conn, "run.created", session_id,
+            payload={"name": name or _slug_from_prompt(prompt), "kind": kind,
+                     "cwd": cwd, "prompt": (prompt or "")[:200]},
+            dedupe_key="created", parent_id=parent_id,
+            agent_id=name or _slug_from_prompt(prompt),
+        )
         conn.commit()
     return session_id
 
@@ -203,6 +260,8 @@ def mark_working(session_id: str, agent_session_id: str = "") -> None:
                WHERE id=?""",
             (STATE_WORKING, now, now, agent_session_id, session_id),
         )
+        _emit(conn, "run.status", session_id, payload={"status": "running"},
+              dedupe_key="status:working")
         conn.commit()
 
 
@@ -247,6 +306,7 @@ def add_event(session_id: str, text: str, kind: str = "activity") -> None:
                    )""",
                 (session_id, session_id, EVENTS_PER_SESSION_CAP),
             )
+        _emit(conn, "run.progress", session_id, payload={"kind": kind, "text": text[:500]})
         conn.commit()
 
 
@@ -321,6 +381,11 @@ def finish_session(
         )
         if api_calls is not None:
             conn.execute("UPDATE bg_sessions SET api_calls=? WHERE id=?", (api_calls, session_id))
+        _term = "run.failed" if status == STATE_FAILED else "run.completed"
+        _emit(conn, _term, session_id,
+              payload={"status": status, "result": (result or "")[:500],
+                       "error": (error or "")[:500]},
+              dedupe_key="terminal")
         conn.commit()
 
 

@@ -1,0 +1,14 @@
+# Finance profile config.
+#
+# SOUL.md holds the durable identity. Finance work demands a precise,
+# instruction-faithful model; the compliance restrictions in SOUL.md must be
+# followed exactly, so this profile runs on a strong Claude model. Personalities
+# are temporary per-session overlays via /personality. Skills (adapted from the
+# Apache-2.0 anthropics/financial-services plugins) live under skills/. Paid data
+# connectors are gated; see CONNECTORS.md.
+model: claude-sonnet-4-6
+
+personalities:
+  drafting: "Drafting mode: produce a complete draft (model, note, or memo) clearly marked DRAFT for human sign-off. Never imply it is final or published."
+  auditor: "Auditor mode: re-derive key figures independently, run balance/QC checks, verify units and periods, and flag every unsupported, hardcoded, or single-sourced number. Default to flagging over passing."
+  compliance: "Compliance mode: refuse any paid-connector call or external publish without explicit recorded approval; restate the AI-drafts-humans-sign-off boundary and what still needs a human."

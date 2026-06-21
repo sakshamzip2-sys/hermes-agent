@@ -117,6 +117,39 @@ def _resolve_model() -> Tuple[str, Dict[str, Any]]:
     return DEFAULT_MODEL, _MODELS[DEFAULT_MODEL]
 
 
+def _resolve_openai_image_credentials() -> Tuple[Optional[str], Optional[str]]:
+    """Resolve ``(api_key, base_url)`` for OpenAI image generation.
+
+    Prefers config ``image_gen.openai.{api_key,base_url}`` so image gen can use a
+    DEDICATED OpenAI-group key — the OC Router binds one platform per key, so
+    chat may run on an Anthropic-group key while images need an OpenAI-group key.
+    Setting only ``image_gen.openai.api_key`` (with base_url left to default to
+    the router via OPENAI_BASE_URL) is enough: the router routes by the key's
+    group, so an OpenAI-group key makes gpt-image-2 resolve. Falls back to the
+    OPENAI_API_KEY / OPENAI_BASE_URL env vars.
+    """
+    cfg = _load_openai_config()
+    openai_cfg = cfg.get("openai") if isinstance(cfg.get("openai"), dict) else {}
+    api_key: Optional[str] = None
+    base_url: Optional[str] = None
+    if isinstance(openai_cfg, dict):
+        ak = openai_cfg.get("api_key")
+        bu = openai_cfg.get("base_url")
+        if isinstance(ak, str) and ak.strip():
+            api_key = ak.strip()
+        if isinstance(bu, str) and bu.strip():
+            base_url = bu.strip()
+    if not api_key:
+        api_key = os.environ.get("OPENAI_API_KEY") or None
+    if not base_url:
+        base_url = (
+            os.environ.get("OPENAI_IMAGE_BASE_URL")
+            or os.environ.get("OPENAI_BASE_URL")
+            or None
+        )
+    return api_key, base_url
+
+
 # ---------------------------------------------------------------------------
 # Provider
 # ---------------------------------------------------------------------------
@@ -134,7 +167,8 @@ class OpenAIImageGenProvider(ImageGenProvider):
         return "OpenAI"
 
     def is_available(self) -> bool:
-        if not os.environ.get("OPENAI_API_KEY"):
+        api_key, _ = _resolve_openai_image_credentials()
+        if not api_key:
             return False
         try:
             import openai  # noqa: F401
@@ -188,12 +222,13 @@ class OpenAIImageGenProvider(ImageGenProvider):
                 aspect_ratio=aspect,
             )
 
-        if not os.environ.get("OPENAI_API_KEY"):
+        api_key, base_url = _resolve_openai_image_credentials()
+        if not api_key:
             return error_response(
                 error=(
-                    "OPENAI_API_KEY not set. Run `oc tools` → Image "
-                    "Generation → OpenAI to configure, or `oc setup` "
-                    "to add the key."
+                    "No OpenAI image key. Set image_gen.openai.api_key (an "
+                    "OpenAI-group OC-router key) in config.yaml — or "
+                    "OPENAI_API_KEY — to enable image generation."
                 ),
                 error_type="auth_required",
                 provider="openai",
@@ -224,7 +259,11 @@ class OpenAIImageGenProvider(ImageGenProvider):
         }
 
         try:
-            client = openai.OpenAI()
+            client = (
+                openai.OpenAI(api_key=api_key, base_url=base_url)
+                if base_url
+                else openai.OpenAI(api_key=api_key)
+            )
             response = client.images.generate(**payload)
         except Exception as exc:
             logger.debug("OpenAI image generation failed", exc_info=True)
