@@ -54,8 +54,18 @@ ALL 7 CONFIRMED FIXED + verified (157 py tests, 21 jest, types+lint, browser re-
     (loads-by-default but behavior-gated); skills_list headline now uses backend `count`; tool-name
     match case-insensitive.
 
-### P3 — oc/OpenComputer command + branding rebrand — TODO (designed, gated on brainstorm approval)
-Entry points already done (oc/opencomputer primary, hermes alias). Remaining: banner logo + caduceus, setproctitle, TUI brand, scattered `hermes <subcmd>` help/error strings → `oc`, and a help-guidance line so the WebUI agent uses `oc`. Surgical display-string rebrand governed by CHANGE/PRESERVE denylist (never touch ~/.hermes dir, HERMES_* env, hermes_cli module names, upstream URLs).
+### P3 — oc/OpenComputer command + branding rebrand — ~80% DONE
+Entry points already done (oc/opencomputer primary, hermes alias). DONE this session:
+- Agent help-guidance now says the CLI is `oc` → LIVE-VERIFIED the agent answers `oc plugins list` (was `hermes plugins list`). Commit 7e319b5ef.
+- setproctitle/prctl/pthread_setname_np → `opencomputer`. Commit 7e319b5ef.
+- 181 user-facing `hermes <subcmd>` help/error/agent strings → `oc` across 42 display files. Commit 4c47d6bda. Verified: 44 files compile, oc --help/plugins/doctor work, preserve tokens intact (~/.hermes 520 refs, HERMES_*, hermes_cli, hermes-agent pkg, hermes alias all untouched), ZERO new test failures (17 gateway/service failures are PRE-EXISTING on the branch — sources untouched by me; FLAG for separate investigation).
+REMAINING (cosmetic, lower-value): banner ASCII logo + HERMES_CADUCEUS symbol → OpenComputer brand; TUI brand strings (ui-tui/). Service/setup/migration files (gateway.py etc.) deliberately LEFT on the working `hermes` alias (rewriting generated service defs is risky for no functional gain).
+All pushed to PR #9 (sakshamzip2-sys/hermes-agent#9).
+
+### Items 2 & 3 (user: "do them all one by one") — REMAINING
+- Item 2: deeper WebUI command verification (chat/terminal/skills_list/endpoints/pages/lazy-load already verified; could drive more tools e.g. web_search/file-ops/delegate).
+- Item 3: investigate the pre-existing `Honcho dialectic query failed` warnings (memory-enrichment path).
+- Also flagged: 17 pre-existing gateway/service-manager test failures on this branch (systemd/service tests).
 
 ## Commits
 - 3beefee36 feat(plugins): ship a curated default-enabled plugin loadout
