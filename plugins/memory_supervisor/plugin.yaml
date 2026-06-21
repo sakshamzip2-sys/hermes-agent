@@ -1,0 +1,6 @@
+name: memory_supervisor
+version: 0.1.0
+description: "Runtime Memory Supervisor (RMS, req #12a) — a daemon-thread supervisor next to the RSS monitor that probes the four memory stores, trips a per-store circuit breaker when one is down (recall fails open), durably queues writes to a down store (writes fail closed), supervises background memory jobs, and surfaces store health. Opt-in / default-off; absence changes nothing."
+author: "OpenComputer v2"
+kind: standalone
+provides_hooks: []
