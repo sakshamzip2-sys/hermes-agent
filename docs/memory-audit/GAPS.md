@@ -45,13 +45,20 @@ The cross-agent trace linkage (subagent_start/stop in the langfuse plugin) and t
 outcome-to-trace score bridge (create_score) are not built. FIX: build them DEFAULT-OFF so the
 code is done and only the enablement is a user policy decision (O-P2-1).
 
-## GAP-6 (USER-GATED, costs money): Honcho + GBrain not proven live
+## GAP-6 (mostly UNBLOCKED via OC-router): Honcho + GBrain not proven live
 
-Servers DOWN, Docker DOWN. The active provider Honcho has never been proven to store+recall
-live; GBrain only proven offline (PGLite). FIX: bring up the servers as far as the FREE path
-allows (Docker + GBrain PGLite + Honcho connectivity), prove storage/connectivity, and clearly
-mark the paid-LLM step (OpenRouter credits for the Honcho deriver + GBrain embeddings) as the
-SINGLE remaining user-gated item, per the mission's own "pause for money" guardrail.
+Servers DOWN, Docker DOWN. FIX: bring up the servers and route their CHAT models through
+OC-ROUTER (router.tryopencomputer.com), NOT OpenRouter (USER INSTRUCTION 2026-06-21). OC-router
+works now with claude models (the agents-mission fixed it 2026-06-20: PONG on all 5). So:
+- Honcho server (Docker: api + pgvector + redis) up; deriver/dialectic CHAT -> OC-router.
+- GBrain serve --http on :3131; chat/think -> OC-router; runs tsvector/KEYWORD mode for search
+  (OC-router has NO embeddings endpoint per Phase 1; this is the documented degrade, proven
+  offline in E5). Do NOT point anything at OpenRouter.
+- All MY aux-LLM code (reconcile/reflection/compaction) uses the model-agnostic auxiliary_client
+  -> resolve to OC-router via config, never OpenRouter.
+Prove: server connectivity + storage + chat-based recall (Honcho honcho_reasoning, GBrain think)
+via OC-router. The ONLY thing that stays degraded is embedding-based semantic recall (no OC-router
+embeddings) -> falls back to keyword, which is acceptable. This removes the "costs money" blocker.
 
 ## GAP-7: latent write-side self-signing hole
 
