@@ -662,8 +662,9 @@ def pre_tool_block_message(
     """Block message for the central pre-tool-call gate, or ``None``.
 
     Enforces ``deny`` rules and ``plan`` mode for every tool.  ``allow``
-    whitelists out of plan mode.  ``ask`` is NOT blocked here — it is handled in
-    the terminal approval path (this release scopes ``ask`` to terminal).
+    whitelists out of plan mode.  ``ask`` is NOT blocked here — it is handled by
+    ``check_tool_approval`` (the gateway approval card), which gates both terminal
+    commands and action-style tool calls like ``cronjob(remove)``.
     """
     decision = evaluate_tool_call(tool_name, args, session_id)
     if decision.action == "deny":

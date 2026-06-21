@@ -40,6 +40,21 @@ def _tokens(text: str) -> List[str]:
     return [t for t in _WORD_RE.findall((text or "").lower()) if t not in _STOPWORDS and len(t) > 1]
 
 
+# Verbs that signal a destructive, irreversible, or service-interrupting action in
+# the intent itself. Only gate when the CHOSEN skill is also destructive-capable, so
+# these never false-trigger on benign phrasings ("restart my approach").
+_DESTRUCTIVE_VERBS = {
+    "delete", "remove", "rm", "drop", "destroy", "prune", "purge", "wipe",
+    "reset", "archive", "uninstall", "revoke", "kill", "clear", "erase", "cancel",
+    "stop", "restart", "rollback", "overwrite", "disable",
+}
+
+
+def _intent_is_destructive(query_tokens: List[str]) -> bool:
+    """True if the intent asks for a destructive/irreversible action."""
+    return any(t in _DESTRUCTIVE_VERBS for t in query_tokens)
+
+
 def _index_dirs() -> List[Path]:
     dirs: List[str] = []
     home = os.environ.get("HERMES_HOME") or os.path.expanduser("~/.hermes")
@@ -67,6 +82,7 @@ def _parse_frontmatter(skill_md: Path) -> Optional[Dict[str, str]]:
             if first.strip() != "---":
                 return None
             name = desc = ""
+            destructive = False
             for line in fh:  # stops at the closing --- (we break there)
                 if line.strip() == "---":
                     break
@@ -74,9 +90,12 @@ def _parse_frontmatter(skill_md: Path) -> Optional[Dict[str, str]]:
                     name = line.split(":", 1)[1].strip()
                 elif line.startswith("description:"):
                     desc = line.split(":", 1)[1].strip()
+                elif line.startswith("destructive:"):
+                    destructive = line.split(":", 1)[1].strip().lower() in {"true", "yes", "1"}
             if not name:
                 name = skill_md.parent.name
-            return {"name": name, "description": desc}
+            return {"name": name, "description": desc,
+                    "destructive": "true" if destructive else ""}
     except (OSError, UnicodeDecodeError):
         return None
 
@@ -160,17 +179,26 @@ def route(query: str, k: int = 3, margin: float = 0.15,
 
     if not ranked or ranked[0]["score"] <= 0.0:
         return {"decision": "none", "chosen": None, "ranked": ranked,
+                "requires_confirmation": False,
                 "reason": "No skill description matched the intent."}
 
     top = ranked[0]
+    # The router never SILENTLY fires a destructive skill: if the chosen skill is
+    # destructive-capable and the intent asks for a destructive action, flag it so
+    # the dispatcher gates execution behind an explicit confirmation.
+    chosen_rec = next((s for s in index if s.get("name") == top["name"]), {})
+    requires_confirmation = bool(chosen_rec.get("destructive")) and _intent_is_destructive(qt)
+
     second = ranked[1] if len(ranked) > 1 else None
     if second and (top["score"] - second["score"]) < margin and second["score"] > 0:
         # Too close on description alone: analytics already broke the sort tie,
         # but surface a clarify so a destructive mis-route never happens silently.
         return {"decision": "clarify", "chosen": top["name"], "ranked": ranked,
+                "requires_confirmation": requires_confirmation,
                 "reason": "Multiple skills match closely; confirm which one."}
 
     return {"decision": "route", "chosen": top["name"], "ranked": ranked,
+            "requires_confirmation": requires_confirmation,
             "reason": f"Best description match (score {top['score']})."}
 
 

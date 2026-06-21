@@ -9,13 +9,33 @@ import os
 import subprocess
 from pathlib import Path
 
-import pytest
-
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SCRIPT = REPO_ROOT / "scripts" / "install_profiles.sh"
 TEMPLATES = REPO_ROOT / "profile_templates"
 
-EXPECTED_PROFILES = ["coder", "atlas", "sage", "ledger", "finance"]
+def _template_profiles() -> list[str]:
+    """Profiles the installer will create: every profile_templates/<name>/ that
+    carries the required SOUL.md + config.yaml. Derived from the filesystem so the
+    test stays correct as profiles are added (deep-research, ...) or removed,
+    instead of going stale against a hardcoded list."""
+    return sorted(
+        p.name
+        for p in TEMPLATES.iterdir()
+        if p.is_dir() and (p / "SOUL.md").is_file() and (p / "config.yaml").is_file()
+    )
+
+
+EXPECTED_PROFILES = _template_profiles()
+
+# Core profiles that must always ship; guards against an accidental template
+# deletion silently shrinking the dynamic list above.
+CORE_PROFILES = {"coder", "atlas", "sage", "ledger", "finance"}
+
+
+def test_core_profiles_present():
+    assert CORE_PROFILES.issubset(set(EXPECTED_PROFILES)), (
+        f"a core profile template went missing: have {EXPECTED_PROFILES}"
+    )
 
 
 def _run(target: Path) -> subprocess.CompletedProcess:
@@ -131,5 +151,8 @@ def test_prints_summary_count(tmp_path):
     target = tmp_path / "profiles"
     result = _run(target)
     assert result.returncode == 0
-    # Final summary must report the number of profiles installed (5 on a fresh run).
-    assert "5" in result.stdout, f"missing install count in summary:\n{result.stdout}"
+    # Final summary must report the number of profiles installed on a fresh run,
+    # derived from the templates on disk so it never goes stale.
+    assert f"installed {len(EXPECTED_PROFILES)}" in result.stdout, (
+        f"missing/incorrect install count in summary:\n{result.stdout}"
+    )

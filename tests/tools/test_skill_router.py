@@ -119,9 +119,35 @@ def test_router_is_lazy_reads_index_not_bodies(index):
     # The index carries ONLY name + description. Proof the body was never read:
     # body-only markers (e.g. "cronjob(action=") never appear in any description.
     for s in index:
-        assert set(s.keys()) <= {"name", "description"}, s.keys()
+        # name + description, plus the frontmatter-only `destructive` flag. Still
+        # never the body: the markers below prove the body was not read.
+        assert set(s.keys()) <= {"name", "description", "destructive"}, s.keys()
         assert "cronjob(action=" not in s["description"]
         assert "skill_run(" not in s["description"]
-    # And the parser only ever emits name/description, regardless of body size.
+    # And the parser only ever emits frontmatter fields, regardless of body size.
     cron = next(s for s in index if s["name"] == "cron-scheduling")
     assert "# Cron scheduling" not in cron["description"]  # body heading not leaked
+
+
+def test_destructive_intent_requires_confirmation():
+    # The router never SILENTLY fires a destructive skill: a destructive verb in
+    # the intent + a destructive-capable chosen skill => requires_confirmation.
+    idx = [
+        {"name": "cron-scheduling",
+         "description": "create list pause resume delete cron jobs and schedules",
+         "destructive": "true"},
+        {"name": "weather-report",
+         "description": "get the weather forecast for a city",
+         "destructive": ""},
+    ]
+    r = route.route("delete the cron job named nightly", extra_index=idx, usage={})
+    assert r["chosen"] == "cron-scheduling" and r["requires_confirmation"] is True, r
+
+    # A read-only intent on the same skill stays autonomous (no confirmation).
+    r2 = route.route("list cron jobs", extra_index=idx, usage={})
+    assert r2["chosen"] == "cron-scheduling" and r2["requires_confirmation"] is False, r2
+
+    # A destructive verb whose best match is a NON-destructive skill is not gated:
+    # gating is skill-aware, not verb-only.
+    r3 = route.route("remove the weather forecast", extra_index=idx, usage={})
+    assert r3["chosen"] == "weather-report" and r3["requires_confirmation"] is False, r3
