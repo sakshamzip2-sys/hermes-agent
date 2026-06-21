@@ -115,7 +115,14 @@ _INTERNAL_CONTEXT_RE = re.compile(
     re.IGNORECASE,
 )
 _INTERNAL_NOTE_RE = re.compile(
-    r'\[System note:\s*The following is recalled memory context,\s*NOT new user input\.\s*Treat as (?:informational background data|authoritative reference data[^\]]*)\.\]\s*',
+    # Matches the leading system/memory note this module wraps recalled memory
+    # in, so a provider that re-injects a pre-wrapped block (or an old cached
+    # one) gets the note stripped even when the fence tags are gone. Recognises
+    # BOTH the legacy "[System note: ... Treat as ...]" wording AND the current
+    # "[These are notes you (the assistant) saved ...]" first-person framing.
+    r'\[(?:System note:\s*The following is recalled memory context,\s*NOT new user input\.\s*'
+    r'Treat as (?:informational background data|authoritative reference data[^\]]*)\.'
+    r'|These are notes you \(the assistant\) saved[^\]]*)\]\s*',
     re.IGNORECASE,
 )
 
@@ -323,9 +330,10 @@ def build_memory_context_block(raw_context: str) -> str:
         )
     return (
         "<memory-context>\n"
-        "[System note: The following is recalled memory context, "
-        "NOT new user input. Treat as authoritative reference data — "
-        "this is the agent's persistent memory and should inform all responses.]\n\n"
+        "[These are notes you (the assistant) saved to your own persistent "
+        "long-term memory during earlier sessions with this user. They were "
+        "retrieved by the memory system for this turn, not supplied by the "
+        "user. Use them as your own recollection when they are relevant.]\n\n"
         f"{clean}\n"
         "</memory-context>"
     )

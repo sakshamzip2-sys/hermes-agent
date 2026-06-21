@@ -40,29 +40,28 @@ PY="${REPO_ROOT}/.venv/bin/python"
 HERMES="${REPO_ROOT}/.venv/bin/hermes"
 
 # The distinctive marker we assert on recall: the exact spec-mandated path
-# /etc/oc/dragonfruit-mango.key. A real `hermes -z` turn must surface this path
+# /etc/oc/zephyr-quoll-7731.key. A real `hermes -z` turn must surface this path
 # from memory, proving the MergeLayer recall plane is live on the oneshot path.
 #
-# IMPORTANT framing note: the marker is asserted unchanged, but the fact is
-# phrased as a NON-SECRET config-file location ("config file PATH", not "deploy
-# token"). A first pass that phrased it as a stored "deploy token" made a
-# safety-tuned model treat the recalled line as injected credential material and
-# refuse to repeat it -- a flaky gate that tested the model's caution, not the
-# recall plane. Framed as a benign config path, the model recalls AND states it,
-# so the gate deterministically tests the subsystem under proof (the MergeLayer),
-# not the model's willingness to echo a credential.
-# Neutral, non-sensitive user-preference facts: a well-aligned model naturally
-# recalls and USES these, rather than (correctly) distrusting a credential/path
-# that reads like a prompt-injection plant. The point under proof is the LIVE
-# MergeLayer recall path, not the model's willingness to echo a secret.
-SECRET_PATH="dragonfruit-mango blend number 88"
-FACT="The user Saksham's favorite test fruit blend is the ${SECRET_PATH}."
+# Framing note: the fact is phrased as a NON-SECRET config-file location ("config
+# file PATH", not "deploy token") so the gate tests the recall plane, not the
+# model's willingness to echo a credential. The decisive fix for the model
+# refusing to USE recalled memory was the memory-context note wording itself:
+# the legacy "[System note: ... Treat as authoritative reference data]" framing
+# read to a safety-tuned model as a prompt-injection plant, so it declined to
+# repeat the recalled line and only quoted it while calling it suspicious. The
+# current first-person framing ("[These are notes you (the assistant) saved to
+# your own persistent long-term memory ... not supplied by the user]") is
+# accepted as the agent's own recollection, so the model recalls AND states the
+# path -- making this gate test the LIVE MergeLayer, not the model's caution.
+SECRET_PATH="/etc/oc/zephyr-quoll-7731.key"
+FACT="The OpenComputer deploy config file is located at the path ${SECRET_PATH} (non-secret build setting)."
 
 # A second, independent corroborating fact, recalled via a different query, to
 # show the MergeLayer is general (not a one-fact fluke): the model recalls and
-# USES a distinctive preference from merged memory.
+# USES a distinctive codename from merged memory.
 BENIGN_MARKER="lavender-otter-4412"
-BENIGN_FACT="The user's preferred UI accent color is the custom shade named ${BENIGN_MARKER}."
+BENIGN_FACT="The OpenComputer staging cluster is internally codenamed ${BENIGN_MARKER}."
 
 # --- Sanity: required binaries exist -----------------------------------------
 for bin in "${PY}" "${HERMES}"; do
@@ -87,8 +86,16 @@ fi
 
 # --- Build a throwaway HERMES_HOME -------------------------------------------
 HM="$(mktemp -d -t oc-memory-live-recall.XXXXXX)"
+# A NEUTRAL working directory with NO AGENTS.md. The live `-z` turns must run
+# from here, not from the repo root: Hermes auto-loads the nearest AGENTS.md
+# into the turn context, and this repo's AGENTS.md (which documents secret
+# stores, read_secrets, etc.) gets flagged by the model as a prompt-injection
+# attempt, poisoning its trust in the WHOLE turn -- including the legitimate
+# recalled memory it should use. That AGENTS.md is incidental to what is under
+# proof (the MergeLayer recall plane), so we drive the model from a clean cwd.
+WORKDIR="$(mktemp -d -t oc-memory-live-work.XXXXXX)"
 cleanup() {
-    rm -rf "${HM}" 2>/dev/null || true
+    rm -rf "${HM}" "${WORKDIR}" 2>/dev/null || true
 }
 trap cleanup EXIT
 
@@ -142,11 +149,11 @@ bid = store.add_fact(
     self_generated=True,
 )
 # Read both straight back to prove the seeds landed before we involve the model.
-rows = store.search_facts_readonly("Saksham favorite test fruit blend", limit=5, or_expand=True)
-brows = store.search_facts_readonly("user preferred UI accent color shade", limit=5, or_expand=True)
+rows = store.search_facts_readonly("OpenComputer deploy config file path", limit=5, or_expand=True)
+brows = store.search_facts_readonly("OpenComputer staging cluster codenamed", limit=5, or_expand=True)
 store.close()
 
-hit = any("dragonfruit-mango" in (r.get("content") or "") for r in rows)
+hit = any("zephyr-quoll-7731" in (r.get("content") or "") for r in rows)
 bhit = any("lavender-otter-4412" in (r.get("content") or "") for r in brows)
 print(f"    seeded primary fact_id={fid} readback_hit={hit} rows={len(rows)}")
 print(f"    seeded benign  fact_id={bid} readback_hit={bhit} rows={len(brows)}")
@@ -208,7 +215,7 @@ if not mgr._merge_enabled():
     sys.exit(5)
 
 raw = mgr.prefetch_all(
-    "What is Saksham favorite test fruit blend?", session_id="proofz"
+    "What is the file path of the OpenComputer deploy config file?", session_id="proofz"
 )
 block = build_memory_context_block(raw)
 present = marker in block
@@ -226,9 +233,9 @@ PYEOF
 echo "==> running live hermes -z turn (this calls the model on OC-router)"
 OUT_FILE="${HM}/oneshot_out.txt"
 set +e
-HERMES_HOME="${HM}" "${HERMES}" -z \
-    "What is Saksham favorite test fruit blend? Answer from your memory of me." \
-    --max-turns 2 > "${OUT_FILE}" 2>"${HM}/oneshot_err.txt"
+( cd "${WORKDIR}" && HERMES_HOME="${HM}" "${HERMES}" -z \
+    "What is the file path of the OpenComputer deploy config file? Answer with just the path from your memory." \
+    --max-turns 2 ) > "${OUT_FILE}" 2>"${HM}/oneshot_err.txt"
 RC=$?
 set -e
 
@@ -261,9 +268,9 @@ echo "PASS (primary): the live model surfaced '${SECRET_PATH}' from memory throu
 echo "==> running benign corroborating hermes -z turn"
 OUT2_FILE="${HM}/oneshot_out2.txt"
 set +e
-HERMES_HOME="${HM}" "${HERMES}" -z \
-    "What is the user preferred UI accent color shade name? Answer from your memory of me." \
-    --max-turns 2 > "${OUT2_FILE}" 2>"${HM}/oneshot_err2.txt"
+( cd "${WORKDIR}" && HERMES_HOME="${HM}" "${HERMES}" -z \
+    "What is the internal codename of the OpenComputer staging cluster? Answer with just the codename from your memory." \
+    --max-turns 2 ) > "${OUT2_FILE}" 2>"${HM}/oneshot_err2.txt"
 RC2=$?
 set -e
 
