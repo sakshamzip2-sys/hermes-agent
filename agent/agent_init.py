@@ -1143,6 +1143,12 @@ def init_agent(
     agent._memory_nudge_interval = 10
     agent._turns_since_memory = 0
     agent._iters_since_skill = 0
+    # Holographic fact plane handle (memory_store.db) + background reconcile
+    # config. Both default OFF (None / empty): attached below ONLY when the
+    # merge or reconcile gate is set, so the default install never opens
+    # memory_store.db and never runs reconcile. See the GATED block below.
+    agent._holographic_store = None
+    agent._reconcile_config = {}
     if not skip_memory:
         try:
             mem_config = _agent_cfg.get("memory", {})
@@ -1231,6 +1237,90 @@ def init_agent(
         except Exception as _mpe:
             _ra().logger.warning("Memory provider plugin init failed: %s", _mpe)
             agent._memory_manager = None
+
+    # Combine-on-read MergeLayer wiring (GAP-1 / GAP-4, additive + GATED).
+    #
+    # When memory.merge.enabled (or memory.holographic_plane.enabled) is set,
+    # stand up a holographic MemoryStore at $HERMES_HOME/memory_store.db as the
+    # live LOCAL fact plane and attach it -- plus the session DB and the resolved
+    # merge config -- to the memory_manager so prefetch_all routes recall through
+    # the MergeLayer. Default OFF: with both flags false (the live default) this
+    # whole block is skipped, no memory_store.db is created, and prefetch_all
+    # runs the EXACT legacy concat path, so live behaviour is UNCHANGED.
+    #
+    # The holographic store is read here OUT-OF-BAND as an extra local plane; the
+    # registered provider (honcho) is left untouched and remains the sole
+    # registered provider.
+    if not skip_memory and agent._memory_manager is not None:
+        try:
+            _merge_mem_cfg = _agent_cfg.get("memory", {})
+            if not isinstance(_merge_mem_cfg, dict):
+                _merge_mem_cfg = {}
+            _merge_cfg = _merge_mem_cfg.get("merge", {})
+            if not isinstance(_merge_cfg, dict):
+                _merge_cfg = {}
+            _holo_cfg = _merge_mem_cfg.get("holographic_plane", {})
+            if not isinstance(_holo_cfg, dict):
+                _holo_cfg = {}
+            # Background reconcile write gate (GAP-2, additive + GATED). The
+            # reconcile engine writes durable facts OUT-OF-BAND to the SAME
+            # holographic memory_store.db the MergeLayer reads, independent of
+            # the registered Honcho provider. Default OFF: with
+            # memory.write.reconcile.enabled false (the live default) nothing is
+            # written and behaviour is unchanged.
+            _write_cfg = _merge_mem_cfg.get("write", {})
+            if not isinstance(_write_cfg, dict):
+                _write_cfg = {}
+            _reconcile_cfg = _write_cfg.get("reconcile", {})
+            if not isinstance(_reconcile_cfg, dict):
+                _reconcile_cfg = {}
+            _merge_on = bool(_merge_cfg.get("enabled", False))
+            _holo_on = bool(_holo_cfg.get("enabled", False))
+            _reconcile_on = bool(_reconcile_cfg.get("enabled", False))
+            # Stash the resolved reconcile config so the background turn worker
+            # can read its gate without re-loading config. Empty / disabled by
+            # default keeps reconcile dark.
+            agent._reconcile_config = dict(_reconcile_cfg)
+            # The holographic store is stood up when EITHER the read merge path
+            # OR the background reconcile write path needs it. Reconcile writes
+            # are independent of merge reads, so reconcile alone is enough to
+            # create the live local fact plane.
+            if _merge_on or _holo_on or _reconcile_on:
+                _holo_store = None
+                try:
+                    from plugins.memory.holographic.store import MemoryStore as _HoloStore
+                    _holo_path = str(get_hermes_home() / "memory_store.db")
+                    _holo_store = _HoloStore(db_path=_holo_path)
+                except Exception as _holo_err:
+                    _ra().logger.warning(
+                        "Holographic fact plane init failed (%s); "
+                        "MergeLayer / reconcile will run without it",
+                        _holo_err,
+                    )
+                # Only attach to the read path when the merge / holographic read
+                # gate is on. Reconcile-only keeps the read path on the legacy
+                # concat (the write plane is still stood up for out-of-band
+                # writes via agent._holographic_store).
+                if _merge_on or _holo_on:
+                    agent._memory_manager.attach_merge_planes(
+                        holographic_store=_holo_store,
+                        session_db=agent._session_db,
+                        merge_config=_merge_cfg,
+                    )
+                # Keep a handle on the agent so teardown / reconcile can reach it.
+                agent._holographic_store = _holo_store
+                if _merge_on:
+                    _ra().logger.info(
+                        "MergeLayer recall enabled (holographic plane %s)",
+                        "attached" if _holo_store is not None else "absent",
+                    )
+                if _reconcile_on:
+                    _ra().logger.info(
+                        "Background memory reconcile enabled (holographic plane %s)",
+                        "attached" if _holo_store is not None else "absent",
+                    )
+        except Exception as _merge_err:
+            _ra().logger.warning("MergeLayer / reconcile wiring skipped: %s", _merge_err)
 
     from agent.memory_manager import inject_memory_provider_tools as _inject_memory_provider_tools
     _inject_memory_provider_tools(agent)

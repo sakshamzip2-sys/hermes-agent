@@ -3102,6 +3102,30 @@ class AIAgent:
         except Exception:
             pass
 
+        # Background reconcile write (GAP-2, additive + GATED, fail-soft).
+        #
+        # When memory.write.reconcile.enabled is set, mine this completed turn's
+        # text for salient durable-fact candidates and run them through the
+        # reconcile engine, which writes durable facts OUT-OF-BAND to the
+        # holographic plane (the SEPARATE local memory_store.db, independent of
+        # the registered Honcho provider). It runs on a daemon thread so it never
+        # delays the turn, and the whole call is fail-soft: a reconcile error
+        # never breaks the turn. Default OFF (reconcile.enabled false / no store
+        # handle) => this is a no-op and behaviour is unchanged.
+        try:
+            _reconcile_cfg = getattr(self, "_reconcile_config", None)
+            _holo = getattr(self, "_holographic_store", None)
+            if _reconcile_cfg and _reconcile_cfg.get("enabled", False) and _holo is not None:
+                from agent.memory_reconcile_worker import spawn_reconcile_turn
+                spawn_reconcile_turn(
+                    store=_holo,
+                    config=_reconcile_cfg,
+                    user_text=user_text,
+                    response_text=response_text,
+                )
+        except Exception:
+            pass
+
     def release_clients(self) -> None:
         """Release LLM client resources WITHOUT tearing down session tool state.
 

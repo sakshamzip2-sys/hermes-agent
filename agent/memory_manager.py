@@ -331,6 +331,24 @@ def build_memory_context_block(raw_context: str) -> str:
     )
 
 
+class _FixedCandidateAdapter:
+    """A MergeLayer StoreAdapter that returns a pre-built candidate list.
+
+    Used to fold the registered providers' prefetch output into the fusion as a
+    single extra plane: their candidates are gathered eagerly (outside the
+    adapter) and replayed here, so the MergeLayer treats them as just-another
+    plane (per-plane scan + RRF + source-tier prior) without the providers
+    needing to implement the adapter protocol themselves.
+    """
+
+    def __init__(self, name: str, candidates: List[Any]) -> None:
+        self.name = name
+        self._candidates = list(candidates)
+
+    def search(self, query: str, *, limit: int) -> List[Any]:
+        return list(self._candidates[:limit])
+
+
 class MemoryManager:
     """Orchestrates the built-in provider plus at most one external provider.
 
@@ -349,6 +367,58 @@ class MemoryManager:
         # _submit_background() and the sync_all/queue_prefetch_all rationale.
         self._sync_executor: Optional[ThreadPoolExecutor] = None
         self._sync_executor_lock = threading.Lock()
+        # -- Combine-on-read MergeLayer wiring (GAP-1 / GAP-4, additive + gated) -
+        # These handles are attached by agent_init ONLY when memory.merge.enabled
+        # (or memory.holographic_plane.enabled) is set, so the default install
+        # has them all None and prefetch_all runs the EXACT legacy concat path.
+        # The holographic store is the SEPARATE local fact plane (memory_store.db)
+        # read by the MergeLayer and written out-of-band by reconcile; it is NOT
+        # the registered provider (Honcho stays the sole registered provider).
+        self._holographic_store: Optional[Any] = None
+        self._session_db: Optional[Any] = None
+        # Resolved + validated memory.merge config block (rrf_k, plane_weights,
+        # source_tier_prior, abstention_floor, per_source_floors, enabled).
+        # Empty dict => merge disabled (legacy concat path).
+        self._merge_config: Dict[str, Any] = {}
+        # Most recent MergeLayer RecallTrace (req #4 observability). None until
+        # the merge path runs at least once. Read-only side channel; never on
+        # the prompt.
+        self._last_recall_trace: Optional[Dict[str, Any]] = None
+
+    # -- Combine-on-read wiring (attached by agent_init when gated on) -------
+
+    def attach_merge_planes(
+        self,
+        *,
+        holographic_store: Optional[Any] = None,
+        session_db: Optional[Any] = None,
+        merge_config: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """Attach the local fact plane + session DB + merge config for recall.
+
+        Called from agent_init ONLY when the merge layer (or the holographic
+        plane) is gated on. Everything is additive: with no attachment (or
+        ``merge.enabled`` false) ``prefetch_all`` runs the legacy concat path
+        unchanged. Honcho remains the sole REGISTERED provider; the holographic
+        store is read here out-of-band as an extra local plane, never registered.
+        """
+        if holographic_store is not None:
+            self._holographic_store = holographic_store
+        if session_db is not None:
+            self._session_db = session_db
+        if merge_config is not None:
+            self._merge_config = dict(merge_config)
+
+    def _merge_enabled(self) -> bool:
+        """Whether the combine-on-read MergeLayer should drive recall.
+
+        True ONLY when memory.merge.enabled is set AND at least one local plane
+        handle (holographic store or session DB) was attached. Absent either, we
+        fall back to the legacy per-provider concat so behaviour is unchanged.
+        """
+        if not self._merge_config.get("enabled", False):
+            return False
+        return self._holographic_store is not None or self._session_db is not None
 
     # -- Registration --------------------------------------------------------
 
@@ -471,14 +541,38 @@ class MemoryManager:
         return extract_user_instruction_from_skill_message(text)
 
     def prefetch_all(self, query: str, *, session_id: str = "") -> str:
-        """Collect prefetch context from all providers.
+        """Collect prefetch context for the turn.
 
-        Returns merged context text labeled by provider. Empty providers
-        are skipped. Failures in one provider don't block others.
+        When the combine-on-read MergeLayer is gated ON (memory.merge.enabled
+        AND a local plane attached) the query is routed through
+        :meth:`_merge_recall`, which fuses the local planes (session FTS5 +
+        holographic facts) plus the registered providers and returns a single
+        ranked, per-plane-fenced block. When OFF (the default), it runs the
+        EXACT legacy path: per-provider concat, empty providers skipped,
+        failures in one provider never block others.
+
+        Either way the returned text is RAW (not pre-fenced): the caller wraps
+        it through ``build_memory_context_block`` (the final whole-block fence)
+        at the injection site, so the fence still runs in both modes.
         """
         clean_query = self._strip_skill_scaffolding(query)
         if not clean_query:
             return ""
+
+        if self._merge_enabled():
+            try:
+                merged = self._merge_recall(clean_query, session_id=session_id)
+                if merged is not None:
+                    return merged
+                # merged is None => the merge path could not run (e.g. import
+                # failure); fall through to the legacy concat so recall never
+                # silently goes dark.
+            except Exception as e:  # pragma: no cover - merge must never break recall
+                logger.warning(
+                    "MergeLayer recall failed (%s); falling back to concat path",
+                    e,
+                )
+
         parts = []
         for provider in self._providers:
             try:
@@ -491,6 +585,154 @@ class MemoryManager:
                     provider.name, e,
                 )
         return "\n\n".join(parts)
+
+    # -- Combine-on-read recall (gated by memory.merge.enabled) --------------
+
+    def _build_merge_adapters(self) -> List[Any]:
+        """Construct the MergeLayer adapters over the attached local planes.
+
+        Returns the list of StoreAdapters: a SessionFTS5Adapter over the
+        attached session DB (when present) and a HolographicAdapter over the
+        attached holographic store (when present). Empty when nothing is
+        attached. Import-time failures propagate to the caller, which falls back
+        to the concat path.
+        """
+        from agent.memory_merge import HolographicAdapter, SessionFTS5Adapter
+
+        adapters: List[Any] = []
+        if self._session_db is not None:
+            adapters.append(SessionFTS5Adapter(self._session_db))
+        if self._holographic_store is not None:
+            adapters.append(HolographicAdapter(self._holographic_store))
+        return adapters
+
+    def _provider_prefetch_candidates(
+        self, query: str, *, session_id: str
+    ) -> List[Any]:
+        """Wrap each registered provider's prefetch output as merge Candidates.
+
+        The registered providers (Honcho, etc.) stay first-class planes in the
+        fusion: each provider's prefetch string is captured as a single
+        Candidate so its content is fused, source-tier-weighted, and per-plane
+        fenced alongside the local planes. A provider that errors or returns
+        nothing simply contributes no candidate (graceful degradation).
+        """
+        from agent.memory_merge import Candidate
+
+        out: List[Any] = []
+        for provider in self._providers:
+            name = getattr(provider, "name", "provider")
+            try:
+                result = provider.prefetch(query, session_id=session_id)
+            except Exception as e:
+                logger.debug(
+                    "Memory provider '%s' prefetch failed during merge (non-fatal): %s",
+                    name, e,
+                )
+                continue
+            if result and result.strip():
+                out.append(
+                    Candidate(
+                        id=name,
+                        text_for_rerank=result,
+                        source_store=name,
+                        native_rank=1,
+                        native_score=None,
+                        metadata={"source_tier": "curated"},
+                    )
+                )
+        return out
+
+    def _merge_recall(self, query: str, *, session_id: str) -> Optional[str]:
+        """Run the MergeLayer over the local planes + providers; render to text.
+
+        Returns the rendered raw context block (possibly empty string when the
+        merge abstains or finds nothing) on success, or ``None`` when the merge
+        path could not be constructed at all (caller then falls back to concat).
+        The returned text is RAW: the caller applies the whole-block fence.
+        """
+        try:
+            from agent.memory_merge import MergeLayer
+        except Exception:  # pragma: no cover - merge module must import in-tree
+            return None
+
+        adapters = self._build_merge_adapters()
+        if not adapters and not self._providers:
+            return None
+
+        cfg = self._merge_config
+        kwargs: Dict[str, Any] = {}
+        if "rrf_k" in cfg:
+            try:
+                kwargs["rrf_k"] = int(cfg["rrf_k"])
+            except (TypeError, ValueError):
+                pass
+        if isinstance(cfg.get("plane_weights"), dict):
+            kwargs["plane_weights"] = dict(cfg["plane_weights"])
+        if isinstance(cfg.get("source_tier_prior"), dict):
+            kwargs["source_tier_prior"] = dict(cfg["source_tier_prior"])
+        if "abstention_floor" in cfg:
+            try:
+                kwargs["abstention_floor"] = float(cfg["abstention_floor"])
+            except (TypeError, ValueError):
+                pass
+        if "per_source_floors" in cfg:
+            kwargs["per_source_floors"] = bool(cfg["per_source_floors"])
+        if "stale_multiplier" in cfg:
+            try:
+                kwargs["stale_multiplier"] = float(cfg["stale_multiplier"])
+            except (TypeError, ValueError):
+                pass
+
+        merge_layer = MergeLayer(**kwargs)
+
+        # Pre-fetch the registered providers as extra planes, then fuse them
+        # with the local-plane adapters via a single combined adapter list. The
+        # provider candidates are passed in through a lightweight fixed adapter
+        # so the MergeLayer treats them as just-another-plane.
+        provider_cands = self._provider_prefetch_candidates(
+            query, session_id=session_id
+        )
+        stores = list(adapters)
+        if provider_cands:
+            stores.append(_FixedCandidateAdapter("providers", provider_cands))
+
+        ranked, trace = merge_layer.recall(query, stores=stores)
+        # Expose the most recent trace for the supervisor / observability
+        # surface (req #4). Cheap, read-only, never on the prompt path.
+        self._last_recall_trace = trace
+        return self._render_merged(ranked)
+
+    @staticmethod
+    def _render_merged(ranked: List[Any]) -> str:
+        """Render fused candidates to a labeled raw context block.
+
+        Mirrors the existing provider prefetch render style ("## <Plane>\n- ...")
+        so the downstream fence + prompt assembly see the same shape they do for
+        the legacy concat path. Empty input renders empty (abstention => no
+        block injected). The returned text is RAW (not fenced).
+        """
+        if not ranked:
+            return ""
+        by_plane: Dict[str, List[str]] = {}
+        order: List[str] = []
+        for cand in ranked:
+            plane = getattr(cand, "source_store", "memory")
+            text = (getattr(cand, "text_for_rerank", "") or "").strip()
+            if not text:
+                continue
+            if plane not in by_plane:
+                by_plane[plane] = []
+                order.append(plane)
+            by_plane[plane].append(text)
+        if not order:
+            return ""
+        sections: List[str] = []
+        for plane in order:
+            heading = "## Memory: " + plane
+            lines = "\n".join(f"- {t}" for t in by_plane[plane])
+            sections.append(heading + "\n" + lines)
+        return "\n\n".join(sections)
 
     def queue_prefetch_all(self, query: str, *, session_id: str = "") -> None:
         """Queue background prefetch on all providers for the next turn.
