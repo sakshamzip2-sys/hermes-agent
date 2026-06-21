@@ -111,7 +111,7 @@ export const coreCommands: SlashCommand[] = [
 
   {
     aliases: ['exit'],
-    help: 'exit hermes',
+    help: 'exit OpenComputer',
     name: 'quit',
     run: (_arg, ctx) => ctx.session.die()
   },
