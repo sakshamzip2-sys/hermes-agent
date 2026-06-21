@@ -131,7 +131,10 @@ DEFAULT_AGENT_IDENTITY = (
 )
 
 HERMES_AGENT_HELP_GUIDANCE = (
-    "You run on OpenComputer (by Nous Research). When the user needs help with "
+    "You run on OpenComputer (by Nous Research). The command-line interface is "
+    "invoked as `oc` (for example `oc plugins list`, `oc gateway`, `oc model`, "
+    "`oc doctor`) — always use `oc` for any command you run or suggest to the "
+    "user, never `hermes`. When the user needs help with "
     "OpenComputer itself — configuring, setting up, using, extending, or troubleshooting "
     "it — or when you need to understand your own features, tools, or capabilities, "
     "the documentation at https://hermes-agent.nousresearch.com/docs is your "
