@@ -196,6 +196,27 @@ class OutcomesStore:
         finally:
             conn.close()
 
+    def session_turn_rows(self, session_id: str, *, limit: int = 150) -> list[dict]:
+        """All scored rows for one ``session_id`` (newest-first), read-only.
+
+        The Part 2 score bridge reads these to push each turn's fused ``turn_score``
+        onto the matching Langfuse trace. Returns ``id``, ``turn``, ``turn_score``,
+        ``composite``, ``judge``, ``user_rating`` so the bridge can attach the verdict
+        without re-scoring. Never mutates the ledger.
+        """
+        conn = self._connect()
+        try:
+            cur = conn.execute(
+                "SELECT id, turn, turn_score, composite, judge, user_rating "
+                "FROM turn_outcomes WHERE session_id = ? "
+                "ORDER BY id DESC LIMIT ?",
+                (str(session_id), int(limit)),
+            )
+            cols = [c[0] for c in cur.description]
+            return [dict(zip(cols, row)) for row in cur.fetchall()]
+        finally:
+            conn.close()
+
     def count(self) -> int:
         conn = self._connect()
         try:
@@ -346,4 +367,22 @@ def recent_low_scoring_rows(
         )
     except Exception as exc:  # noqa: BLE001
         logger.debug("outcomes: recent_low_scoring_rows read failed (%s)", exc)
+        return []
+
+
+def session_turn_rows(
+    session_id: str, *, limit: int = 150, db_path: Path | str | None = None
+) -> list[dict]:
+    """Module-level seam: a session's scored rows without instantiating a store.
+
+    Returns ``[]`` on any error (missing db, no table) so callers degrade gracefully.
+    This is the function the Part 2 Langfuse score bridge imports.
+    """
+    try:
+        path = Path(db_path) if db_path is not None else default_db_path()
+        if not path.exists():
+            return []
+        return OutcomesStore(path).session_turn_rows(session_id, limit=limit)
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("outcomes: session_turn_rows read failed (%s)", exc)
         return []
