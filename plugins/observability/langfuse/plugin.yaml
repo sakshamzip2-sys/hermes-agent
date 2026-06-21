@@ -12,3 +12,8 @@ hooks:
   - post_llm_call
   - pre_tool_call
   - post_tool_call
+  # Part 2 Slice 1 - cross-agent trace linkage (DEFAULT-OFF: observability.langfuse.cross_agent)
+  - subagent_start
+  - subagent_stop
+  # Part 2 Slice 2 - outcome-to-trace score bridge (DEFAULT-OFF: observability.langfuse.score_bridge)
+  - on_session_end

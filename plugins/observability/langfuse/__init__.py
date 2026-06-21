@@ -54,6 +54,14 @@ class TraceState:
 
 _STATE_LOCK = threading.Lock()
 _TRACE_STATE: Dict[str, TraceState] = {}
+# Slice 1 (cross-agent): live child observations keyed by the child's own
+# session_id. A delegated/team subagent runs in its own session and emits its
+# own per-turn traces; this map only holds the linkage SPAN we open under the
+# PARENT trace so subagent_stop can close it. Bounded the same way as
+# _TRACE_STATE (a stop hook normally reclaims an entry; a never-stopped child
+# is evicted oldest-first over the cap).
+_CHILD_LINK_STATE: Dict[str, Any] = {}
+_MAX_CHILD_LINK_STATE = 256
 # Hard cap on live trace state. Each turn keys _TRACE_STATE by a unique
 # turn_id, and an entry is normally reclaimed by _finish_trace when a turn
 # ends cleanly (final response has content and no tool calls). A turn that
@@ -226,6 +234,59 @@ def _get_langfuse() -> Optional[Langfuse]:
         return None
 
     return _LANGFUSE_CLIENT
+
+
+# ---------------------------------------------------------------------------
+# Slice 1/2 config gate (Part 2). Both new behaviors are DEFAULT-OFF and read
+# from config.yaml (NOT new HERMES_* env vars, per AGENTS.md). The read is
+# cached with a short TTL so the new infrequent hooks (subagent_start/stop fire
+# per-delegation, the score bridge fires on session end) never become a per-turn
+# config-file read. Crucially the import of ``hermes_cli.config`` lives INSIDE
+# this function, not at module top - so the credential gate ``_get_langfuse()``
+# never imports config (guarded by test_get_langfuse_does_not_import_hermes_config).
+# ---------------------------------------------------------------------------
+_CFG_CACHE: tuple[dict[str, bool], float] = ({}, 0.0)
+_CFG_TTL = 30.0  # seconds
+
+
+def _langfuse_flags() -> dict[str, bool]:
+    """Cached read of the two opt-in flags. Default FALSE preserves prior behavior.
+
+    Returns ``{"cross_agent": bool, "score_bridge": bool}`` read from
+    ``observability.langfuse`` in config.yaml. Fail-open: any read error yields
+    all-False (the prior, identity-less behavior).
+    """
+    global _CFG_CACHE
+    cached, ts = _CFG_CACHE
+    now = time.monotonic()
+    if cached and (now - ts) < _CFG_TTL:
+        return cached
+
+    flags = {"cross_agent": False, "score_bridge": False}
+    try:
+        from hermes_cli.config import load_config
+
+        cfg = load_config() or {}
+        block = cfg.get("observability", {})
+        block = block.get("langfuse", {}) if isinstance(block, dict) else {}
+        if isinstance(block, dict):
+            flags["cross_agent"] = bool(block.get("cross_agent", False))
+            flags["score_bridge"] = bool(block.get("score_bridge", False))
+    except Exception as exc:  # noqa: BLE001 - fail-open, default OFF
+        _debug(f"langfuse flag read failed ({exc}); defaulting OFF")
+
+    _CFG_CACHE = (flags, now)
+    return flags
+
+
+def trace_id_seed(session_id: str, task: str) -> str:
+    """The canonical Langfuse trace seed for a turn.
+
+    Single source of truth so the per-turn root trace (``_start_root_trace``) and
+    the outcome-to-trace score bridge mint the SAME ``create_trace_id`` for one
+    (session, task). Mirrors the historical inline seed exactly.
+    """
+    return f"{session_id or 'sessionless'}::{task or ''}"
 
 
 def _scope_prefix(task_id: str, session_id: str) -> str:
@@ -603,7 +664,7 @@ def _usage_and_cost(response: Any, *, provider: str, api_mode: str, model: str, 
 def _start_root_trace(task_key: str, *, task_id: str, session_id: str, platform: str, provider: str, model: str,
                       api_mode: str, messages: Any, client: Langfuse,
                       turn_id: str = "", api_request_id: str = "") -> TraceState:
-    trace_id = client.create_trace_id(seed=f"{session_id or 'sessionless'}::{task_id or task_key}")
+    trace_id = client.create_trace_id(seed=trace_id_seed(session_id, task_id or task_key))
     trace_input = _extract_last_user_message(messages)
     metadata = {
         "source": "hermes",
@@ -1125,6 +1186,152 @@ def on_post_tool_call(*, tool_name: str = "", args: Any = None, result: Any = No
     )
 
 
+# ---------------------------------------------------------------------------
+# Slice 1 - cross-agent trace linkage (Part 2, P2-1 gap).
+#
+# delegate_tool.py already puts the parent/child link on the wire:
+#   subagent_start(parent_session_id, parent_turn_id, parent_subagent_id,
+#                  child_session_id, child_subagent_id, child_role, child_goal)
+#   subagent_stop (parent_session_id, parent_turn_id, child_session_id,
+#                  child_role, child_summary, child_status, duration_ms)
+# A delegated/team run is otherwise an ORPHAN trace. On subagent_start we open a
+# span UNDER the parent trace (the parent trace_id is reconstructed from the same
+# deterministic seed the per-turn root used: trace_id_seed(parent_session, task)
+# where the gateway sets task == session); on subagent_stop we close it. Both are
+# DEFAULT-OFF behind observability.langfuse.cross_agent and fully fail-open: any
+# error is swallowed and never breaks the delegation.
+# ---------------------------------------------------------------------------
+
+
+def _evict_child_links_locked() -> None:
+    """Bound _CHILD_LINK_STATE the way _evict_stale_locked bounds _TRACE_STATE.
+
+    Caller holds _STATE_LOCK. Evicts oldest-inserted links over the cap and ends
+    their span so nothing dangles on the Langfuse side. ``dict`` preserves
+    insertion order, so the first keys are the oldest.
+    """
+    over = len(_CHILD_LINK_STATE) - (_MAX_CHILD_LINK_STATE - 1)
+    if over <= 0:
+        return
+    for key in list(_CHILD_LINK_STATE.keys())[:over]:
+        span = _CHILD_LINK_STATE.pop(key, None)
+        try:
+            if span is not None:
+                span.end()
+        except Exception as exc:  # pragma: no cover - fail-open
+            _debug(f"evict child link failed: {exc}")
+
+
+def on_subagent_start(*, parent_session_id: str = "", parent_turn_id: str = "",
+                      parent_subagent_id: str = "", child_session_id: str = "",
+                      child_subagent_id: str = "", child_role: str = "",
+                      child_goal: str = "", **_: Any) -> None:
+    """Open a linkage span for a delegated child UNDER the parent's trace.
+
+    DEFAULT-OFF (observability.langfuse.cross_agent). Fail-open: never raises.
+    """
+    try:
+        if not _langfuse_flags()["cross_agent"]:
+            return
+        if not child_session_id:
+            return
+        client = _get_langfuse()
+        if client is None:
+            return
+        # The gateway mints the parent root trace with seed (session, task) where
+        # task == session_id, so reconstruct that exact trace_id to nest under it.
+        parent_trace_id = client.create_trace_id(
+            seed=trace_id_seed(parent_session_id, parent_session_id)
+        )
+        metadata = {
+            "parent_session_id": parent_session_id,
+            "parent_turn_id": parent_turn_id,
+            "parent_subagent_id": parent_subagent_id,
+            "child_session_id": child_session_id,
+            "child_subagent_id": child_subagent_id,
+            "child_role": child_role,
+        }
+        span = client.start_observation(
+            trace_context={"trace_id": parent_trace_id},
+            name=f"subagent: {child_role or child_subagent_id or 'child'}",
+            as_type="span",
+            input=_safe_value(child_goal),
+            metadata=metadata,
+        )
+        with _STATE_LOCK:
+            _evict_child_links_locked()
+            _CHILD_LINK_STATE[str(child_session_id)] = span
+        _debug(f"opened cross-agent link for child {child_session_id} under {parent_trace_id}")
+    except Exception as exc:  # noqa: BLE001 - fail-open, never break delegation
+        _debug(f"subagent_start link failed: {exc}")
+
+
+def on_subagent_stop(*, parent_session_id: str = "", parent_turn_id: str = "",
+                     child_session_id: str = "", child_role: str = "",
+                     child_summary: Any = None, child_status: str = "",
+                     duration_ms: int = 0, **_: Any) -> None:
+    """Close the linkage span opened on subagent_start.
+
+    DEFAULT-OFF (observability.langfuse.cross_agent). Fail-open: never raises.
+    """
+    try:
+        if not _langfuse_flags()["cross_agent"]:
+            return
+        if not child_session_id:
+            return
+        with _STATE_LOCK:
+            span = _CHILD_LINK_STATE.pop(str(child_session_id), None)
+        if span is None:
+            return
+        _end_observation(
+            span,
+            output=_safe_value(child_summary),
+            metadata={
+                "child_role": child_role,
+                "child_status": child_status,
+                "duration_ms": duration_ms,
+            },
+        )
+        _debug(f"closed cross-agent link for child {child_session_id}")
+    except Exception as exc:  # noqa: BLE001 - fail-open, never break delegation
+        _debug(f"subagent_stop link failed: {exc}")
+
+
+# ---------------------------------------------------------------------------
+# Slice 2 - outcome-to-trace score bridge (Part 2, P2-2 gap).
+#
+# The turn_score evaluator (plugins/outcomes) persists fused scores to a local
+# SQLite ledger but NEVER attaches the verdict to the trace. This bridge is the
+# push-only, fail-open join: on session end it reads the scored rows and calls
+# client.create_score on the trace minted with the SAME seed the root trace used
+# (trace_id_seed). The local DB stays the source of truth; the bridge never
+# scores, never mutates the ledger. DEFAULT-OFF behind
+# observability.langfuse.score_bridge.
+# ---------------------------------------------------------------------------
+
+
+def on_session_end_score_bridge(*, session_id: str = "", task_id: str = "", **_: Any) -> None:
+    """Push this session's scored turn_outcomes onto their Langfuse traces.
+
+    DEFAULT-OFF (observability.langfuse.score_bridge). Fail-open: never raises.
+    """
+    try:
+        if not _langfuse_flags()["score_bridge"]:
+            return
+        if not session_id:
+            return
+        client = _get_langfuse()
+        if client is None:
+            return
+        from . import score_bridge
+
+        score_bridge.flush_session_scores(
+            client, session_id=session_id, task=task_id or session_id
+        )
+    except Exception as exc:  # noqa: BLE001 - fail-open, never break the flush
+        _debug(f"score bridge flush failed: {exc}")
+
+
 def register(ctx) -> None:
     # Register for both hook name variants so the plugin works across
     # OpenComputer versions.  pre_api_request / post_api_request fire per API
@@ -1135,3 +1342,8 @@ def register(ctx) -> None:
     ctx.register_hook("post_llm_call", on_post_llm_call)
     ctx.register_hook("pre_tool_call", on_pre_tool_call)
     ctx.register_hook("post_tool_call", on_post_tool_call)
+    # Slice 1 - cross-agent trace linkage (DEFAULT-OFF, gated inside the handlers).
+    ctx.register_hook("subagent_start", on_subagent_start)
+    ctx.register_hook("subagent_stop", on_subagent_stop)
+    # Slice 2 - outcome-to-trace score bridge (DEFAULT-OFF, gated inside the handler).
+    ctx.register_hook("on_session_end", on_session_end_score_bridge)
