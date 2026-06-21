@@ -89,3 +89,27 @@ an end-to-end live-agent test (or a real `hermes -q` round trip) once GAP-1/2/4 
 6. GAP-6: bring up Docker + GBrain + Honcho on the free path; prove connectivity/storage; flag
    the paid-LLM step as the single user-gated remainder.
 7. Final summary; flip CONTINUE.md to done-except-the-one-paid-step.
+
+---
+
+## GAP-1 RE-OPENED (proven-live caught it): the live wiring was HALF-DONE
+
+Honest correction (2026-06-21): I committed GAP-1/2/4/9 as "the subsystem is wired into the live
+agent" based on the E2E test (which calls memory_manager.attach_merge_planes + prefetch_all
+directly). But a REAL hermes -z turn via OC-router does NOT recall a seeded holographic fact:
+the agent says "I do not have that in my memory". Root cause (verified by live instrumentation):
+the MergeLayer plane-attach was wired ONLY into agent/agent_init.py init_agent, but
+hermes_cli/oneshot.py:359 explicitly BYPASSES _init_agent and constructs AIAgent directly, so the
+attach never fires on the oneshot path (and likely the gateway _create_agent path). The MergeLayer
++ holographic + prefetch_all all work when attached (proven manually: prefetch_all returns the
+fact in a fenced block); they are simply never attached at runtime in those paths.
+FIX (wf_f9a64c1f, in flight): extract the attach into a shared helper called from init_agent +
+oneshot + gateway; proof gate = a REAL hermes -z turn recalls the seeded fact via OC-router.
+This is why "proven live" matters: components green in tests does not equal a working subsystem.
+
+## Also proven live (real, no money): GBrain engine + server
+
+- GBrain engine: PGLite + tsvector store+search proven (wrote a page, searched the token, got it).
+- GBrain server: gbrain serve --http on :3131, /health ok (pglite engine). /mcp uses OAuth 2.1
+  (the real v2 token is pre-minted in ~/.hermes/.env). Configs backed up before any change.
+- OC-router confirmed serving claude models (the model path for Honcho/GBrain chat).
