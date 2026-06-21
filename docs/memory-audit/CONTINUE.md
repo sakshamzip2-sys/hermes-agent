@@ -102,14 +102,19 @@ is the brutal list. Closing every non-money gap now. The ONE genuinely user-gate
 GAP-6 paid OpenRouter credits for Honcho deriver / GBrain embeddings (the mission's own
 money guardrail). Everything else is being finished autonomously.
 
-## IN-FLIGHT (two big gap-closing waves, disjoint files; re-verify on resume)
+## GAPS CLOSED (committed)
+
+- GAP-3 Memory Supervisor (req #12a): 2c02a14a5. 22 tests + breaker smoke. DONE.
+- GAP-5 Langfuse Slices 1-2 (default-off): aa87558e1. 58 tests + independent review. DONE.
+
+## IN-FLIGHT (re-verify on resume)
 
 - wf_09b97c09 LIVE WIRING (GAP-1/2/4/9): MergeLayer into memory_manager.prefetch_all (gated) +
   holographic live plane + reconcile on the background pass + a LIVE E2E test (write->recall
   through the real prefetch path). Script docs/memory-audit/_wf_livewire.js. THE central deliverable.
-- wf_f28edf4c MEMORY SUPERVISOR (GAP-3, req #12a): plugins/memory_supervisor/ - outage detection
-  (fixes silent degradation), circuit breaker, durable fail-closed write queue, job supervision,
-  watchdog. Script docs/memory-audit/_wf_supervisor.js.
+  On resume: verify tests/agent/test_merge_live_wiring.py + test_reconcile_live_wiring.py +
+  test_memory_e2e_live.py pass, then SELECTIVE-commit agent/memory_manager.py + agent/agent_init.py
+  + agent/memory_reconcile_worker.py + the 3 tests.
 
 ## QUEUED after these (autonomous, no money)
 
