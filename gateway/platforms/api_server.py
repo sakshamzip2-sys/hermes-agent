@@ -5855,6 +5855,9 @@ class APIServerAdapter(BasePlatformAdapter):
                     pass
                 if hasattr(reconcile_task, "add_done_callback"):
                     reconcile_task.add_done_callback(self._background_tasks.discard)
+                logger.info(
+                    "[%s] always-on run-state reconciler started (interval=%ss)",
+                    self.name, os.getenv("HERMES_RECONCILE_INTERVAL", "15"))
 
             # Refuse to start without authentication. The API server can
             # dispatch terminal-capable agent work, so every deployment needs
