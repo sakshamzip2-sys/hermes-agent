@@ -1,13 +1,13 @@
-"""``hermes flow`` — run and inspect dynamic workflows.
+"""``oc flow`` — run and inspect dynamic workflows.
 
 Subcommands:
-    hermes flow run <script.py> [--args JSON] [--background] [--resume RUN_ID]
+    oc flow run <script.py> [--args JSON] [--background] [--resume RUN_ID]
                                 [--concurrency N]
-    hermes flow list
-    hermes flow show <run_id>
-    hermes flow logs <run_id>
-    hermes flow stop <run_id>
-    hermes flow examples            # list bundled example flows
+    oc flow list
+    oc flow show <run_id>
+    oc flow logs <run_id>
+    oc flow stop <run_id>
+    oc flow examples            # list bundled example flows
 
 Set ``OC_FLOW_FAKE_AGENT=1`` to run with a deterministic no-LLM runner — useful
 for smoke-testing the machinery without spending tokens.
@@ -26,7 +26,7 @@ from . import db
 
 
 def setup(subparser) -> None:
-    """Populate the ``hermes flow`` argparse subparser."""
+    """Populate the ``oc flow`` argparse subparser."""
     sub = subparser.add_subparsers(dest="flow_command", metavar="<command>")
 
     p_run = sub.add_parser("run", help="Run a flow script")
@@ -76,7 +76,7 @@ def handle(args) -> int:
         return _cmd_stop(args)
     if cmd == "examples":
         return _cmd_examples(args)
-    print("usage: hermes flow {run|list|show|logs|stop|examples} ...", file=sys.stderr)
+    print("usage: oc flow {run|list|show|logs|stop|examples} ...", file=sys.stderr)
     return 2
 
 
@@ -189,8 +189,8 @@ def _spawn_background(args, flow_args: Any) -> int:
         return 1
 
     print(f"flow {run_id}: started in background")
-    print(f"  watch:  hermes flow show {run_id}")
-    print(f"  logs:   hermes flow logs {run_id}")
+    print(f"  watch:  oc flow show {run_id}")
+    print(f"  logs:   oc flow logs {run_id}")
     return 0
 
 
@@ -215,7 +215,7 @@ def _cmd_list(args) -> int:
         print(json.dumps(runs, indent=2, default=str))
         return 0
     if not runs:
-        print("No flow runs yet. Try: hermes flow run <script.py>")
+        print("No flow runs yet. Try: oc flow run <script.py>")
         return 0
     print(f"{'RUN ID':<18} {'STATUS':<11} {'AGENTS':>6}  {'NAME'}")
     for r in runs:
@@ -293,7 +293,7 @@ def _cmd_examples(args) -> int:
     if not files:
         print("No bundled examples found.")
         return 0
-    print("Bundled example flows (run with: hermes flow run <path>):")
+    print("Bundled example flows (run with: oc flow run <path>):")
     for f in files:
         print(f"  {f}")
     return 0

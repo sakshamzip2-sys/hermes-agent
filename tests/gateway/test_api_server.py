@@ -587,7 +587,7 @@ class TestHealthEndpoint:
             assert resp.status == 200
             data = await resp.json()
             assert data["status"] == "ok"
-            assert data["platform"] == "hermes-agent"
+            assert data["platform"] == "open-computer"
 
     @pytest.mark.asyncio
     async def test_health_reports_version(self, adapter):
@@ -612,7 +612,7 @@ class TestHealthEndpoint:
             assert resp.status == 200
             data = await resp.json()
             assert data["status"] == "ok"
-            assert data["platform"] == "hermes-agent"
+            assert data["platform"] == "open-computer"
             assert data.get("version")
 
 
@@ -638,7 +638,7 @@ class TestHealthDetailedEndpoint:
                 assert resp.status == 200
                 data = await resp.json()
                 assert data["status"] == "ok"
-                assert data["platform"] == "hermes-agent"
+                assert data["platform"] == "open-computer"
                 assert data["gateway_state"] == "running"
                 assert data["platforms"] == {"telegram": {"state": "connected"}}
                 assert data["active_agents"] == 2
@@ -683,8 +683,8 @@ class TestModelsEndpoint:
             data = await resp.json()
             assert data["object"] == "list"
             assert len(data["data"]) == 1
-            assert data["data"][0]["id"] == "hermes-agent"
-            assert data["data"][0]["owned_by"] == "hermes"
+            assert data["data"][0]["id"] == "open-computer"
+            assert data["data"][0]["owned_by"] == "opencomputer"
 
     @pytest.mark.asyncio
     async def test_models_returns_profile_name(self):
@@ -711,9 +711,9 @@ class TestModelsEndpoint:
         assert APIServerAdapter._resolve_model_name("my-bot") == "my-bot"
 
     def test_resolve_model_name_default_profile(self):
-        """Default profile falls back to 'hermes-agent'."""
+        """Default profile falls back to 'open-computer'."""
         with patch("hermes_cli.profiles.get_active_profile_name", return_value="default"):
-            assert APIServerAdapter._resolve_model_name("") == "hermes-agent"
+            assert APIServerAdapter._resolve_model_name("") == "open-computer"
 
     def test_resolve_model_name_named_profile(self):
         """Named profile uses the profile name as model name."""
@@ -752,8 +752,8 @@ class TestCapabilitiesEndpoint:
             assert resp.status == 200
             data = await resp.json()
             assert data["object"] == "hermes.api_server.capabilities"
-            assert data["platform"] == "hermes-agent"
-            assert data["model"] == "hermes-agent"
+            assert data["platform"] == "open-computer"
+            assert data["model"] == "open-computer"
             assert data["auth"]["type"] == "bearer"
             assert data["auth"]["required"] is False
             assert data["runtime"]["mode"] == "server_agent"
@@ -3602,3 +3602,171 @@ class TestSessionKeyHeader:
             assert resp.status == 200
             data = await resp.json()
             assert data["features"]["session_key_header"] == "X-OpenComputer-Session-Key"
+
+
+class TestArtifactFileEndpoint:
+    """Regression tests for GET /api/v1/sessions/{id}/artifact-file?path= — the
+    Preview-pane backend. It was missing entirely, so the artifact Preview tab
+    404'd ("Failed to fetch file content: 404") while Code/Download worked
+    (those go through the artifact_id-based /download route). These tests pin
+    the new path-resolved, inline-served, membership-guarded handler."""
+
+    def _app(self, adapter):
+        mws = [mw for mw in (cors_middleware, security_headers_middleware) if mw is not None]
+        app = web.Application(middlewares=mws)
+        app["api_server_adapter"] = adapter
+        app.router.add_get(
+            "/api/v1/sessions/{session_id}/artifact-file",
+            adapter._handle_artifact_file,
+        )
+        return app
+
+    @pytest.mark.asyncio
+    async def test_serves_registered_artifact_inline(self, adapter, tmp_path):
+        f = tmp_path / "note.md"
+        f.write_text("# Hello\n\nColorful **preview**.", encoding="utf-8")
+        adapter._collect_session_artifacts = lambda sid: [
+            {"artifact_id": "a1", "path": str(f), "mime_type": "text/markdown"}
+        ]
+        async with TestClient(TestServer(self._app(adapter))) as cli:
+            resp = await cli.get(
+                "/api/v1/sessions/sess1/artifact-file", params={"path": str(f)}
+            )
+            assert resp.status == 200
+            assert "inline" in resp.headers.get("Content-Disposition", "")
+            assert resp.headers.get("Content-Type", "").startswith("text/markdown")
+            assert "Colorful" in await resp.text()
+
+    @pytest.mark.asyncio
+    async def test_unregistered_path_is_404(self, adapter, tmp_path):
+        """A path NOT among the session's own artifacts is refused — this
+        membership check is the path-traversal/arbitrary-read guard. /etc/passwd
+        EXISTS but is not a session artifact, so it must 404, not 200."""
+        f = tmp_path / "note.md"
+        f.write_text("x", encoding="utf-8")
+        adapter._collect_session_artifacts = lambda sid: [
+            {"artifact_id": "a1", "path": str(f), "mime_type": "text/markdown"}
+        ]
+        async with TestClient(TestServer(self._app(adapter))) as cli:
+            resp = await cli.get(
+                "/api/v1/sessions/sess1/artifact-file", params={"path": "/etc/passwd"}
+            )
+            assert resp.status == 404
+
+    @pytest.mark.asyncio
+    async def test_missing_path_param_is_400(self, adapter):
+        adapter._collect_session_artifacts = lambda sid: []
+        async with TestClient(TestServer(self._app(adapter))) as cli:
+            resp = await cli.get("/api/v1/sessions/sess1/artifact-file")
+            assert resp.status == 400
+
+    @pytest.mark.asyncio
+    async def test_registered_but_deleted_file_is_410(self, adapter, tmp_path):
+        missing = tmp_path / "gone.md"  # registered but never written to disk
+        adapter._collect_session_artifacts = lambda sid: [
+            {"artifact_id": "a1", "path": str(missing), "mime_type": "text/markdown"}
+        ]
+        async with TestClient(TestServer(self._app(adapter))) as cli:
+            resp = await cli.get(
+                "/api/v1/sessions/sess1/artifact-file", params={"path": str(missing)}
+            )
+            assert resp.status == 410
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "mime,fname",
+        [
+            ("text/html", "evil.html"),
+            ("image/svg+xml", "evil.svg"),
+            ("application/xml", "data.xml"),
+            ("application/xhtml+xml", "x.xhtml"),
+        ],
+    )
+    async def test_active_content_forced_to_attachment(self, adapter, tmp_path, mime, fname):
+        """XSS guard: HTML/SVG/XML artifacts (which can execute script if rendered
+        inline same-origin) MUST be served as application/octet-stream with an
+        attachment disposition + nosniff — never inline as their real type."""
+        f = tmp_path / fname
+        f.write_text("<script>alert(document.cookie)</script>", encoding="utf-8")
+        adapter._collect_session_artifacts = lambda sid: [
+            {"artifact_id": "a1", "path": str(f), "mime_type": mime}
+        ]
+        async with TestClient(TestServer(self._app(adapter))) as cli:
+            resp = await cli.get(
+                "/api/v1/sessions/sess1/artifact-file", params={"path": str(f)}
+            )
+            assert resp.status == 200
+            assert resp.headers.get("Content-Type", "").startswith("application/octet-stream")
+            assert "attachment" in resp.headers.get("Content-Disposition", "")
+            assert resp.headers.get("X-Content-Type-Options") == "nosniff"
+
+    @pytest.mark.asyncio
+    async def test_safe_inline_sets_nosniff(self, adapter, tmp_path):
+        """Allowlisted inert types stay inline but still carry nosniff."""
+        f = tmp_path / "note.md"
+        f.write_text("# ok", encoding="utf-8")
+        adapter._collect_session_artifacts = lambda sid: [
+            {"artifact_id": "a1", "path": str(f), "mime_type": "text/markdown"}
+        ]
+        async with TestClient(TestServer(self._app(adapter))) as cli:
+            resp = await cli.get(
+                "/api/v1/sessions/sess1/artifact-file", params={"path": str(f)}
+            )
+            assert resp.status == 200
+            assert "inline" in resp.headers.get("Content-Disposition", "")
+            assert resp.headers.get("X-Content-Type-Options") == "nosniff"
+
+
+class TestListSessionsAgentScoping:
+    """GET /api/sessions must route to the per-agent profile db when the
+    X-OpenComputer-Agent-Id header is present — gallery-agent sessions live in
+    agent-profiles/<slug>/state.db, so without this the UI can never list a
+    specialized agent's prior chats ("switch agents -> history gone"). No
+    header => shared db (normal Recents), unchanged."""
+
+    def _fake_db(self, marker):
+        db = MagicMock()
+        db.list_sessions_rich.return_value = [
+            {"id": marker, "source": "api_server", "message_count": 3}
+        ]
+        return db
+
+    def _app(self, adapter):
+        mws = [mw for mw in (cors_middleware, security_headers_middleware) if mw is not None]
+        app = web.Application(middlewares=mws)
+        app["api_server_adapter"] = adapter
+        app.router.add_get("/api/sessions", adapter._handle_list_sessions)
+        return app
+
+    @pytest.mark.asyncio
+    async def test_header_routes_to_profile_db(self, adapter, monkeypatch):
+        shared = self._fake_db("SHARED")
+        profile = self._fake_db("PROFILE-finance")
+        monkeypatch.setattr(adapter, "_ensure_session_db", lambda: shared)
+        monkeypatch.setattr(
+            adapter, "_get_agent_profile_db",
+            lambda slug: profile if slug == "finance" else None,
+        )
+        monkeypatch.setattr(adapter, "_session_response", lambda s: s)
+        async with TestClient(TestServer(self._app(adapter))) as cli:
+            resp = await cli.get(
+                "/api/sessions", headers={"X-OpenComputer-Agent-Id": "finance"}
+            )
+            assert resp.status == 200
+            data = await resp.json()
+            assert data["data"][0]["id"] == "PROFILE-finance"
+            profile.list_sessions_rich.assert_called_once()
+            shared.list_sessions_rich.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_no_header_uses_shared_db(self, adapter, monkeypatch):
+        shared = self._fake_db("SHARED")
+        monkeypatch.setattr(adapter, "_ensure_session_db", lambda: shared)
+        monkeypatch.setattr(adapter, "_get_agent_profile_db", lambda slug: None)
+        monkeypatch.setattr(adapter, "_session_response", lambda s: s)
+        async with TestClient(TestServer(self._app(adapter))) as cli:
+            resp = await cli.get("/api/sessions")
+            assert resp.status == 200
+            data = await resp.json()
+            assert data["data"][0]["id"] == "SHARED"
+            shared.list_sessions_rich.assert_called_once()

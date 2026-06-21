@@ -1,13 +1,13 @@
 """Detached worker that runs one background agent session.
 
 Spawned by :mod:`plugins.oc_agents.supervisor` as a separate, detached process
-(``hermes agents _worker --id <id>``). It reads the session row, builds a
+(``oc agents _worker --id <id>``). It reads the session row, builds a
 headless ``AIAgent`` exactly like ``hermes -z`` (oneshot) does, runs one
 conversation, streams a cheap "latest activity" summary into the DB so the row
 stays informative, and records the final result/status.
 
 Output (the agent's own stdout/stderr) is redirected to the session's log file
-so ``hermes agents logs <id>`` can show it.
+so ``oc agents logs <id>`` can show it.
 """
 
 from __future__ import annotations

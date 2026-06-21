@@ -74,12 +74,12 @@ def build_dashboard_parser(
     dashboard_parser.add_argument(
         "--stop",
         action="store_true",
-        help="Stop all running hermes dashboard processes and exit",
+        help="Stop all running oc dashboard processes and exit",
     )
     dashboard_parser.add_argument(
         "--status",
         action="store_true",
-        help="List running hermes dashboard processes and exit",
+        help="List running oc dashboard processes and exit",
     )
     # Backward-compat shim: older OpenComputer desktop app shells (<= 0.15.x) spawn the
     # backend as `oc dashboard --no-open --tui --host ... --port ...`. The
@@ -112,7 +112,7 @@ def build_dashboard_parser(
             "Register this install as a self-hosted dashboard with your Nous "
             "Portal account. Creates an OAuth client, writes "
             "HERMES_DASHBOARD_OAUTH_CLIENT_ID into ~/.hermes/.env, and prints "
-            "how to engage the login gate. Requires being logged in (hermes setup)."
+            "how to engage the login gate. Requires being logged in (oc setup)."
         ),
     )
     dashboard_register_parser.add_argument(

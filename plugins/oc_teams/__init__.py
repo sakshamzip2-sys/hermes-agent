@@ -78,7 +78,7 @@ def _handle_slash(raw_args: str):
             bg = coordinator.spawn_teammate(team_id, member, prompt)
         except Exception as exc:  # noqa: BLE001
             return f"spawn failed: {exc}"
-        return f"teammate '{member}' spawned (bg {bg}). Watch: hermes agents show {bg}"
+        return f"teammate '{member}' spawned (bg {bg}). Watch: oc agents show {bg}"
 
     return _SLASH_HELP
 

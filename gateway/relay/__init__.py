@@ -58,7 +58,7 @@ def relay_platform_identity() -> tuple[str, str]:
 def relay_connection_auth() -> tuple[Optional[str], Optional[str]]:
     """The (gateway_id, upgrade_secret) this gateway authenticates the WS upgrade with.
 
-    Both come from enrollment (``hermes gateway enroll`` writes them to
+    Both come from enrollment (``oc gateway enroll`` writes them to
     ``~/.hermes/.env``): ``GATEWAY_RELAY_ID`` identifies the enrolled instance,
     ``GATEWAY_RELAY_SECRET`` is the per-gateway signing secret. Either absent ->
     ``(None, None)`` and the transport dials unauthenticated (dev/test, or a
@@ -225,7 +225,7 @@ def self_provision_relay() -> bool:
 
       - A NAS-hosted agent: has ``GATEWAY_RELAY_URL``, no pinned secret, and a
         bootstrapped NAS token -> self-provisions.
-      - A self-hosted operator who ran ``hermes gateway enroll``: has a PINNED
+      - A self-hosted operator who ran ``oc gateway enroll``: has a PINNED
         ``GATEWAY_RELAY_SECRET`` -> skipped (the secret-present guard below).
       - A self-hosted box with a relay URL but no NAS identity:
         ``resolve_nous_access_token()`` fails -> graceful no-op.

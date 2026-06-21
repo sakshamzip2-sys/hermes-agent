@@ -176,7 +176,7 @@ def _spawn(args) -> int:
         print(f"team: spawn failed: {exc}", file=sys.stderr)
         return 1
     print(f"teammate '{args.member}' spawned on {args.team_id} (bg session {bg})")
-    print(f"  watch: hermes agents show {bg}")
+    print(f"  watch: oc agents show {bg}")
     return 0
 
 

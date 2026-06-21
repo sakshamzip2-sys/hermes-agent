@@ -100,7 +100,7 @@ TIPS = [
     "oc gateway install sets up OpenComputer as a system service (systemd/launchd).",
     "oc memory setup lets you configure an external memory provider (Honcho, Mem0, etc.).",
     "oc webhook subscribe creates event-driven webhook routes with HMAC validation.",
-    "Save money: hermes tools disables unused tools, hermes skills config trims skills down.",
+    "Save money: oc tools disables unused tools, oc skills config trims skills down.",
     "/reasoning low or /reasoning minimal cuts thinking depth below the default (medium) — faster, cheaper responses.",
     "oc models routes vision, compression, and aux tasks to cheaper models — cuts background token cost 85%+ without downgrading your main chat model.",
 
@@ -178,7 +178,7 @@ TIPS = [
     "The plan skill saves markdown plans under .hermes/plans/ in the active workspace.",
 
     # --- Cron & Scheduling ---
-    "Cron jobs can attach skills: hermes cron add --skill blogwatcher \"Check for new posts\".",
+    "Cron jobs can attach skills: oc cron add --skill blogwatcher \"Check for new posts\".",
     "Cron delivery targets include telegram, discord, slack, email, sms, and 12+ more platforms.",
     "If a cron response starts with [SILENT], delivery is suppressed — useful for monitoring-only jobs.",
     "Cron supports relative delays (30m), intervals (every 2h), cron expressions, and ISO timestamps.",
@@ -232,7 +232,7 @@ TIPS = [
     "oc mcp install <name> installs a catalog entry, prompts for credentials, and lets you pick which of its tools to enable.",
     "MCP servers are configured in config.yaml — both stdio and HTTP transports supported.",
     "Per-server tool filtering: tools.include whitelists and tools.exclude blacklists specific tools.",
-    "MCP servers auto-generate toolsets at runtime — hermes tools can toggle them per platform.",
+    "MCP servers auto-generate toolsets at runtime — oc tools can toggle them per platform.",
     "MCP OAuth support: auth: oauth enables browser-based authorization with PKCE.",
 
     # --- Checkpoints & Rollback ---
@@ -333,7 +333,7 @@ TIPS = [
     "Slash commands never trigger the large-paste collapse — /command with big arguments works correctly.",
     "In interrupt mode, slash commands typed during agent execution bypass interrupt logic and run immediately.",
     "HERMES_DEV=1 bypasses container mode detection for local development.",
-    "Each MCP server gets its own toolset (mcp-servername) that can be toggled independently via hermes tools.",
+    "Each MCP server gets its own toolset (mcp-servername) that can be toggled independently via oc tools.",
     "MCP ${ENV_VAR} placeholders in config are resolved at server spawn — including vars from ~/.hermes/.env.",
     "Skills from trusted repos (NousResearch) get a 'trusted' security level; community skills get extra scanning.",
     "The skills quarantine at ~/.hermes/skills/.hub/quarantine/ holds skills pending security review.",
@@ -438,7 +438,7 @@ TIPS = [
     'oc fallback manages the fallback_model chain interactively — no hand-editing config.yaml.',
     'oc pairing rotates the DM pairing token — the first messager after rotation claims access to the bot.',
     'oc setup walks first-time users through provider, keys, and platform wiring in one interactive flow.',
-    'oc status --deep runs the full health sweep across every component; plain hermes status is the quick view.',
+    'oc status --deep runs the full health sweep across every component; plain oc status is the quick view.',
 
     # --- Agent Behavior Env Vars ---
     'HERMES_AGENT_TIMEOUT=0 disables the gateway inactivity kill for a running agent — use for long research runs.',

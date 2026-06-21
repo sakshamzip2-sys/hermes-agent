@@ -14,9 +14,9 @@ Where this fits relative to the existing pieces:
 
 Subcommands (all live under ``oc profile``, not a parallel tree):
 
-    hermes profile install <source> [--name N] [--alias] [--force] [--yes]
-    hermes profile update  <name>  [--force-config] [--yes]
-    hermes profile info    <name>
+    oc profile install <source> [--name N] [--alias] [--force] [--yes]
+    oc profile update  <name>  [--force-config] [--yes]
+    oc profile info    <name>
 
 ``<source>`` is one of:
 

@@ -772,7 +772,7 @@ def _serve_plugin_skill(
                 "success": False,
                 "error": (
                     f"Plugin '{namespace}' is disabled. "
-                    f"Re-enable with: hermes plugins enable {namespace}"
+                    f"Re-enable with: oc plugins enable {namespace}"
                 ),
             },
             ensure_ascii=False,

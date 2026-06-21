@@ -12,7 +12,7 @@ from typing import Callable
 def build_login_parser(subparsers, *, cmd_login: Callable) -> None:
     """Attach the deprecated ``login`` subcommand to ``subparsers``.
 
-    ``hermes login`` was removed in favor of ``hermes auth`` / ``hermes model``
+    ``hermes login`` was removed in favor of ``hermes auth`` / ``oc model``
     (the runtime handler in ``hermes_cli/auth.py::login_command`` just prints a
     deprecation message and exits).  The subparser is kept registered so that
     old scripts/aliases invoking ``hermes login [--flags]`` still receive the
@@ -26,7 +26,7 @@ def build_login_parser(subparsers, *, cmd_login: Callable) -> None:
       argparse emits for a top-level subparser on Python 3.12+.
     - ``--provider`` accepts ANY value (no ``choices=``) so that, e.g.,
       ``hermes login --provider anthropic`` reaches the deprecation handler and
-      gets pointed at ``hermes model`` instead of crashing in argparse with
+      gets pointed at ``oc model`` instead of crashing in argparse with
       ``invalid choice: 'anthropic'`` before the handler can run.
     """
     login_parser = subparsers.add_parser(
@@ -44,7 +44,7 @@ def build_login_parser(subparsers, *, cmd_login: Callable) -> None:
     login_parser.add_argument(
         "--provider",
         default=None,
-        help="(deprecated) Provider name; ignored — see `hermes model`",
+        help="(deprecated) Provider name; ignored — see `oc model`",
     )
     login_parser.add_argument(
         "--portal-url", help="Portal base URL (default: production portal)"

@@ -1,13 +1,13 @@
-"""``hermes agents`` — dispatch and manage background agent sessions (Agent View).
+"""``oc agents`` — dispatch and manage background agent sessions (Agent View).
 
-    hermes agents dispatch "<prompt>" [--name N] [--cwd DIR] [--model M] [--toolsets a,b]
-    hermes agents list [--all] [--json]
-    hermes agents show <id>
-    hermes agents logs <id> [--follow]
-    hermes agents attach <id>        # follow logs live until the session ends
-    hermes agents stop <id>
-    hermes agents rm <id>
-    hermes agents pin <id> [--off]
+    oc agents dispatch "<prompt>" [--name N] [--cwd DIR] [--model M] [--toolsets a,b]
+    oc agents list [--all] [--json]
+    oc agents show <id>
+    oc agents logs <id> [--follow]
+    oc agents attach <id>        # follow logs live until the session ends
+    oc agents stop <id>
+    oc agents rm <id>
+    oc agents pin <id> [--off]
 
 ``dispatch`` returns immediately with a short id; the work runs in a detached
 process. Liveness is reconciled on every ``list``/``show``.
@@ -92,7 +92,7 @@ def handle(args) -> int:
     }
     fn = dispatch_map.get(cmd or "")
     if fn is None:
-        print("usage: hermes agents {dispatch|list|show|logs|attach|stop|rm|pin} ...", file=sys.stderr)
+        print("usage: oc agents {dispatch|list|show|logs|attach|stop|rm|pin} ...", file=sys.stderr)
         return 2
     return fn(args)
 
@@ -137,7 +137,7 @@ def _cmd_dispatch(args) -> int:
         print(f"agents: dispatch failed: {exc}", file=sys.stderr)
         return 1
     print(f"agent {sid}: dispatched")
-    print(f"  watch: hermes agents show {sid}   logs: hermes agents logs {sid}")
+    print(f"  watch: oc agents show {sid}   logs: oc agents logs {sid}")
     if args.attach:
         return _follow(sid)
     return 0
@@ -149,7 +149,7 @@ def _cmd_list(args) -> int:
         print(json.dumps(sessions, indent=2, default=str))
         return 0
     if not sessions:
-        print("No background sessions. Start one with: hermes agents dispatch \"<task>\"")
+        print("No background sessions. Start one with: oc agents dispatch \"<task>\"")
         return 0
     c = db.counts()
     summary = "  ".join(f"{k}:{v}" for k, v in sorted(c.items()))
@@ -286,7 +286,7 @@ def _cmd_rm(args) -> int:
         print(f"agents: no such session {args.id}", file=sys.stderr)
         return 2
     if s["status"] in db.LIVE_STATES:
-        print(f"agent {args.id} is {s['status']}; stop it first (hermes agents stop {args.id})", file=sys.stderr)
+        print(f"agent {args.id} is {s['status']}; stop it first (oc agents stop {args.id})", file=sys.stderr)
         return 1
     db.delete_session(args.id)
     print(f"agent {args.id}: removed")

@@ -1719,12 +1719,21 @@ class APIServerAdapter(BasePlatformAdapter):
             return []
 
     async def _handle_list_sessions(self, request: "web.Request") -> "web.Response":
-        """GET /api/sessions — list persisted OpenComputer sessions."""
+        """GET /api/sessions — list persisted OpenComputer sessions.
+
+        When the request is agent-scoped (``X-OpenComputer-Agent-Id`` header),
+        list from that agent's per-profile db so a gallery agent's own chat
+        history is discoverable — gallery sessions live in
+        ``agent-profiles/<slug>/state.db``, not the shared db, so without this
+        the UI could never find a specialized agent's prior conversations
+        (the "switch agents -> history gone" bug). No header => shared db (the
+        normal Recents list), unchanged.
+        """
         auth_err = self._check_auth(request)
         if auth_err:
             return auth_err
 
-        db = self._ensure_session_db()
+        db = self._agent_db_for_request(request) or self._ensure_session_db()
         if db is None:
             return web.json_response(_openai_error("Session database unavailable", code="session_db_unavailable"), status=503)
 
@@ -2107,6 +2116,100 @@ class APIServerAdapter(BasePlatformAdapter):
             body=body,
             content_type=rec.get("mime_type") or "application/octet-stream",
             headers={"Content-Disposition": f'attachment; filename="{safe_name}"'},
+        )
+
+    async def _handle_artifact_file(self, request: "web.Request") -> "web.Response":
+        """GET /api/(v1/)sessions/{session_id}/artifact-file?path=<abs path>.
+
+        Serves an artifact's bytes INLINE (for the Preview pane), resolved by
+        file path instead of artifact_id. The requested path MUST match a file
+        THIS session actually produced (durable history + live cache); that
+        membership check is the auth guard and blocks path-traversal/arbitrary
+        reads. Mirrors ``_handle_artifact_download`` but serves ``inline`` so
+        the browser renders markdown/PDF/images in place rather than forcing a
+        download. This is the backend that the ``build-compat`` BFF proxies to;
+        it was previously unregistered, so Preview 404'd while Code/Download
+        (artifact_id based) worked.
+        """
+        import pathlib
+        import mimetypes
+        auth_err = self._check_auth(request)
+        if auth_err:
+            return auth_err
+        session_id = request.match_info.get("session_id") or ""
+        raw_path = request.rel_url.query.get("path") or ""
+        if not raw_path:
+            return web.json_response(
+                _openai_error("Missing path query parameter", code="invalid_path"),
+                status=400,
+            )
+        # Canonicalize the requested path, then match it against THIS session's
+        # registered artifacts. We only ever serve a file the session produced.
+        try:
+            requested = pathlib.Path(raw_path).resolve()
+        except (OSError, RuntimeError, ValueError):
+            return web.json_response(
+                _openai_error("Invalid path", code="invalid_path"), status=400
+            )
+        rec = None
+        for cand in self._collect_session_artifacts(session_id):
+            cand_path = cand.get("path")
+            if not cand_path:
+                continue
+            try:
+                if pathlib.Path(cand_path).resolve() == requested:
+                    rec = cand
+                    break
+            except (OSError, RuntimeError, ValueError):
+                continue
+        if not rec:
+            return web.json_response(
+                _openai_error("Artifact not found", code="artifact_not_found"), status=404
+            )
+        p = pathlib.Path(rec["path"])
+        if not p.is_file():
+            return web.json_response(
+                _openai_error("Artifact file no longer available", code="artifact_gone"),
+                status=410,
+            )
+        try:
+            body = p.read_bytes()
+        except OSError:
+            return web.json_response(
+                _openai_error("Artifact unreadable", code="artifact_unreadable"), status=500
+            )
+        ctype = (
+            rec.get("mime_type")
+            or mimetypes.guess_type(str(p))[0]
+            or "application/octet-stream"
+        )
+        # XSS guard. An agent can AUTHOR an artifact, so the membership check
+        # above (which blocks path traversal) does NOT make the *content* safe.
+        # Serving an HTML/SVG/XML artifact `inline` from this same origin would
+        # execute its script in the app's origin (stored XSS -> cookies/session).
+        # So only a narrow allowlist of inert types is rendered inline; anything
+        # else is forced to a generic type and DOWNLOADED, never rendered. The
+        # charset (if any) is preserved for text types. `nosniff` stops the
+        # browser from MIME-sniffing a text/* body back into executable HTML.
+        SAFE_INLINE = {
+            "text/plain", "text/markdown",
+            "application/pdf",
+            "image/png", "image/jpeg", "image/gif", "image/webp",
+        }
+        base_ctype = ctype.split(";", 1)[0].strip().lower()
+        if base_ctype in SAFE_INLINE:
+            disposition = "inline"
+        else:
+            ctype = "application/octet-stream"
+            disposition = "attachment"
+        safe_name = re.sub(r'[\r\n"]', "_", p.name)
+        return web.Response(
+            body=body,
+            content_type=ctype,
+            headers={
+                "Content-Disposition": f'{disposition}; filename="{safe_name}"',
+                "X-Content-Type-Options": "nosniff",
+            },
         )
 
     async def _handle_oc_image_file(self, request: "web.Request") -> "web.Response":
@@ -5812,8 +5915,10 @@ class APIServerAdapter(BasePlatformAdapter):
             # with the rest of the /api/sessions surface.
             self._app.router.add_get("/api/v1/sessions/{session_id}/artifacts", self._handle_artifact_list)
             self._app.router.add_get("/api/v1/sessions/{session_id}/artifacts/{artifact_id}/download", self._handle_artifact_download)
+            self._app.router.add_get("/api/v1/sessions/{session_id}/artifact-file", self._handle_artifact_file)
             self._app.router.add_get("/api/sessions/{session_id}/artifacts", self._handle_artifact_list)
             self._app.router.add_get("/api/sessions/{session_id}/artifacts/{artifact_id}/download", self._handle_artifact_download)
+            self._app.router.add_get("/api/sessions/{session_id}/artifact-file", self._handle_artifact_file)
             # Generated-image serving: the web BFF proxies /api/chat/file/{id}
             # here so <img> tags can load images the image_generate tool saved to
             # $HERMES_HOME/cache/images/. Served by basename, confined to that dir.
