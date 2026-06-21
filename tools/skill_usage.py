@@ -470,6 +470,16 @@ def _empty_record() -> Dict[str, Any]:
         "state": STATE_ACTIVE,
         "pinned": False,
         "archived_at": None,
+        # Execution outcome telemetry (skill_run). run_count counts completed
+        # executions; success_count those that returned success. latency_total_ms
+        # accumulates wall-clock so avg = latency_total_ms / run_count. This is a
+        # real track record used by the router tie-break and the Skill Health view.
+        "run_count": 0,
+        "success_count": 0,
+        "failure_count": 0,
+        "latency_total_ms": 0,
+        "last_run_at": None,
+        "last_error_at": None,
     }
 
 
@@ -606,6 +616,31 @@ def bump_use(skill_name: str) -> None:
         rec["use_count"] = int(rec.get("use_count") or 0) + 1
         rec["last_used_at"] = _now_iso()
     _mutate(skill_name, _apply)
+
+
+def record_run(skill_name: str, *, success: bool, latency_ms: int = 0) -> None:
+    """Record one skill EXECUTION outcome (from skill_run).
+
+    Bumps run_count, success/failure counters, and accumulated latency so the
+    Skill Health view and the router tie-break have a real success rate + average
+    latency. Best-effort: never raises into the caller.
+    """
+    def _apply(rec: Dict[str, Any]) -> None:
+        rec["run_count"] = int(rec.get("run_count") or 0) + 1
+        if success:
+            rec["success_count"] = int(rec.get("success_count") or 0) + 1
+        else:
+            rec["failure_count"] = int(rec.get("failure_count") or 0) + 1
+            rec["last_error_at"] = _now_iso()
+        try:
+            rec["latency_total_ms"] = int(rec.get("latency_total_ms") or 0) + max(0, int(latency_ms))
+        except (TypeError, ValueError):
+            pass
+        rec["last_run_at"] = _now_iso()
+    try:
+        _mutate(skill_name, _apply)
+    except Exception:  # noqa: BLE001 — telemetry must never break a skill run
+        pass
 
 
 def bump_patch(skill_name: str) -> None:
@@ -896,5 +931,14 @@ def usage_report() -> List[Dict[str, Any]]:
         }
         row["last_activity_at"] = latest_activity_at(row)
         row["activity_count"] = activity_count(row)
+        # Derived outcome metrics (None when never executed, so the UI can show
+        # "no data" rather than a misleading 0%).
+        runs = int(rec.get("run_count") or 0)
+        if runs > 0:
+            row["success_rate"] = round(int(rec.get("success_count") or 0) / runs, 4)
+            row["avg_latency_ms"] = round(int(rec.get("latency_total_ms") or 0) / runs)
+        else:
+            row["success_rate"] = None
+            row["avg_latency_ms"] = None
         rows.append(row)
     return sorted(rows, key=lambda r: r["name"])

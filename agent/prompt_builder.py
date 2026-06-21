@@ -311,6 +311,32 @@ TASK_COMPLETION_GUIDANCE = (
     "is always better than inventing a result."
 )
 
+# Universal context-reference guidance — applied to ALL models.
+#
+# Failure mode (observed 2026-06-20 on a real /app session): the user said
+# "make this into an excel sheet" one turn after the assistant had produced the
+# content, and the model replied "you didn't paste anything" instead of acting
+# on the content already in the conversation. The conversation history WAS
+# present (verified in state.db); the model simply failed to resolve the deictic
+# "this" to the recent content. It self-corrected only after a clearer nudge.
+#
+# The steer is deliberately CONDITIONAL: act on the referent only when it is
+# clearly present, and still ask for the content when there genuinely is none.
+# This avoids masking the real case where a user intended to paste something
+# that failed to arrive.
+#
+# Short on purpose — shipped in the cached system prompt to every user, every
+# session. Token cost is paid once at install and amortised via prefix caching.
+CONTEXT_REFERENCE_GUIDANCE = (
+    "# Referring to earlier content\n"
+    'When the user says "this", "that", "the above", "it", or similar and your '
+    "conversation already contains relevant recent content (something you or the "
+    "user just produced or discussed), resolve the reference to that content and "
+    "act on it. Do NOT tell the user they pasted nothing, or ask them to resend "
+    "it, when the referent is clearly present earlier in the conversation. Only "
+    "ask for the content when there is genuinely no matching referent so far."
+)
+
 # Universal parallel-tool-call guidance — applied to ALL models.
 #
 # Why this matters for cost: every assistant turn resends the entire
