@@ -959,7 +959,12 @@ def cmd_list(args: Any | None = None) -> None:
         console.print("[dim]Install with:[/dim] hermes plugins install owner/repo")
         return
 
-    enabled = _get_enabled_set()
+    # Display reflects the same effective allow-list the loader uses: the
+    # curated shipped defaults UNIONED with the user's config. (The mutation
+    # commands read _get_enabled_set() directly so enabling one plugin never
+    # materializes the whole default set into the user's config.)
+    from hermes_cli.plugins import DEFAULT_ENABLED_PLUGINS
+    enabled = _get_enabled_set() | set(DEFAULT_ENABLED_PLUGINS)
     disabled = _get_disabled_set()
     entries = _filter_plugin_entries(entries, args, enabled, disabled)
 
