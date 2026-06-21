@@ -154,13 +154,22 @@ class TestApiServerAdapterToolset:
             mock_agent_cls.assert_called_once()
             call_kwargs = mock_agent_cls.call_args
             toolsets = call_kwargs.kwargs.get("enabled_toolsets")
-            # The override governs CONFIGURABLE toolsets: only the two the user
-            # listed may be on, and nothing else configurable leaks in. Plugin
-            # toolsets (e.g. ``search`` from the default-enabled oc_docs_search)
-            # follow a separate default-on rule (tools_config: plugin toolsets
-            # not yet "known" to a platform default-enable) and are intentionally
-            # not governed by this configurable-toolset override, so filter them
-            # out before the exact-match assertion.
             from hermes_cli.tools_config import CONFIGURABLE_TOOLSETS
             configurable = {k for k, _, _ in CONFIGURABLE_TOOLSETS}
-            assert sorted(set(toolsets) & configurable) == ["terminal", "web"]
+            ts_set = set(toolsets)
+            # The override governs CONFIGURABLE toolsets: EXACTLY the two listed,
+            # and nothing else configurable leaks in.
+            assert sorted(ts_set & configurable) == ["terminal", "web"]
+            # Plugin toolsets from default-enabled plugins (oc_docs_search ->
+            # ``search``, oc_teams -> ``team``) ride a SEPARATE default-on rule
+            # (tools_config: plugin toolsets not yet "known" to a platform
+            # default-enable) and intentionally appear regardless of the override.
+            # Pin EXACTLY which may leak, so a FUTURE default-on plugin that ships
+            # a sensitive (network/exec) toolset past an explicit allow-list trips
+            # this test instead of being silently absorbed.
+            allowed_plugin_leak = {"search", "team"}
+            extras = ts_set - configurable
+            assert extras <= allowed_plugin_leak, (
+                "unexpected non-configurable toolset leaked past the explicit "
+                f"override: {sorted(extras - allowed_plugin_leak)}"
+            )

@@ -8,6 +8,9 @@ behind the same interface; the richest source this agent owns is its own convers
 history (commitment extraction — "you said you'd do X").
 
 PROTECTED INVARIANT (from v1): proactive surfacing is **default-OFF / consent-gated**.
+The plugin now ships LOADED by default (it is in ``DEFAULT_ENABLED_PLUGINS``), but
+loading only registers dormant hooks/commands — behavior stays off until the user
+explicitly sets ``proactivity.enabled: true`` (its config default is ``False``).
 Installing the plugin does nothing until ``proactivity.enabled: true``. In-context
 surfacing rides the ``pre_llm_call`` hook (free, preferred); out-of-band push only ever
 happens for urgent, push-eligible moments that clear the full gate, delivered through the

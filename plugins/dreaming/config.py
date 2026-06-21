@@ -28,7 +28,12 @@ from .engine import DreamingConfig
 logger = logging.getLogger("hermes.plugins.dreaming.config")
 
 DEFAULTS = {
-    "enabled": True,
+    # INVARIANT: default-OFF / consent-gated, matching proactivity. The plugin
+    # ships LOADED by default (DEFAULT_ENABLED_PLUGINS), but loading must only
+    # register dormant hooks/commands — the dream cycle runs unconsented
+    # background LLM calls and mutates MEMORY.md/DREAMS.md, so it must NOT run
+    # until the user explicitly opts in via `dreaming.enabled: true`.
+    "enabled": False,
     "min_interval_hours": 6.0,
     "score_threshold": 0.65,
     "min_recall_count": 2,

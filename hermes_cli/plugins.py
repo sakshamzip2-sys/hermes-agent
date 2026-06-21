@@ -218,7 +218,7 @@ def _get_disabled_plugins() -> set:
 # These keys are path-derived registry keys (see PluginManifest.key). The set
 # is UNIONED with the user's ``plugins.enabled`` list; opt-out for any single
 # entry is via ``plugins.disabled`` (a deny-list that always wins in the
-# loader). Keep this list in sync with ``tests/cli/test_default_enabled_plugins.py``.
+# loader). Keep this list in sync with ``tests/plugins/test_default_enabled_plugins.py``.
 DEFAULT_ENABLED_PLUGINS: frozenset = frozenset({
     # Model providers (Responses API + custom routing)
     "model-providers/anthropic",
@@ -1346,13 +1346,10 @@ class PluginManager:
                 continue
 
             # Everything else (standalone, user-installed backends,
-            # entry-point plugins) is opt-in via plugins.enabled.
-            # Accept both the path-derived key and the legacy bare name
-            # so existing configs keep working.
-            is_enabled = (
-                enabled is not None
-                and (lookup_key in enabled or manifest.name in enabled)
-            )
+            # entry-point plugins) is opt-in via plugins.enabled (which always
+            # includes DEFAULT_ENABLED_PLUGINS). Accept both the path-derived
+            # key and the legacy bare name so existing configs keep working.
+            is_enabled = lookup_key in enabled or manifest.name in enabled
             if not is_enabled:
                 loaded = LoadedPlugin(manifest=manifest, enabled=False)
                 loaded.error = (
