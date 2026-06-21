@@ -1,0 +1,9 @@
+# Deep Research profile
+# A strong lead model for synthesis. Delegation subagents stay cheap via the
+# global delegation.model setting, so the lead can afford to be capable.
+model: claude-opus-4-8
+
+personalities:
+  brainstorm: "Brainstorm mode: widen the perspective set and surface more angles before narrowing."
+  terse: "Terse mode: executive summary plus citations only, no preamble."
+  deep_dive: "Deep-dive mode: show the reasoning chain, the contradiction map, and per-finding confidence."
