@@ -113,3 +113,23 @@ This is why "proven live" matters: components green in tests does not equal a wo
 - GBrain server: gbrain serve --http on :3131, /health ok (pglite engine). /mcp uses OAuth 2.1
   (the real v2 token is pre-minted in ~/.hermes/.env). Configs backed up before any change.
 - OC-router confirmed serving claude models (the model path for Honcho/GBrain chat).
+
+---
+
+## HONEST environmental reality (2026-06-21, verified)
+
+- DOCKER IS NOT AVAILABLE in this environment (polled 60s; `docker info` never succeeds). Honcho
+  needs Docker (api + pgvector + redis), so Honcho CANNOT be brought up live here. This is an
+  environmental blocker, NOT a code defect: the Honcho provider code is correct + tested, its
+  silent-degradation path is proven (E6), and the Memory Supervisor now SURFACES the outage
+  instead of failing silently (GAP-3). When Docker IS available, route Honcho CHAT to OC-router
+  (claude models) via honcho/.env (backed up at the servers-backup dir); honcho/.env currently
+  points at OpenRouter and must be repointed at that time.
+- OC-ROUTER HAS NO EMBEDDINGS endpoint (verified: "Embeddings API is not supported"). So Honcho's
+  semantic-vector search + GBrain's vector arm cannot use OC-router. GBrain runs tsvector/keyword
+  (proven live). Honcho semantic recall would degrade to keyword. This is the documented,
+  acceptable degrade; it does NOT block the local subsystem, which is embedding-free.
+- THEREFORE the "proven live" bar for THIS mission = the LOCAL subsystem proven through a real
+  agent turn (MergeLayer + holographic + reconcile + isolation + provenance + retention +
+  supervisor + observability), plus GBrain proven live. Honcho-live is gated on Docker
+  availability (environmental), with its chat-via-OC-router config ready to apply.
