@@ -30,6 +30,12 @@ did by name. Hermes already carries the metadata you need.
      rate. If still tied, state the top two and ask the user which they meant.
    - Run it with `skill_run(name="<chosen>")`. Let the skill's own frontmatter decide
      inline vs forked execution.
+   - For a deterministic pick you may run `python skills/skill-router/route.py "<intent>"`:
+     it selects the best skill from descriptions alone and returns a
+     `requires_confirmation` flag (true when the chosen skill is destructive-capable and
+     the intent uses a destructive verb). When that flag is true, treat the action as
+     gated and do the explicit confirmation in "Destructive actions are gated" below
+     before running.
 
 3. For a MANAGEMENT action, map to the verb. Read-only and easily reversible verbs
    run autonomously; destructive verbs are gated (see below).
@@ -58,12 +64,12 @@ For a gated action you MUST, before doing it:
    profile, which skill), and that it cannot be easily undone.
 2. Wait for the user's explicit confirmation in their next message. Do not proceed
    on a maybe. If they decline or go quiet, do nothing.
-3. Run the action through the terminal CLI so the system's own approval card also
-   appears as a hard backstop (it is wired for terminal commands via
-   permissions.ask). For cron removal specifically, run `hermes cron remove <id>`
-   in the terminal; do NOT call `cronjob(action="remove")` directly, because the
-   direct tool call is not behind the system approval gate. The card is a backstop,
-   not a substitute for the explicit confirmation in step 1.
+3. The system approval card is a hard backstop and now fires on BOTH paths:
+   destructive terminal commands AND the direct tool calls are gated by
+   permissions.ask, so `cronjob(action="remove")`, `memory(action="remove")`, and
+   `skill_manage(action="delete")` raise the approval card via check_tool_approval
+   in gateway context. Use whichever path; the card fires either way. It is a
+   backstop, not a substitute for the explicit confirmation in step 1.
 
 Read-only and easily reversible actions (list, view, status, pause, resume) run
 autonomously; just do them and report the result.

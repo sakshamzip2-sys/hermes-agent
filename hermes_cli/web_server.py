@@ -244,6 +244,21 @@ app.add_middleware(
 )
 
 # ---------------------------------------------------------------------------
+# Destructive actions are gated at the TOOL layer, not here. The control server
+# authenticates the dashboard and the local agent with the SAME session token via
+# request headers (see _has_valid_session_token); there is no browser-only cookie
+# or CSRF token, and Origin/Referer are client-supplied (an agent's HTTP client can
+# set them). So no signal at THIS layer can reliably tell a genuine dashboard click
+# from a deliberate agent HTTP call, and any check here would be either spoofable
+# (false confidence) or would break the dashboard's own delete buttons.
+#
+# The real, unspoofable control lives in the agent's own execution path: the
+# permissions.ask rules (tools/permission_rules.py) classify destructive tool calls
+# (cronjob remove, profile delete, memory remove, skill delete, ...) and route them
+# through the gateway approval card, which prompts the USER in the web UI before the
+# action runs. An agent on this host already holds the token and a local shell, so
+# the HTTP endpoint is not a trust boundary we can enforce here without theater.
+# ---------------------------------------------------------------------------
 # Endpoints that do NOT require the session token.  Everything else under
 # /api/ is gated by the auth middleware below.
 #

@@ -176,7 +176,12 @@ SKILLS_GUIDANCE = (
     "skill with skill_manage so you can reuse it next time.\n"
     "When using a skill and finding it outdated, incomplete, or wrong, "
     "patch it immediately with skill_manage(action='patch') — don't wait to be asked. "
-    "Skills that aren't maintained become liabilities."
+    "Skills that aren't maintained become liabilities.\n"
+    "When the user expresses a SYSTEM-MANAGEMENT or AUTOMATION intent in plain language "
+    "without naming a skill (scheduling/cron, profiles, skills, bundles, curator, memory, "
+    "gateway), first route via the intent-dispatcher skill to pick the right existing "
+    "capability instead of guessing. For general questions and conversation, answer "
+    "directly; do not route those."
 )
 
 KANBAN_GUIDANCE = (

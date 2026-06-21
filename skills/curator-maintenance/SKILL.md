@@ -1,5 +1,6 @@
 ---
 name: curator-maintenance
+destructive: true
 description: Use when the user wants to maintain or clean up their skill library: 'what is the curator doing', 'curator status', 'run the curator', 'pin this skill', 'unpin', 'archive unused skills', 'prune dead skills', 'restore an archived skill', or 'list archived skills'. Prune, archive, and a curator run change or remove skills and are confirmed first.
 ---
 
@@ -14,3 +15,10 @@ Manage the skill library via `hermes curator` (terminal) / curator tools.
   `hermes curator archive <skill>`, `hermes curator prune`, `hermes curator run`.
   These remove/relocate skills or spend aux-model budget. Name what will change
   and confirm first; the system also gates these via the approval card.
+- Pause / resume the curator: `hermes curator pause|resume` (low-risk).
+
+## Backup / rollback (terminal)
+- Take a manual snapshot: `hermes curator backup` (tar.gz of ~/.hermes/skills/,
+  safe and reversible).
+- ROLLBACK (destructive): `hermes curator rollback` restores ~/.hermes/skills/ from
+  a snapshot, OVERWRITING the current skills. Name the snapshot and confirm first.

@@ -2223,8 +2223,9 @@ DEFAULT_CONFIG = {
     #   allow / deny / ask — lists of ToolName(specifier) rules, e.g.
     #     Bash(npm run *), Read(~/secrets/**), Edit(/etc/**),
     #     WebFetch(domain:example.com), or a bare tool name (matches any call).
-    #     Precedence: deny > allow > plan-mode > ask.  (ask is terminal-scoped
-    #     in this release.)  See website/docs for the full rule grammar.
+    #     Precedence: deny > allow > plan-mode > ask.  (ask gates terminal
+    #     commands AND action-style tool calls, e.g. cronjob(remove), via the
+    #     gateway approval card.)  See website/docs for the full rule grammar.
     "permissions": {
         "mode": "normal",
         "allow": [],
