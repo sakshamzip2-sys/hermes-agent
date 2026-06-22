@@ -153,7 +153,7 @@ class ImageGenProvider(abc.ABC):
         ``modalities`` declares whether the active backend/model supports
         text-to-image (``"text"``), image-to-image / editing (``"image"``),
         or both. The tool layer surfaces this in the dynamic schema so the
-        model knows when ``image_url`` is honored. Used by ``hermes tools``
+        model knows when ``image_url`` is honored. Used by ``oc tools``
         for the picker too. Default: text-only (backward compatible — a
         provider that doesn't override this advertises text-to-image only).
         """
