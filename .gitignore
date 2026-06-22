@@ -137,3 +137,12 @@ RELEASE_v*.md
 # Desktop demo-run scratch output (hermes writes demo/*.txt during recorded
 # walkthroughs). Throwaway artifacts, never part of the app.
 apps/desktop/demo/
+
+# Knowledge Work Agent skill pack: track it IN FULL. The generic hygiene rules
+# above (data/, examples/, .mcp.json, export*) are meant for build/scratch
+# artifacts, but they collide with legitimate skill content in this ported pack
+# (e.g. the `data` plugin, per-plugin .mcp.json connector manifests, skill
+# examples/ reference dirs). Re-include the whole namespace so it stays
+# reproducible. Dirs first, then files, so git can descend into the re-included dirs.
+!skills/knowledge-work/**/
+!skills/knowledge-work/**
