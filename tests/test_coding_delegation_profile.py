@@ -29,7 +29,9 @@ REPO = Path(__file__).resolve().parents[1]
 TEMPLATE = REPO / "profile_templates" / "coding"
 SOUL = TEMPLATE / "SOUL.md"
 CONFIG = TEMPLATE / "config.yaml"
-SKILL = REPO / "skills" / "autonomous-ai-agents" / "swe-delegation" / "SKILL.md"
+# The orchestration skill lives INSIDE the profile (self-contained), mirroring how
+# the finance profile bundles its own skills tree.
+SKILL = REPO / "profile_templates" / "coding" / "skills" / "swe-delegation" / "SKILL.md"
 
 
 # --------------------------------------------------------------------------- #
@@ -126,17 +128,63 @@ def test_skill_encodes_plan_execute_verify_protocol():
     )
 
 
-def test_skill_is_discovered_by_the_real_bundled_scanner():
-    """Prove the skill surfaces via the SAME code that syncs bundled skills into
-    ~/.hermes/skills, next to the claude-code and codex skills it orchestrates."""
+def test_skill_grants_terminal_lifecycle_control():
+    """User requirement: Hermes opens/forks/ends tmux terminals and decides when."""
+    low = SKILL.read_text(encoding="utf-8").lower()
+    assert "tmux" in low, "skill must cover tmux terminals"
+    assert "fork" in low, "Hermes must be able to fork a terminal/session"
+    assert "kill-session" in low or "end" in low, "Hermes must be able to end a terminal"
+    assert "lifecycle" in low, "skill must define the terminal lifecycle the router owns"
+
+
+def test_skill_makes_hermes_aware_of_slash_commands():
+    """User requirement: Hermes knows the Claude Code + Codex slash commands."""
+    text = SKILL.read_text(encoding="utf-8")
+    assert "/plan" in text and "/review" in text, "must surface Claude Code slash commands"
+    assert "codex review" in text or "codex apply" in text, "must surface Codex subcommands"
+
+
+def test_skill_uses_the_proven_command_fixes():
+    """Locks in the two fixes proven by live runs: read-only plan capture (not
+    --permission-mode plan, which returns no plan in print mode) and the Codex
+    ChatGPT-account model caveat."""
+    text = SKILL.read_text(encoding="utf-8")
+    assert "--allowedTools 'Read Glob Grep'" in text or "Read Glob Grep" in text, (
+        "planner step must capture the full plan via read-only tools"
+    )
+    low = text.lower()
+    assert "not supported when using codex with a chatgpt account" in low, (
+        "skill must document the real Codex-on-ChatGPT model gotcha"
+    )
+
+
+def test_soul_grants_terminal_lifecycle_authority():
+    low = SOUL.read_text(encoding="utf-8").lower()
+    assert "terminal" in low and "fork" in low, (
+        "SOUL must establish that the router owns the terminal lifecycle"
+    )
+
+
+def test_backend_skills_are_globally_discoverable():
+    """The shared backends (claude-code, codex) are global bundled skills that the
+    real scanner finds and syncs into every profile home, including coding."""
     sys.path.insert(0, str(REPO))
     from tools.skills_sync import _discover_bundled_skills
 
-    discovered = {name for name, _path in _discover_bundled_skills(REPO / "skills")}
-    assert "swe-delegation" in discovered, "swe-delegation not discovered by the scanner"
+    discovered = {name for name, _ in _discover_bundled_skills(REPO / "skills")}
     assert "claude-code" in discovered and "codex" in discovered, (
-        "expected the two backend skills to be discovered alongside it"
+        f"backend skills not globally discoverable: {discovered & {'claude-code','codex'}}"
     )
+
+
+def test_orchestration_skill_is_inside_the_profile_and_discoverable():
+    """swe-delegation lives INSIDE the profile and the SAME real scanner finds it
+    there (so it surfaces once the profile is the agent's HERMES_HOME)."""
+    sys.path.insert(0, str(REPO))
+    from tools.skills_sync import _discover_bundled_skills
+
+    found = {name for name, _ in _discover_bundled_skills(TEMPLATE / "skills")}
+    assert "swe-delegation" in found, f"swe-delegation not discoverable in profile: {found}"
 
 
 # --------------------------------------------------------------------------- #
@@ -155,3 +203,8 @@ def test_profile_is_picked_up_by_the_installer(tmp_path):
     assert "installed coding" in r.stdout, f"coding not installed:\n{r.stdout}"
     assert (target / "coding" / "SOUL.md").is_file()
     assert (target / "coding" / "config.yaml").is_file()
+    # Self-contained: the orchestration skill ships INSIDE the profile and the
+    # installer's recursive copy brings it along (mirrors the finance skills tree).
+    assert (target / "coding" / "skills" / "swe-delegation" / "SKILL.md").is_file(), (
+        "profile skills/ tree was not copied by the installer"
+    )
