@@ -243,6 +243,86 @@ class GatewaySlashCommandsMixin:
 
         return "\n".join(lines)
 
+    async def _handle_agent_command(self, event: MessageEvent) -> str:
+        """Handle /agent — run this chat as a specialized gallery agent.
+
+        ``/agent``           show the current agent and the available ones
+        ``/agent <name>``    every turn in this chat now runs as <name> — its own
+                             identity (SOUL), toolsets, model, and isolated memory;
+                             a fresh conversation is started so transcripts don't mix
+        ``/agent off``       go back to the default agent
+
+        The binding is per-chat (and per-thread/topic) and persists across
+        restarts, mirroring the web UI's per-conversation agent selection.
+        """
+        from gateway import persona_bindings as pb
+
+        source = event.source
+        if source is None:
+            return "Could not determine which chat this is. Try again."
+
+        arg = (event.get_command_args() or "").strip()
+        current = pb.get_bound_slug(source)
+        available = pb.list_known_agents()
+
+        def _menu() -> str:
+            listing = "\n".join(f"  • `{s}`" for s in available) if available else "  (none found)"
+            cur = (
+                f"\nCurrently chatting as: **{current}**"
+                if current
+                else "\nCurrently chatting as: the default agent"
+            )
+            return (
+                "**Specialized agents**" + cur + "\n\n"
+                "Available:\n" + listing + "\n\n"
+                "Switch with `/agent <name>` (e.g. `/agent finance`). "
+                "`/agent off` returns to the default agent."
+            )
+
+        # No arg / explicit list -> show the menu.
+        if not arg or arg.lower() in {"list", "ls", "help"}:
+            return _menu()
+
+        # Clear the binding.
+        if arg.lower() in {"off", "none", "default", "clear", "reset"}:
+            prev = pb.clear_bound_slug(source)
+            if not prev:
+                return "This chat is already using the default agent."
+            self._reset_session_for_source(source)
+            return (
+                f"Switched back to the default agent (was **{prev}**). "
+                "Started a fresh conversation."
+            )
+
+        # Bind to a slug (first token only; ignore any trailing words).
+        slug = pb.normalize_slug(arg.split()[0])
+        if not slug:
+            return f"`{arg}` is not a valid agent name. Use `/agent` to see the list."
+        if not pb.agent_exists(slug):
+            suggest = ", ".join(f"`{s}`" for s in available[:8]) or "(none available)"
+            return f"No specialized agent named `{slug}`. Available: {suggest}"
+        if slug == current:
+            return f"Already chatting as **{slug}**."
+        if not pb.set_bound_slug(source, slug):
+            return f"Could not switch to `{slug}`. Try again."
+        self._reset_session_for_source(source)
+        return (
+            f"Now chatting as **{slug}** — its own identity, tools, model, and memory. "
+            "Started a fresh conversation. `/agent off` switches back."
+        )
+
+    def _reset_session_for_source(self, source) -> None:
+        """Rotate to a fresh session for a chat (best-effort).
+
+        Called on persona switch so the new agent's transcript starts clean
+        instead of mixing with the previous agent's history under one session id.
+        """
+        try:
+            session_key = self._session_key_for_source(source)
+            self.session_store.reset_session(session_key)
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.debug("persona switch: session reset failed: %s", exc)
+
     async def _handle_whoami_command(self, event: MessageEvent) -> str:
         """Handle /whoami — show the user's slash command access on this scope.
 
