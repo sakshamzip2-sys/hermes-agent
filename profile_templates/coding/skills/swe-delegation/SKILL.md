@@ -163,6 +163,18 @@ but the protocol is backend-agnostic. The planner slot can be any agent that emi
 plan (e.g. the `opencode` skill); the executor slot, any agent that applies one. Swap
 the skill in the relevant step and keep Steps 1, 4, and 5 unchanged.
 
+**Executor fallback when Codex is unavailable.** If Codex cannot run (for example the
+ChatGPT-account model gate above, or no Codex auth at all), do NOT stop the task: keep
+the same plan from Step 2 and route execution to Claude Code instead, giving it write
+tools so it applies the plan:
+
+```
+terminal(command="claude -p 'Implement exactly this plan by creating/editing the files in the current directory, then run the tests: <PLAN>' --allowedTools 'Read Edit Write Bash' --output-format json --max-turns 12", workdir="<repo>", timeout=300)
+```
+
+Verify (Step 4) is identical. This keeps the loop working end to end on whichever
+executor is actually authenticated; switch back to Codex once its auth is sorted.
+
 ## Rules
 
 1. **Plan before execute** — never send a raw request straight to the executor.
