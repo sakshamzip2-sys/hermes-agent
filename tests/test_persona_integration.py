@@ -113,6 +113,49 @@ def test_profile_db_isolated_from_shared_db(home):
     assert shared.get_messages_as_conversation(sid) == []
 
 
+def test_home_override_changes_the_agents_actual_soul_identity(tmp_path, monkeypatch):
+    """THE core proof: under the persona HERMES_HOME override, a REAL AIAgent
+    builds a system prompt carrying the bound agent's SOUL identity (not the
+    default). This is what makes a bound channel chat actually *be* the agent
+    rather than just persisting to a different db. No model/network needed -
+    we only construct the agent and build its system prompt.
+    """
+    base = tmp_path
+    monkeypatch.setenv("HERMES_HOME", str(base))
+    (base / "SOUL.md").write_text(
+        "# Default Assistant\n## Identity\nI am the default OpenComputer assistant.\n"
+    )
+    fin = base / "agent-profiles" / "finance"
+    fin.mkdir(parents=True)
+    (fin / "SOUL.md").write_text(
+        "# Finance Agent\n## Identity\nI am Finance Agent, a senior financial-services analyst.\n"
+    )
+
+    from run_agent import AIAgent
+
+    def _prompt():
+        a = AIAgent(
+            model="claude-sonnet-4-6", enabled_toolsets=[], quiet_mode=True,
+            api_key="x", base_url="http://localhost", provider="custom",
+        )
+        return a._build_system_prompt()
+
+    # Default home -> default identity, NOT finance.
+    p_default = _prompt()
+    assert "default OpenComputer assistant" in p_default
+    assert "senior financial-services analyst" not in p_default
+
+    # Under the finance override -> finance identity, NOT default. The agent has
+    # genuinely become Finance for this turn.
+    token = set_hermes_home_override(str(fin))
+    try:
+        p_fin = _prompt()
+    finally:
+        reset_hermes_home_override(token)
+    assert "senior financial-services analyst" in p_fin
+    assert "default OpenComputer assistant" not in p_fin
+
+
 def test_persona_slug_distinguishes_cache_signature(home):
     """Guards the fix that folds the slug into the agent-cache key so a bound run
     can't reuse a cached default agent (or a different persona's)."""
