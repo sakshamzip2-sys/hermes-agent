@@ -165,26 +165,42 @@ def test_soul_grants_terminal_lifecycle_authority():
     )
 
 
-def test_backend_skills_are_globally_discoverable():
-    """The shared backends (claude-code, codex) are global bundled skills that the
-    real scanner finds and syncs into every profile home, including coding."""
-    sys.path.insert(0, str(REPO))
-    from tools.skills_sync import _discover_bundled_skills
-
-    discovered = {name for name, _ in _discover_bundled_skills(REPO / "skills")}
-    assert "claude-code" in discovered and "codex" in discovered, (
-        f"backend skills not globally discoverable: {discovered & {'claude-code','codex'}}"
-    )
-
-
-def test_orchestration_skill_is_inside_the_profile_and_discoverable():
-    """swe-delegation lives INSIDE the profile and the SAME real scanner finds it
-    there (so it surfaces once the profile is the agent's HERMES_HOME)."""
+def test_all_three_skills_live_inside_the_profile():
+    """Self-contained: the planner (claude-code), executor (codex), and orchestration
+    (swe-delegation) skills all ship INSIDE the profile, and the real bundled-skills
+    scanner finds all three there. This is what makes the profile work identically on
+    any host, including a VM whose hermes package does not ship claude-code/codex."""
+    for s in ("claude-code", "codex", "swe-delegation"):
+        assert (TEMPLATE / "skills" / s / "SKILL.md").is_file(), f"missing in-profile skill: {s}"
     sys.path.insert(0, str(REPO))
     from tools.skills_sync import _discover_bundled_skills
 
     found = {name for name, _ in _discover_bundled_skills(TEMPLATE / "skills")}
-    assert "swe-delegation" in found, f"swe-delegation not discoverable in profile: {found}"
+    assert {"claude-code", "codex", "swe-delegation"}.issubset(found), (
+        f"profile skills not all discoverable: {found}"
+    )
+
+
+def test_profile_runs_lean_self_contained(tmp_path):
+    """The .no-bundled-skills marker makes the real sync a no-op, so the profile
+    runs with EXACTLY its three bundled skills (no host-dependent global sync, no
+    duplicate skill names)."""
+    assert (TEMPLATE / ".no-bundled-skills").is_file(), "missing .no-bundled-skills marker"
+    # Lay the profile down as a HERMES_HOME and prove sync opts out.
+    import shutil
+    home = tmp_path / "home"
+    shutil.copytree(TEMPLATE, home)
+    code = (
+        "from tools.skills_sync import sync_skills;"
+        "r = sync_skills(quiet=True);"
+        "print('OPTOUT' if r.get('skipped_opt_out') else 'SYNCED', r.get('copied'))"
+    )
+    r = subprocess.run([sys.executable, "-c", code], cwd=str(REPO),
+                       env={**os.environ, "HERMES_HOME": str(home)}, capture_output=True, text=True)
+    assert "OPTOUT" in r.stdout, f"sync did not opt out: {r.stdout!r} {r.stderr[-400:]!r}"
+    # And the three skills are still the ones present.
+    present = {p.parent.name for p in (home / "skills").rglob("SKILL.md")}
+    assert present == {"claude-code", "codex", "swe-delegation"}, f"unexpected skill set: {present}"
 
 
 # --------------------------------------------------------------------------- #
@@ -203,8 +219,12 @@ def test_profile_is_picked_up_by_the_installer(tmp_path):
     assert "installed coding" in r.stdout, f"coding not installed:\n{r.stdout}"
     assert (target / "coding" / "SOUL.md").is_file()
     assert (target / "coding" / "config.yaml").is_file()
-    # Self-contained: the orchestration skill ships INSIDE the profile and the
-    # installer's recursive copy brings it along (mirrors the finance skills tree).
-    assert (target / "coding" / "skills" / "swe-delegation" / "SKILL.md").is_file(), (
-        "profile skills/ tree was not copied by the installer"
+    # Self-contained: all three skills + the lean-run marker ship INSIDE the profile
+    # and the installer's recursive copy brings them along (like the finance tree).
+    for s in ("claude-code", "codex", "swe-delegation"):
+        assert (target / "coding" / "skills" / s / "SKILL.md").is_file(), (
+            f"profile skill {s} was not copied by the installer"
+        )
+    assert (target / "coding" / ".no-bundled-skills").is_file(), (
+        "the .no-bundled-skills marker was not copied (profile would not run lean)"
     )
