@@ -8558,17 +8558,10 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             _persona_db = self._get_persona_profile_db(_persona_slug, _persona_dir)
             if _persona_db is None:
                 _persona_slug = None  # fail open to the default agent
-            else:
-                try:
-                    from hermes_constants import set_hermes_home_override
-                    from gateway.session_context import set_session_profile_dir
-                    _persona_home_token = set_hermes_home_override(str(_persona_dir))
-                    set_session_profile_dir(str(_persona_dir))
-                except Exception as _pexc:
-                    logger.warning(
-                        "persona home override failed for %s: %s", _persona_slug, _pexc
-                    )
-                    _persona_home_token = None
+        # NOTE: the HERMES_HOME override that loads the agent's SOUL is applied
+        # below as the FIRST statement inside the agent-run try (so its finally
+        # always resets it). History load here uses _persona_db explicitly, so
+        # it needs no home override.
 
         # Read privacy.redact_pii from config (re-read per message)
         _redact_pii = False
@@ -9153,6 +9146,24 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         )
 
         try:
+            # Persona HERMES_HOME override — set as the FIRST statement in this
+            # try so the finally below ALWAYS resets it (no leak if anything
+            # throws). copy_context() at the agent executor dispatch propagates
+            # it into the worker thread that builds the agent's SOUL/system
+            # prompt. set_session_profile_dir scopes the agent's curated skills.
+            # Best-effort; never break the turn.
+            if _persona_slug and _persona_dir is not None and _persona_db is not None:
+                try:
+                    from hermes_constants import set_hermes_home_override
+                    from gateway.session_context import set_session_profile_dir
+                    _persona_home_token = set_hermes_home_override(str(_persona_dir))
+                    set_session_profile_dir(str(_persona_dir))
+                except Exception as _pexc:
+                    logger.warning(
+                        "persona home override failed for %s: %s", _persona_slug, _pexc
+                    )
+                    _persona_home_token = None
+
             # Emit agent:start hook
             hook_ctx = {
                 "platform": source.platform.value if source.platform else "",
