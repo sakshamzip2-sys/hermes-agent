@@ -34,7 +34,20 @@ the primary command & brand (hermes stays a silent back-compat alias). No plumbi
 - 2 browser proofs (skills_list "Listed 313 skills" names-only; agent runs `oc`/terminal).
 - TWO unbiased adversarial swarms run; ALL confirmed findings fixed.
 
-## REMAINING — exact next steps (do these on resume)
+## STATUS 2026-06-22 (post account-switch): Item A COMPLETE. Item B gated.
+- **Item A (rebrand) — DONE + VERIFIED.** Finished the missed tokens (auth/sessions/portal/billing/flags):
+  commit 5e05add13 (79 strings/40 files via fixed lookbehind regex + 8 test-assertion syncs) and
+  f3e39fcb0 (profile wrapper scripts -> `oc -p`; resolved 9 pre-existing wrapper tests, zero regressions).
+  FINAL PROOF: 231 branding/plugin/cli tests pass; oc/opencomputer/hermes all resolve; completeness
+  grep = 0 user-facing `hermes <cmd>` display strings left. HEAD f3e39fcb0, pushed to PR #9.
+- **Item B (Honcho 402) — GATED, fix fully prepared.** Root cause = OpenRouter 402 (out of credits;
+  8192-token request, 847 affordable). Knob found: `DIALECTIC_MAX_OUTPUT_TOKENS` in honcho/.env
+  (unset -> defaults 8192). Proven `max_tokens=800` clears the 402. The reversible stopgap (append
+  `DIALECTIC_MAX_OUTPUT_TOKENS=800` + recreate honcho-api) was BLOCKED by the auto-mode classifier as
+  a gated shared-infra change — correct: needs explicit user go on WHICH fix (add OR credits / apply
+  the 800 stopgap / migrate provider). honcho/.env is untouched/clean. See [[project_honcho_dialectic_402]].
+
+## (historical) earlier-planned next steps — Item A now done; kept for reference
 
 ### A. Finish the command-string rebrand (sweep was INCOMPLETE)
 The original sweep's subcmd alternation MISSED tokens: `auth`, `sessions`, `portal`, `billing`, and
