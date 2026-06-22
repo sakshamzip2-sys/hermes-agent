@@ -47,8 +47,12 @@ class TestManifest:
 # ---------------------------------------------------------------------------
 
 class TestDiscovery:
-    def test_plugin_is_discovered_as_standalone_opt_in(self, tmp_path, monkeypatch):
-        """Scanner should find the plugin but NOT load it by default."""
+    def test_plugin_is_discovered_and_enabled_by_default(self, tmp_path, monkeypatch):
+        """observability/langfuse ships in DEFAULT_ENABLED_PLUGINS, so a fresh
+        clone (empty config.yaml) discovers AND loads it.
+
+        (The opt-in gating mechanism itself is still covered by the project /
+        user plugin tests in tests/hermes_cli/test_plugins.py.)"""
         from hermes_cli import plugins as plugins_mod
 
         # Isolated HERMES_HOME so we don't read the developer's config.yaml.
@@ -63,9 +67,9 @@ class TestDiscovery:
         # observability/langfuse appears in the plugin registry …
         loaded = manager._plugins.get("observability/langfuse")
         assert loaded is not None, "plugin not discovered"
-        # … but is not loaded (opt-in default → no config.yaml means nothing enabled)
-        assert loaded.enabled is False
-        assert "not enabled" in (loaded.error or "").lower()
+        # … and loads as a shipped default even with no user config.
+        assert loaded.enabled is True
+        assert "observability/langfuse" in plugins_mod.DEFAULT_ENABLED_PLUGINS
 
 
 # ---------------------------------------------------------------------------

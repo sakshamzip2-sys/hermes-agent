@@ -314,15 +314,24 @@ def is_derived_fact(text: str) -> bool:
 
 
 def default_state_db_path() -> Optional[Path]:
-    """Resolve v2's state.db path, or None if core isn't importable."""
-    try:
-        from hermes_state import DEFAULT_DB_PATH
+    """Resolve v2's state.db path, or None if core isn't importable.
 
-        return Path(DEFAULT_DB_PATH)
+    Resolves via ``get_hermes_home()`` at CALL time FIRST (not the
+    import-frozen ``hermes_state.DEFAULT_DB_PATH``). When a profile's
+    ``HERMES_HOME`` is active, this returns that profile's state.db so a
+    profile-scoped dream cycle digests the right conversations; with no
+    override it returns the global ``~/.hermes/state.db`` exactly as before.
+    Falls back to the frozen ``DEFAULT_DB_PATH`` only if the dynamic resolve
+    is unavailable.
+    """
+    try:
+        from hermes_constants import get_hermes_home
+
+        return get_hermes_home() / "state.db"
     except Exception:  # noqa: BLE001
         try:
-            from hermes_constants import get_hermes_home
+            from hermes_state import DEFAULT_DB_PATH
 
-            return get_hermes_home() / "state.db"
+            return Path(DEFAULT_DB_PATH)
         except Exception:  # noqa: BLE001
             return None

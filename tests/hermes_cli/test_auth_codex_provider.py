@@ -910,7 +910,7 @@ def test_refresh_429_classified_as_quota_not_auth_failure(monkeypatch):
 
     Regression test for #32790: must NOT force relogin and must carry the
     dedicated rate-limit code so callers surface a "retry later" notice rather
-    than a misleading "run hermes auth".
+    than a misleading "run oc auth".
     """
     from hermes_cli.auth import (
         CODEX_RATE_LIMITED_CODE,

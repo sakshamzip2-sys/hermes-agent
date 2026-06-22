@@ -13,8 +13,8 @@ Matches OpenClaw's 9-tool MCP channel bridge surface:
 Plus: channels_list (OpenComputer-specific extra)
 
 Usage:
-    hermes mcp serve
-    hermes mcp serve --verbose
+    oc mcp serve
+    oc mcp serve --verbose
 
 MCP client config (e.g. claude_desktop_config.json):
     {

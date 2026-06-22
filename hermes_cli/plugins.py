@@ -211,34 +211,76 @@ def _get_disabled_plugins() -> set:
         return set()
 
 
-def _get_enabled_plugins() -> Optional[set]:
-    """Read the enabled-plugins allow-list from config.yaml.
+# OpenComputer ships with this curated plugin loadout enabled by default, so a
+# fresh clone / fork inherits the full set of model providers, image/video
+# backends, observability, security guidance, messaging platforms, and the
+# parallel-agents + self-evolution stack without any per-user configuration.
+# These keys are path-derived registry keys (see PluginManifest.key). The set
+# is UNIONED with the user's ``plugins.enabled`` list; opt-out for any single
+# entry is via ``plugins.disabled`` (a deny-list that always wins in the
+# loader). Keep this list in sync with ``tests/plugins/test_default_enabled_plugins.py``.
+DEFAULT_ENABLED_PLUGINS: frozenset = frozenset({
+    # Model providers (Responses API + custom routing)
+    "model-providers/anthropic",
+    "model-providers/custom",
+    "model-providers/openai-codex",
+    "model-providers/xai",
+    # Image / video generation backends
+    "image_gen/openai",
+    "image_gen/openai-codex",
+    "image_gen/xai",
+    "video_gen/xai",
+    # Observability
+    "observability/langfuse",
+    # Security guidance
+    "security-guidance",
+    # Messaging platforms (stay dormant until credentials are configured)
+    "platforms/discord",
+    "platforms/irc",
+    # OpenComputer parallel-agents + orchestration
+    "oc_agents",
+    "oc_docs_search",
+    "oc_flow",
+    "oc_orchestrator",
+    "oc_runs",
+    "oc_teams",
+    # Self-evolution / dreaming / proactivity stack
+    "dream_orchestrator",
+    "dreaming",
+    "outcomes",
+    "playbook_synthesizer",
+    "proactivity",
+    "self_evolution",
+})
 
-    Plugins are opt-in by default — only plugins whose name appears in
-    this set are loaded. Returns:
 
-    * ``None`` — the key is missing or malformed. Callers should treat
-      this as "nothing enabled yet" (the opt-in default); the first
-      ``migrate_config`` run populates the key with a grandfathered set
-      of currently-installed user plugins so existing setups don't
-      break on upgrade.
-    * ``set()`` — an empty list was explicitly set; nothing loads.
-    * ``set(...)`` — the concrete allow-list.
+def _get_enabled_plugins() -> set:
+    """Resolve the effective enabled-plugins allow-list.
+
+    The result is always the curated :data:`DEFAULT_ENABLED_PLUGINS` set
+    UNIONED with whatever the user configured in ``plugins.enabled``. This
+    is what makes OpenComputer's default loadout ship enabled for every
+    clone / fork with no configuration, while still letting a user add
+    their own plugins. Opt-out of a default is via ``plugins.disabled``,
+    which the loader honors before this allow-list (see ``_load_all``).
+
+    Always returns a ``set`` (never ``None``) — the curated defaults are
+    the floor. ``migrate_config`` populates ``plugins.enabled`` directly
+    from config and does not depend on this function.
     """
+    defaults = set(DEFAULT_ENABLED_PLUGINS)
     try:
         from hermes_cli.config import load_config
         config = load_config()
         plugins_cfg = config.get("plugins")
         if not isinstance(plugins_cfg, dict):
-            return None
-        if "enabled" not in plugins_cfg:
-            return None
+            return defaults
         enabled = plugins_cfg.get("enabled")
         if not isinstance(enabled, list):
-            return None
-        return set(enabled)
+            return defaults
+        return defaults | set(enabled)
     except Exception:
-        return None
+        return defaults
 
 
 # ---------------------------------------------------------------------------
@@ -1245,7 +1287,7 @@ class PluginManager:
         # ``disk-cleanup``) so ``tts/openai`` and ``image_gen/openai``
         # don't collide even when both manifests say ``name: openai``.
         disabled = _get_disabled_plugins()
-        enabled = _get_enabled_plugins()  # None = opt-in default (nothing enabled)
+        enabled = _get_enabled_plugins()  # curated DEFAULT_ENABLED_PLUGINS ∪ user config
         winners: Dict[str, PluginManifest] = {}
         for manifest in manifests:
             winners[manifest.key or manifest.name] = manifest
@@ -1304,13 +1346,10 @@ class PluginManager:
                 continue
 
             # Everything else (standalone, user-installed backends,
-            # entry-point plugins) is opt-in via plugins.enabled.
-            # Accept both the path-derived key and the legacy bare name
-            # so existing configs keep working.
-            is_enabled = (
-                enabled is not None
-                and (lookup_key in enabled or manifest.name in enabled)
-            )
+            # entry-point plugins) is opt-in via plugins.enabled (which always
+            # includes DEFAULT_ENABLED_PLUGINS). Accept both the path-derived
+            # key and the legacy bare name so existing configs keep working.
+            is_enabled = lookup_key in enabled or manifest.name in enabled
             if not is_enabled:
                 loaded = LoadedPlugin(manifest=manifest, enabled=False)
                 loaded.error = (

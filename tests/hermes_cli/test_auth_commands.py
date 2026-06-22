@@ -168,7 +168,7 @@ def test_auth_add_google_gemini_cli_sets_active_provider(tmp_path, monkeypatch):
     assert state.get("email") == "user@example.com"
     assert "access_token" not in state
     assert "refresh_token" not in state
-    # pool entry from pool.add_entry() still present for hermes auth list
+    # pool entry from pool.add_entry() still present for oc auth list
     entries = payload["credential_pool"]["google-gemini-cli"]
     entry = next(item for item in entries if item["source"] == "manual:google_pkce")
     assert entry["access_token"] == "ya29.test-token"
@@ -217,7 +217,7 @@ def test_auth_add_qwen_oauth_sets_active_provider(tmp_path, monkeypatch):
     # Only base_url stored — no api_key (that lives in the Qwen CLI file).
     assert state.get("base_url") == "https://portal.qwen.ai/v1"
     assert "api_key" not in state
-    # pool entry from pool.add_entry() still present for hermes auth list
+    # pool entry from pool.add_entry() still present for oc auth list
     entries = payload["credential_pool"]["qwen-oauth"]
     entry = next(item for item in entries if item["source"] == "manual:qwen_cli")
     assert entry["access_token"] == "qwen-test-token"

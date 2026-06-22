@@ -16,7 +16,7 @@ TIPS = [
     "/rollback lists filesystem checkpoints — restore files the agent modified to any prior state.",
     "/rollback diff 2 previews what changed since checkpoint 2 without restoring anything.",
     "/rollback 2 src/file.py restores a single file from a specific checkpoint.",
-    "/title \"my project\" names your session — resume it later with /resume or hermes -c.",
+    "/title \"my project\" names your session — resume it later with /resume or oc -c.",
     "/resume picks up where you left off in a previously named session.",
     "/queue <prompt> queues a message for the next turn without interrupting the current one.",
     "/undo removes the last user/assistant exchange from the conversation.",
@@ -63,7 +63,7 @@ TIPS = [
     "Pasting 5+ lines auto-saves to a file and inserts a compact reference instead.",
 
     # --- CLI Flags ---
-    "oc -c resumes your most recent CLI session. hermes -c \"project name\" resumes by title.",
+    "oc -c resumes your most recent CLI session. oc -c \"project name\" resumes by title.",
     "oc -w creates an isolated git worktree — perfect for parallel agent workflows.",
     "oc -w -q \"Fix issue #42\" combines worktree isolation with a one-shot query.",
     "oc chat -t web,terminal enables only specific toolsets for a focused session.",
@@ -72,7 +72,7 @@ TIPS = [
     "oc chat --max-turns 200 overrides the default 90-iteration limit per turn.",
     "oc chat --checkpoints enables filesystem snapshots before every destructive file change.",
     "oc --yolo bypasses all dangerous command approval prompts for the entire session.",
-    "oc chat --source telegram tags the session for filtering in hermes sessions list.",
+    "oc chat --source telegram tags the session for filtering in oc sessions list.",
     "oc -p work chat runs under a specific profile without changing your default.",
 
     # --- CLI Subcommands ---
@@ -100,7 +100,7 @@ TIPS = [
     "oc gateway install sets up OpenComputer as a system service (systemd/launchd).",
     "oc memory setup lets you configure an external memory provider (Honcho, Mem0, etc.).",
     "oc webhook subscribe creates event-driven webhook routes with HMAC validation.",
-    "Save money: hermes tools disables unused tools, hermes skills config trims skills down.",
+    "Save money: oc tools disables unused tools, oc skills config trims skills down.",
     "/reasoning low or /reasoning minimal cuts thinking depth below the default (medium) — faster, cheaper responses.",
     "oc models routes vision, compression, and aux tasks to cheaper models — cuts background token cost 85%+ without downgrading your main chat model.",
 
@@ -118,7 +118,7 @@ TIPS = [
     "Set fallback_model in config.yaml to automatically fail over to a backup provider.",
     "Set privacy.redact_pii: true to hash user IDs and phone numbers before sending to the LLM.",
     "Set browser.record_sessions: true to auto-record browser sessions as WebM videos.",
-    "Set worktree: true in config.yaml to always create a git worktree (same as hermes -w).",
+    "Set worktree: true in config.yaml to always create a git worktree (same as oc -w).",
     "Set security.website_blocklist.enabled: true to block specific domains from web tools.",
     "Set cron.wrap_response: false to deliver raw agent output without the cron header/footer.",
     "HERMES_TIMEZONE overrides the server timezone with any IANA timezone string.",
@@ -178,7 +178,7 @@ TIPS = [
     "The plan skill saves markdown plans under .hermes/plans/ in the active workspace.",
 
     # --- Cron & Scheduling ---
-    "Cron jobs can attach skills: hermes cron add --skill blogwatcher \"Check for new posts\".",
+    "Cron jobs can attach skills: oc cron add --skill blogwatcher \"Check for new posts\".",
     "Cron delivery targets include telegram, discord, slack, email, sms, and 12+ more platforms.",
     "If a cron response starts with [SILENT], delivery is suppressed — useful for monitoring-only jobs.",
     "Cron supports relative delays (30m), intervals (every 2h), cron expressions, and ISO timestamps.",
@@ -232,7 +232,7 @@ TIPS = [
     "oc mcp install <name> installs a catalog entry, prompts for credentials, and lets you pick which of its tools to enable.",
     "MCP servers are configured in config.yaml — both stdio and HTTP transports supported.",
     "Per-server tool filtering: tools.include whitelists and tools.exclude blacklists specific tools.",
-    "MCP servers auto-generate toolsets at runtime — hermes tools can toggle them per platform.",
+    "MCP servers auto-generate toolsets at runtime — oc tools can toggle them per platform.",
     "MCP OAuth support: auth: oauth enables browser-based authorization with PKCE.",
 
     # --- Checkpoints & Rollback ---
@@ -263,7 +263,7 @@ TIPS = [
     "Custom providers: save named endpoints in config.yaml under custom_providers.",
     "HERMES_EPHEMERAL_SYSTEM_PROMPT injects a system prompt that's never persisted to history.",
     "credential_pool_strategies supports fill_first, round_robin, least_used, and random rotation.",
-    "oc auth add nous or hermes auth add openai-codex sets up OAuth-based providers.",
+    "oc auth add nous or oc auth add openai-codex sets up OAuth-based providers.",
     "The API server supports both Chat Completions and Responses API with server-side state.",
     "tool_preview_length: 0 in config shows full file paths in the spinner's activity feed.",
     "oc status --deep runs deeper diagnostic checks across all components.",
@@ -333,7 +333,7 @@ TIPS = [
     "Slash commands never trigger the large-paste collapse — /command with big arguments works correctly.",
     "In interrupt mode, slash commands typed during agent execution bypass interrupt logic and run immediately.",
     "HERMES_DEV=1 bypasses container mode detection for local development.",
-    "Each MCP server gets its own toolset (mcp-servername) that can be toggled independently via hermes tools.",
+    "Each MCP server gets its own toolset (mcp-servername) that can be toggled independently via oc tools.",
     "MCP ${ENV_VAR} placeholders in config are resolved at server spawn — including vars from ~/.hermes/.env.",
     "Skills from trusted repos (NousResearch) get a 'trusted' security level; community skills get extra scanning.",
     "The skills quarantine at ~/.hermes/skills/.hub/quarantine/ holds skills pending security review.",
@@ -431,14 +431,14 @@ TIPS = [
     'oc chat --pass-session-id injects the session ID into the system prompt so the agent can self-reference it.',
     'oc chat --image path/to/pic.png attaches a local image to a single -q query without a separate upload step.',
     'oc chat --ignore-user-config skips the active user config — reproducible bug reports and CI runs.',
-    "oc chat --source tool tags programmatic chats so they don't clutter hermes sessions list.",
+    "oc chat --source tool tags programmatic chats so they don't clutter oc sessions list.",
     'oc dump --show-keys includes redacted API key fingerprints for deeper support debugging.',
-    'oc sessions rename <ID> "new title" renames any past session; hermes sessions delete <ID> removes one.',
+    'oc sessions rename <ID> "new title" renames any past session; oc sessions delete <ID> removes one.',
     'oc import restores a session export or profile archive produced by sessions export or profile export.',
     'oc fallback manages the fallback_model chain interactively — no hand-editing config.yaml.',
     'oc pairing rotates the DM pairing token — the first messager after rotation claims access to the bot.',
     'oc setup walks first-time users through provider, keys, and platform wiring in one interactive flow.',
-    'oc status --deep runs the full health sweep across every component; plain hermes status is the quick view.',
+    'oc status --deep runs the full health sweep across every component; plain oc status is the quick view.',
 
     # --- Agent Behavior Env Vars ---
     'HERMES_AGENT_TIMEOUT=0 disables the gateway inactivity kill for a running agent — use for long research runs.',
@@ -467,7 +467,7 @@ TIPS = [
     'TIRITH_FAIL_OPEN env var overrides the tirith_fail_open config — a quick toggle without editing config.yaml.',
 
     # --- Sessions & Source Tags ---
-    '--source tool chats are excluded from hermes sessions list by default — set --source explicitly to see them.',
+    '--source tool chats are excluded from oc sessions list by default — set --source explicitly to see them.',
     'Session IDs are timestamp-prefixed (20250305_091523_abcd) so sorting works naturally in ls and jq.',
 
     # --- Misc ---

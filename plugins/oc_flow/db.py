@@ -3,7 +3,7 @@
 A *flow run* is one execution of an orchestration script. The runtime records
 the run, its phases, and every subagent (``flow_agents``) it spawns, so that:
 
-* ``hermes flow list`` / ``hermes flow show`` can report on past + live runs
+* ``oc flow list`` / ``oc flow show`` can report on past + live runs
   without the runtime holding them in memory,
 * a run can be **resumed**: completed agent calls return their cached result
   instantly (keyed by call index + a hash of the prompt), only new/edited
@@ -115,7 +115,7 @@ def db_path() -> Path:
 def connect() -> Generator[sqlite3.Connection, None, None]:
     """Yield a thread-local sqlite connection with the schema applied.
 
-    WAL mode + a busy timeout lets a foreground reader (``hermes flow show``)
+    WAL mode + a busy timeout lets a foreground reader (``oc flow show``)
     and a background worker write the same DB without ``database is locked``.
     """
     path = str(db_path())

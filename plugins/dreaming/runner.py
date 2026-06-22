@@ -320,11 +320,87 @@ async def _rescore_dreams(cfg, sdb: Path, existing_facts: list[str]) -> DreamRun
     return summary
 
 
+def _agent_profile_homes() -> list[Path]:
+    """Gallery-agent profile home dirs (``$HERMES_HOME/agent-profiles/<slug>``)
+    that have their own ``state.db`` — i.e. agents that have actually been chatted
+    with. Dreaming iterates these so each specialized agent's OWN conversations are
+    distilled into ITS membrane, instead of only the global store (the per-profile
+    dreaming gap). Enumerated against the GLOBAL home; the trigger runs outside any
+    HERMES_HOME override, so ``get_hermes_home()`` here is the real base.
+    """
+    try:
+        from hermes_constants import get_hermes_home
+
+        profiles_dir = get_hermes_home() / "agent-profiles"
+    except Exception:  # noqa: BLE001
+        return []
+    out: list[Path] = []
+    try:
+        for child in sorted(profiles_dir.iterdir()):
+            if child.is_dir() and (child / "state.db").exists():
+                out.append(child)
+    except Exception:  # noqa: BLE001
+        pass
+    return out
+
+
+async def run_dream_cycle_all_profiles(*, force: bool = False) -> list["DreamRunSummary"]:
+    """Run a dream cycle for the global home AND each gallery-agent profile.
+
+    Each profile cycle is scoped to that profile's ``state.db`` + ``MEMORY.md``
+    via the ``HERMES_HOME`` ContextVar override (which both ``default_state_db_path``
+    and ``memory_io`` honor). The user's GLOBAL dreaming config is resolved once
+    (no override) and passed to every cycle, so enabling dreaming once applies to
+    all of that user's agents. The override is a per-task ContextVar, so this never
+    races concurrent gateway turns.
+    """
+    summaries: list[DreamRunSummary] = []
+    # Resolve the user's dreaming config from the global scope (no override) and
+    # reuse it for every profile so per-profile config gaps don't silently disable.
+    try:
+        global_cfg = load_dreaming_config()
+    except Exception:  # noqa: BLE001
+        global_cfg = None
+
+    # 1) Global / default profile (no override).
+    try:
+        summaries.append(await run_dream_cycle(force=force, config=global_cfg))
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("dreaming: global cycle error: %s", exc)
+
+    # 2) Each gallery-agent profile, scoped via the home override.
+    homes = _agent_profile_homes()
+    if not homes:
+        return summaries
+    try:
+        from hermes_constants import (
+            set_hermes_home_override,
+            reset_hermes_home_override,
+        )
+    except Exception:  # noqa: BLE001
+        return summaries
+    for home in homes:
+        token = None
+        try:
+            token = set_hermes_home_override(str(home))
+            summaries.append(await run_dream_cycle(force=force, config=global_cfg))
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("dreaming: profile cycle error (%s): %s", home.name, exc)
+        finally:
+            if token is not None:
+                try:
+                    reset_hermes_home_override(token)
+                except Exception:  # noqa: BLE001
+                    pass
+    return summaries
+
+
 def maybe_run_in_background(*, force: bool = False) -> None:
     """Fire-and-forget a dream cycle on a daemon thread. Never blocks the caller.
 
     Used by the ``on_session_start`` hook: dreaming must never delay a user's
-    turn, so it runs in its own thread with its own event loop.
+    turn, so it runs in its own thread with its own event loop. Runs the global
+    store AND every gallery-agent profile (each scoped to its own db/membrane).
     """
     def _worker() -> None:
         if not _run_lock.acquire(blocking=False):
@@ -332,7 +408,7 @@ def maybe_run_in_background(*, force: bool = False) -> None:
         try:
             import asyncio
 
-            asyncio.run(run_dream_cycle(force=force))
+            asyncio.run(run_dream_cycle_all_profiles(force=force))
         except Exception as exc:  # noqa: BLE001 — background; never surface
             logger.debug("dreaming: background cycle error: %s", exc)
         finally:

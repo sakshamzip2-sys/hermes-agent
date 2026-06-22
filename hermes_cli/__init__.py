@@ -2,13 +2,13 @@
 OpenComputer CLI - Unified command-line interface for OpenComputer.
 
 Provides subcommands for:
-- hermes chat          - Interactive chat (same as ./hermes)
-- hermes gateway       - Run gateway in foreground
-- hermes gateway start - Start gateway service
-- hermes gateway stop  - Stop gateway service
-- hermes setup         - Interactive setup wizard
-- hermes status        - Show status of all components
-- hermes cron          - Manage cron jobs
+- oc chat          - Interactive chat (same as ./hermes)
+- oc gateway       - Run gateway in foreground
+- oc gateway start - Start gateway service
+- oc gateway stop  - Stop gateway service
+- oc setup         - Interactive setup wizard
+- oc status        - Show status of all components
+- oc cron          - Manage cron jobs
 """
 
 import os

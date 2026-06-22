@@ -313,7 +313,7 @@ export function ModelPicker({ allowPersistGlobal = true, gw, onCancel, onSelect,
             setFilter('')
           }
 
-          // Other auth types: no-op (warning shown tells them to run hermes model)
+          // Other auth types: no-op (warning shown tells them to run oc model)
           return
         }
 

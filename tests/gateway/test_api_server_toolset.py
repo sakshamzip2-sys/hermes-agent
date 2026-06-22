@@ -64,6 +64,37 @@ class TestApiServerPlatformConfig:
         assert PLATFORMS["api_server"]["default_toolset"] == "hermes-api-server"
 
 
+class TestApiServerDefaultEnablesTerminal:
+    """Regression: a fresh clone's WebUI (/app) agent must receive the
+    ``terminal`` toolset BY DEFAULT so it can run shell commands like the CLI
+    and TUI — with no per-user ``platform_toolsets`` config.
+
+    This guards the resolution layer (_get_platform_tools), which is where the
+    live bug actually surfaced: the WebUI agent reported it had no terminal tool
+    and punted shell commands back to the user. The toolset *definition* test
+    above (terminal in resolve_toolset('hermes-api-server')) is necessary but
+    not sufficient — this asserts the per-platform resolver keeps it enabled
+    when the user has configured nothing.
+    """
+
+    def test_fresh_config_api_server_includes_terminal(self):
+        from hermes_cli.tools_config import _get_platform_tools
+
+        # Empty config == a fresh clone with no platform_toolsets override.
+        ts = _get_platform_tools({}, "api_server", include_default_mcp_servers=False)
+        assert "terminal" in ts, (
+            "WebUI (/app) agent would have no terminal tool by default — it "
+            "could not run shell commands like the CLI/TUI"
+        )
+
+    def test_fresh_config_api_server_includes_shell_capable_tools(self):
+        from hermes_cli.tools_config import _get_platform_tools
+
+        ts = _get_platform_tools({}, "api_server", include_default_mcp_servers=False)
+        for key in ("terminal", "code_execution", "file"):
+            assert key in ts, f"WebUI default toolset missing shell-capable '{key}'"
+
+
 class TestApiServerAdapterToolset:
     @patch("gateway.platforms.api_server.AIOHTTP_AVAILABLE", True)
     def test_create_agent_reads_config_toolsets(self):
@@ -123,4 +154,22 @@ class TestApiServerAdapterToolset:
             mock_agent_cls.assert_called_once()
             call_kwargs = mock_agent_cls.call_args
             toolsets = call_kwargs.kwargs.get("enabled_toolsets")
-            assert sorted(toolsets) == ["terminal", "web"]
+            from hermes_cli.tools_config import CONFIGURABLE_TOOLSETS
+            configurable = {k for k, _, _ in CONFIGURABLE_TOOLSETS}
+            ts_set = set(toolsets)
+            # The override governs CONFIGURABLE toolsets: EXACTLY the two listed,
+            # and nothing else configurable leaks in.
+            assert sorted(ts_set & configurable) == ["terminal", "web"]
+            # Plugin toolsets from default-enabled plugins (oc_docs_search ->
+            # ``search``, oc_teams -> ``team``) ride a SEPARATE default-on rule
+            # (tools_config: plugin toolsets not yet "known" to a platform
+            # default-enable) and intentionally appear regardless of the override.
+            # Pin EXACTLY which may leak, so a FUTURE default-on plugin that ships
+            # a sensitive (network/exec) toolset past an explicit allow-list trips
+            # this test instead of being silently absorbed.
+            allowed_plugin_leak = {"search", "team"}
+            extras = ts_set - configurable
+            assert extras <= allowed_plugin_leak, (
+                "unexpected non-configurable toolset leaked past the explicit "
+                f"override: {sorted(extras - allowed_plugin_leak)}"
+            )

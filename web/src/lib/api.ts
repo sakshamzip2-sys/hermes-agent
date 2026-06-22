@@ -1599,7 +1599,7 @@ export interface StatusResponse {
    * fail-closed state (the dashboard will refuse to bind). */
   auth_providers?: string[];
   /** False when the dashboard is running in a hosted/managed layout where
-   * updates are handled by the outer launcher instead of ``hermes update``. */
+   * updates are handled by the outer launcher instead of ``oc update``. */
   can_update_hermes?: boolean;
   config_path: string;
   config_version: number;

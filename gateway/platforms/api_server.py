@@ -1719,12 +1719,21 @@ class APIServerAdapter(BasePlatformAdapter):
             return []
 
     async def _handle_list_sessions(self, request: "web.Request") -> "web.Response":
-        """GET /api/sessions — list persisted OpenComputer sessions."""
+        """GET /api/sessions — list persisted OpenComputer sessions.
+
+        When the request is agent-scoped (``X-OpenComputer-Agent-Id`` header),
+        list from that agent's per-profile db so a gallery agent's own chat
+        history is discoverable — gallery sessions live in
+        ``agent-profiles/<slug>/state.db``, not the shared db, so without this
+        the UI could never find a specialized agent's prior conversations
+        (the "switch agents -> history gone" bug). No header => shared db (the
+        normal Recents list), unchanged.
+        """
         auth_err = self._check_auth(request)
         if auth_err:
             return auth_err
 
-        db = self._ensure_session_db()
+        db = self._agent_db_for_request(request) or self._ensure_session_db()
         if db is None:
             return web.json_response(_openai_error("Session database unavailable", code="session_db_unavailable"), status=503)
 
@@ -2021,14 +2030,19 @@ class APIServerAdapter(BasePlatformAdapter):
     def _register_artifact(self, session_id: Optional[str], path: str) -> Optional[Dict[str, Any]]:
         return self._build_artifact_descriptor(session_id, path)
 
-    def _artifacts_from_history(self, session_id: str) -> List[Dict[str, Any]]:
+    def _artifacts_from_history(self, session_id: str, db: Any = None) -> List[Dict[str, Any]]:
         """Durable artifact list derived from persisted write_file/patch tool
         results in the session's message history. Survives restarts/reloads
-        because state.db is the source of truth, not the in-memory cache."""
+        because state.db is the source of truth, not the in-memory cache.
+
+        ``db`` lets callers pass the agent's per-profile SessionDB so a gallery
+        agent's artifacts (whose messages live in agent-profiles/<slug>/state.db,
+        not the shared db) are found — without it the Preview/Code/Download panes
+        404 for a specialized agent's artifacts once the in-memory cache is gone."""
         out: List[Dict[str, Any]] = []
         seen: set = set()
         try:
-            db = self._ensure_session_db()
+            db = db if db is not None else self._ensure_session_db()
             if db is None:
                 return out
             resolved = db.resolve_resume_session_id(session_id)
@@ -2047,11 +2061,12 @@ class APIServerAdapter(BasePlatformAdapter):
                     out.append(desc)
         return out
 
-    def _collect_session_artifacts(self, session_id: str) -> List[Dict[str, Any]]:
+    def _collect_session_artifacts(self, session_id: str, db: Any = None) -> List[Dict[str, Any]]:
         """Merge durable (history) + live (in-memory, current turn) artifacts,
-        deduped by deterministic id."""
+        deduped by deterministic id. ``db`` is forwarded to the history lookup so
+        an agent-scoped request resolves a gallery agent's per-profile db."""
         merged: Dict[str, Dict[str, Any]] = {}
-        for rec in self._artifacts_from_history(session_id):
+        for rec in self._artifacts_from_history(session_id, db):
             merged[rec["artifact_id"]] = dict(rec, session_id=session_id)
         for rec in self._session_artifacts.get(session_id, []):
             merged[rec["artifact_id"]] = rec
@@ -2063,7 +2078,7 @@ class APIServerAdapter(BasePlatformAdapter):
         if auth_err:
             return auth_err
         session_id = request.match_info["session_id"]
-        items = self._collect_session_artifacts(session_id)
+        items = self._collect_session_artifacts(session_id, self._agent_db_for_request(request) or self._ensure_session_db())
         data = [
             {k: v for k, v in rec.items() if k not in ("path", "session_id")}
             for rec in items
@@ -2082,7 +2097,7 @@ class APIServerAdapter(BasePlatformAdapter):
         # live cache). This both survives restarts and acts as the auth guard:
         # we only ever serve a file the session actually produced.
         rec = None
-        for cand in self._collect_session_artifacts(session_id):
+        for cand in self._collect_session_artifacts(session_id, self._agent_db_for_request(request) or self._ensure_session_db()):
             if cand.get("artifact_id") == artifact_id:
                 rec = cand
                 break
@@ -2108,6 +2123,174 @@ class APIServerAdapter(BasePlatformAdapter):
             content_type=rec.get("mime_type") or "application/octet-stream",
             headers={"Content-Disposition": f'attachment; filename="{safe_name}"'},
         )
+
+    async def _handle_artifact_file(self, request: "web.Request") -> "web.Response":
+        """GET /api/(v1/)sessions/{session_id}/artifact-file?path=<abs path>.
+
+        Serves an artifact's bytes INLINE (for the Preview pane), resolved by
+        file path instead of artifact_id. The requested path MUST match a file
+        THIS session actually produced (durable history + live cache); that
+        membership check is the auth guard and blocks path-traversal/arbitrary
+        reads. Mirrors ``_handle_artifact_download`` but serves ``inline`` so
+        the browser renders markdown/PDF/images in place rather than forcing a
+        download. This is the backend that the ``build-compat`` BFF proxies to;
+        it was previously unregistered, so Preview 404'd while Code/Download
+        (artifact_id based) worked.
+        """
+        import pathlib
+        import mimetypes
+        auth_err = self._check_auth(request)
+        if auth_err:
+            return auth_err
+        session_id = request.match_info.get("session_id") or ""
+        raw_path = request.rel_url.query.get("path") or ""
+        if not raw_path:
+            return web.json_response(
+                _openai_error("Missing path query parameter", code="invalid_path"),
+                status=400,
+            )
+        # Canonicalize the requested path, then match it against THIS session's
+        # registered artifacts. We only ever serve a file the session produced.
+        try:
+            requested = pathlib.Path(raw_path).resolve()
+        except (OSError, RuntimeError, ValueError):
+            return web.json_response(
+                _openai_error("Invalid path", code="invalid_path"), status=400
+            )
+        rec = None
+        for cand in self._collect_session_artifacts(session_id, self._agent_db_for_request(request) or self._ensure_session_db()):
+            cand_path = cand.get("path")
+            if not cand_path:
+                continue
+            try:
+                if pathlib.Path(cand_path).resolve() == requested:
+                    rec = cand
+                    break
+            except (OSError, RuntimeError, ValueError):
+                continue
+        if not rec:
+            return web.json_response(
+                _openai_error("Artifact not found", code="artifact_not_found"), status=404
+            )
+        p = pathlib.Path(rec["path"])
+        if not p.is_file():
+            return web.json_response(
+                _openai_error("Artifact file no longer available", code="artifact_gone"),
+                status=410,
+            )
+        try:
+            body = p.read_bytes()
+        except OSError:
+            return web.json_response(
+                _openai_error("Artifact unreadable", code="artifact_unreadable"), status=500
+            )
+        ctype = (
+            rec.get("mime_type")
+            or mimetypes.guess_type(str(p))[0]
+            or "application/octet-stream"
+        )
+        # XSS guard. An agent can AUTHOR an artifact, so the membership check
+        # above (which blocks path traversal) does NOT make the *content* safe.
+        # Serving an HTML/SVG/XML artifact `inline` from this same origin would
+        # execute its script in the app's origin (stored XSS -> cookies/session).
+        # So only a narrow allowlist of inert types is rendered inline; anything
+        # else is forced to a generic type and DOWNLOADED, never rendered. The
+        # charset (if any) is preserved for text types. `nosniff` stops the
+        # browser from MIME-sniffing a text/* body back into executable HTML.
+        SAFE_INLINE = {
+            "text/plain", "text/markdown",
+            "application/pdf",
+            "image/png", "image/jpeg", "image/gif", "image/webp",
+        }
+        base_ctype = ctype.split(";", 1)[0].strip().lower()
+        if base_ctype in SAFE_INLINE:
+            disposition = "inline"
+        else:
+            ctype = "application/octet-stream"
+            disposition = "attachment"
+        safe_name = re.sub(r'[\r\n"]', "_", p.name)
+        return web.Response(
+            body=body,
+            content_type=ctype,
+            headers={
+                "Content-Disposition": f'{disposition}; filename="{safe_name}"',
+                "X-Content-Type-Options": "nosniff",
+            },
+        )
+
+    async def _handle_artifact_file_write(self, request: "web.Request") -> "web.Response":
+        """PUT /api/(v1/)sessions/{session_id}/artifact-file?path=<abs path>.
+
+        Overwrite the content of an EXISTING session artifact (the editable
+        preview's Save). SAFETY: the path MUST already be a registered artifact
+        of THIS session (membership check, agent-scoped) — we never create new
+        files and never write outside the files the agent itself produced for
+        this session, so this cannot become an arbitrary-write primitive. Body =
+        the raw new file bytes. Written atomically (temp + replace)."""
+        import pathlib
+        auth_err = self._check_auth(request)
+        if auth_err:
+            return auth_err
+        session_id = request.match_info.get("session_id") or ""
+        raw_path = request.rel_url.query.get("path") or ""
+        if not raw_path:
+            return web.json_response(
+                _openai_error("Missing path query parameter", code="invalid_path"),
+                status=400,
+            )
+        try:
+            requested = pathlib.Path(raw_path).resolve()
+        except (OSError, RuntimeError, ValueError):
+            return web.json_response(
+                _openai_error("Invalid path", code="invalid_path"), status=400
+            )
+        # Membership guard: only overwrite a file THIS session registered as an
+        # artifact (agent-scoped so a gallery agent's profile db is consulted).
+        db = self._agent_db_for_request(request) or self._ensure_session_db()
+        rec = None
+        for cand in self._collect_session_artifacts(session_id, db):
+            cand_path = cand.get("path")
+            if not cand_path:
+                continue
+            try:
+                if pathlib.Path(cand_path).resolve() == requested:
+                    rec = cand
+                    break
+            except (OSError, RuntimeError, ValueError):
+                continue
+        if not rec:
+            return web.json_response(
+                _openai_error("Artifact not found", code="artifact_not_found"), status=404
+            )
+        p = pathlib.Path(rec["path"])
+        if not p.is_file():
+            return web.json_response(
+                _openai_error("Artifact file no longer available", code="artifact_gone"),
+                status=410,
+            )
+        try:
+            new_bytes = await request.read()
+        except Exception:
+            return web.json_response(
+                _openai_error("Could not read request body", code="invalid_body"),
+                status=400,
+            )
+        if len(new_bytes) > 5_000_000:  # 5 MB cap — guard the disk
+            return web.json_response(
+                _openai_error("Edited artifact too large", code="artifact_too_large"),
+                status=413,
+            )
+        # Atomic write so a failed/partial write never corrupts the original.
+        try:
+            tmp = p.with_name(p.name + ".oc-edit.tmp")
+            tmp.write_bytes(new_bytes)
+            tmp.replace(p)
+        except OSError:
+            return web.json_response(
+                _openai_error("Artifact write failed", code="artifact_write_failed"),
+                status=500,
+            )
+        return web.json_response({"ok": True, "path": str(p), "bytes": len(new_bytes)})
 
     async def _handle_oc_image_file(self, request: "web.Request") -> "web.Response":
         """GET /api/files/{file_id} — serve a generated image from the images cache.
@@ -2566,6 +2749,65 @@ class APIServerAdapter(BasePlatformAdapter):
         # Agent opted to overwrite (not extend) the base system prompt: use the
         # ephemeral system prompt as the entire system prompt for this turn.
         replace_system_prompt = bool(body.get("oc_replace_system_prompt"))
+
+        # Web-UI skill-slug expansion.
+        #
+        # When the request comes from the /app frontend (identified by the
+        # ``X-OpenComputer-Client: webui`` header) and the user's message
+        # starts with a "/" followed by a known skill slug, expand the message
+        # into the full skill invocation payload — exactly as the CLI gateway
+        # (run.py _handle_message) does via build_skill_invocation_message.
+        #
+        # Safety rules:
+        #  1. Only active when the webui client header is present.
+        #     Generic OpenAI-compat callers (no header) are NEVER affected.
+        #  2. Only applies when the first token resolves to a known skill via
+        #     scan_skill_commands / resolve_skill_command_key.
+        #  3. Non-skill messages ("/notaskill", "/Users/x", plain text) pass
+        #     through completely unchanged.
+        #  4. If skill loading raises, the original message is preserved and
+        #     the error is logged at DEBUG level — never a 500.
+        #
+        # Note: built-in gateway commands (/reset, /model, etc.) require
+        # GatewayRunner state (session store, adapter callbacks) that
+        # api_server doesn't have, so they are intentionally left out of
+        # scope here.
+        if (
+            isinstance(user_message, str)
+            and request.headers.get("X-OpenComputer-Client") == "webui"
+        ):
+            _stripped = user_message.strip()
+            if _stripped.startswith("/"):
+                try:
+                    from agent.skill_commands import (
+                        build_skill_invocation_message,
+                        resolve_skill_command_key,
+                    )
+
+                    # Split "/slug rest of instruction" → command token + args
+                    _parts = _stripped.split(None, 1)
+                    _command_token = _parts[0].lstrip("/")  # e.g. "xlsx"
+                    _user_instruction = _parts[1] if len(_parts) > 1 else ""
+
+                    _cmd_key = resolve_skill_command_key(_command_token)
+                    if _cmd_key is not None:
+                        _expanded = build_skill_invocation_message(
+                            _cmd_key,
+                            _user_instruction,
+                            task_id=session_id,
+                        )
+                        if _expanded:
+                            user_message = _expanded
+                            logger.debug(
+                                "webui: expanded skill slash command /%s → %d chars",
+                                _command_token,
+                                len(_expanded),
+                            )
+                except Exception as _skill_exc:
+                    logger.debug(
+                        "webui skill expansion failed (non-fatal, using original): %s",
+                        _skill_exc,
+                    )
 
         completion_id = f"chatcmpl-{uuid.uuid4().hex[:29]}"
         model_name = (model_override or body.get("model") or self._model_name)
@@ -4334,7 +4576,7 @@ class APIServerAdapter(BasePlatformAdapter):
         except Exception as exc:  # noqa: BLE001
             errors["summary"] = str(exc)
 
-        # Enrich each member with its background session's hermes chat session
+        # Enrich each member with its background session's oc chat session
         # id so the frontend can offer "continue chatting" per teammate. Every
         # member is pre-seeded with an empty id so the field is always present,
         # and each lookup is isolated so one failure can't drop the key from the
@@ -5812,8 +6054,12 @@ class APIServerAdapter(BasePlatformAdapter):
             # with the rest of the /api/sessions surface.
             self._app.router.add_get("/api/v1/sessions/{session_id}/artifacts", self._handle_artifact_list)
             self._app.router.add_get("/api/v1/sessions/{session_id}/artifacts/{artifact_id}/download", self._handle_artifact_download)
+            self._app.router.add_get("/api/v1/sessions/{session_id}/artifact-file", self._handle_artifact_file)
+            self._app.router.add_put("/api/v1/sessions/{session_id}/artifact-file", self._handle_artifact_file_write)
             self._app.router.add_get("/api/sessions/{session_id}/artifacts", self._handle_artifact_list)
             self._app.router.add_get("/api/sessions/{session_id}/artifacts/{artifact_id}/download", self._handle_artifact_download)
+            self._app.router.add_get("/api/sessions/{session_id}/artifact-file", self._handle_artifact_file)
+            self._app.router.add_put("/api/sessions/{session_id}/artifact-file", self._handle_artifact_file_write)
             # Generated-image serving: the web BFF proxies /api/chat/file/{id}
             # here so <img> tags can load images the image_generate tool saved to
             # $HERMES_HOME/cache/images/. Served by basename, confined to that dir.

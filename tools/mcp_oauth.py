@@ -758,7 +758,7 @@ def build_oauth_auth(
             "MCP OAuth for "
             f"'{server_name}': non-interactive environment and no cached tokens "
             "found. The OAuth flow requires browser authorization. Run "
-            f"`hermes mcp login {server_name}` interactively first to complete "
+            f"`oc mcp login {server_name}` interactively first to complete "
             "initial authorization, then cached tokens will be reused."
         )
 

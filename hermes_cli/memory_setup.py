@@ -19,7 +19,7 @@ _CANCELLED = -1
 
 
 # ---------------------------------------------------------------------------
-# Curses-based interactive picker (same pattern as hermes tools)
+# Curses-based interactive picker (same pattern as oc tools)
 # ---------------------------------------------------------------------------
 
 def _curses_select(
@@ -133,7 +133,7 @@ def _install_dependencies(provider_name: str) -> None:
         if not pip_cmd:
             print(f"  ⚠ uv not found — cannot install dependencies")
             print(f"  Install uv: curl -LsSf https://astral.sh/uv/install.sh | sh")
-            print(f"  Then re-run: hermes memory setup")
+            print(f"  Then re-run: oc memory setup")
             return
         print(f"  ⚠ uv not found. Falling back to standard pip...")
         install_cmd = [sys.executable, "-m", "pip", "install", "--quiet"] + missing

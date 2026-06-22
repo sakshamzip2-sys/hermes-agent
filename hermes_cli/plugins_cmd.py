@@ -628,7 +628,7 @@ def cmd_install(
         )
 
     console.print("[dim]Restart the gateway for the plugin to take effect:[/dim]")
-    console.print("[dim]  hermes gateway restart[/dim]")
+    console.print("[dim]  oc gateway restart[/dim]")
     console.print()
 
 
@@ -956,10 +956,15 @@ def cmd_list(args: Any | None = None) -> None:
     entries = _discover_all_plugins()
     if not entries:
         console.print("[dim]No plugins installed.[/dim]")
-        console.print("[dim]Install with:[/dim] hermes plugins install owner/repo")
+        console.print("[dim]Install with:[/dim] oc plugins install owner/repo")
         return
 
-    enabled = _get_enabled_set()
+    # Display reflects the same effective allow-list the loader uses: the
+    # curated shipped defaults UNIONED with the user's config. (The mutation
+    # commands read _get_enabled_set() directly so enabling one plugin never
+    # materializes the whole default set into the user's config.)
+    from hermes_cli.plugins import DEFAULT_ENABLED_PLUGINS
+    enabled = _get_enabled_set() | set(DEFAULT_ENABLED_PLUGINS)
     disabled = _get_disabled_set()
     entries = _filter_plugin_entries(entries, args, enabled, disabled)
 
@@ -1007,9 +1012,9 @@ def cmd_list(args: Any | None = None) -> None:
     console.print()
     console.print(table)
     console.print()
-    console.print("[dim]Compact view:[/dim] hermes plugins list --plain --no-bundled")
-    console.print("[dim]Interactive toggle:[/dim] hermes plugins")
-    console.print("[dim]Enable/disable:[/dim] hermes plugins enable/disable <name>")
+    console.print("[dim]Compact view:[/dim] oc plugins list --plain --no-bundled")
+    console.print("[dim]Interactive toggle:[/dim] oc plugins")
+    console.print("[dim]Enable/disable:[/dim] oc plugins enable/disable <name>")
     console.print("[dim]Plugins are opt-in by default — only 'enabled' plugins load.[/dim]")
 
 
@@ -1218,7 +1223,7 @@ def cmd_toggle() -> None:
 
     if not has_plugins and not has_categories:
         console.print("[dim]No plugins installed and no provider categories available.[/dim]")
-        console.print("[dim]Install with:[/dim] hermes plugins install owner/repo")
+        console.print("[dim]Install with:[/dim] oc plugins install owner/repo")
         return
 
     # Non-TTY fallback
@@ -1801,7 +1806,7 @@ def dashboard_remove_user_plugin(name: str) -> dict[str, Any]:
 
 
 def plugins_command(args) -> None:
-    """Dispatch hermes plugins subcommands."""
+    """Dispatch oc plugins subcommands."""
     action = getattr(args, "plugins_action", None)
 
     if action == "install":

@@ -1235,7 +1235,7 @@ def _setup_worktree(repo_root: str = None) -> Optional[Dict[str, str]]:
     repo_root = repo_root or _git_repo_root()
     if not repo_root:
         print("\033[31m✗ --worktree requires being inside a git repository.\033[0m")
-        print("  cd into your project repo first, then run hermes -w")
+        print("  cd into your project repo first, then run oc -w")
         return None
 
     short_id = uuid.uuid4().hex[:8]
@@ -3010,22 +3010,22 @@ HERMES_AGENT_LOGO = """[bold #FF5FAF] ██████╗ ██████�
 [#C71585] ╚═════╝ ╚═╝     ╚══════╝╚═╝  ╚═══╝ ╚═════╝ ╚═════╝ ╚═╝     ╚═╝╚═╝      ╚═════╝    ╚═╝   ╚══════╝╚═╝  ╚═╝[/]"""
 
 # ASCII Art - OpenComputer Caduceus (compact, fits in left panel)
-HERMES_CADUCEUS = """[#C2185B]          ⢀⣀⣠⣤⡄  ⢠⣤⣄⣀⡀[/]
-[#C2185B]       ⢀⣤⣠⣿⣿⡿⠋    ⠙⢿⣿⣿⣄⣤⡀[/]
-[#E91E78]      ⠰⣿⣿⣿⣿⠁        ⠈⣿⣿⣿⣿⠆[/]
-[#E91E78]    ⣴⣿⣶⣿⡿⠿⠃          ⠘⠿⢿⣿⣶⣿⣦[/]
-[#E91E78]   ⠸⣿⣿⣿⣿⣷⠄            ⠠⣾⣿⣿⣿⣿⠇[/]
-[#FF3D8A]  ⣴⣦⣨⣿⡿⠿⠟              ⠻⠿⢿⣿⣅⣴⣦[/]
-[#FF3D8A] ⢰⣿⣿⣿⣿⣷⣶⡄              ⢠⣶⣾⣿⣿⣿⣿⡆[/]
-[#FF3D8A] ⠈⠛⠿⣿⣿⡿⠿⠃              ⠘⠿⢿⣿⣿⠿⠛⠁[/]
-[#FF3D8A] ⢸⣿⣶⣿⣿⣶⣶⣦              ⣴⣶⣶⣿⣿⣶⣿⡇[/]
-[#FF3D8A] ⠸⣿⣿⣿⣿⣿⣿⠟              ⠻⣿⣿⣿⣿⣿⣿⠇[/]
-[#E91E78]  ⢈⣉⣉⣿⣿⣤⣴⣿⣦          ⣴⣿⣦⣤⣿⣿⣉⣉⡁[/]
-[#E91E78]  ⠹⣿⣿⣿⣿⣿⣿⣿⡿⢀⣤⡀    ⢀⣤⡀⢿⣿⣿⣿⣿⣿⣿⣿⠏[/]
-[#E91E78]   ⠹⣿⣿⡿⢿⣿⣏⣴⣿⣿⣿    ⣿⣿⣿⣦⣹⣿⡿⢿⣿⣿⠏[/]
-[#C2185B]     ⢠⣴⣾⣿⣿⣿⣿⡿⠃    ⠘⢿⣿⣿⣿⣿⣷⣦⡄[/]
-[#C2185B]      ⠙⢿⣿⠿⠛⠻⣷⣤⡀  ⢀⣤⣾⠟⠛⠿⣿⡿⠋[/]
-[#8E1A4F]             ⠙⠁  ⠈⠋[/]"""
+HERMES_CADUCEUS = """[#C2185B]          ⢀⣀⣠⣤⡄ ⢠⣤⣄⣀⡀[/]
+[#C2185B]       ⢀⣤⣠⣿⣿⡿⠋   ⠙⢿⣿⣿⣄⣤⡀[/]
+[#E91E78]      ⠰⣿⣿⣿⣿⠁       ⠈⣿⣿⣿⣿⠆[/]
+[#E91E78]    ⣴⣿⣶⣿⡿⠿⠃         ⠘⠿⢿⣿⣶⣿⣦[/]
+[#E91E78]   ⠸⣿⣿⣿⣿⣷⠄           ⠠⣾⣿⣿⣿⣿⠇[/]
+[#FF3D8A]  ⣴⣦⣨⣿⡿⠿⠟             ⠻⠿⢿⣿⣅⣴⣦[/]
+[#FF3D8A] ⢰⣿⣿⣿⣿⣷⣶⡄             ⢠⣶⣾⣿⣿⣿⣿⡆[/]
+[#FF3D8A] ⠈⠛⠿⣿⣿⡿⠿⠃             ⠘⠿⢿⣿⣿⠿⠛⠁[/]
+[#FF3D8A] ⢸⣿⣶⣿⣿⣶⣶⣦             ⣴⣶⣶⣿⣿⣶⣿⡇[/]
+[#FF3D8A] ⠸⣿⣿⣿⣿⣿⣿⠟             ⠻⣿⣿⣿⣿⣿⣿⠇[/]
+[#E91E78]  ⢈⣉⣉⣿⣿⣤⣴⣿⣦         ⣴⣿⣦⣤⣿⣿⣉⣉⡁[/]
+[#E91E78]  ⠹⣿⣿⣿⣿⣿⣿⣿⡿⢀⣤⡀   ⢀⣤⡀⢿⣿⣿⣿⣿⣿⣿⣿⠏[/]
+[#E91E78]   ⠹⣿⣿⡿⢿⣿⣏⣴⣿⣿⣿   ⣿⣿⣿⣦⣹⣿⡿⢿⣿⣿⠏[/]
+[#C2185B]     ⢠⣴⣾⣿⣿⣿⣿⡿⠃   ⠘⢿⣿⣿⣿⣿⣷⣦⡄[/]
+[#C2185B]      ⠙⢿⣿⠿⠛⠻⣷⣤⡀ ⢀⣤⣾⠟⠛⠿⣿⡿⠋[/]
+[#8E1A4F]             ⠙⠁ ⠈⠋[/]"""
 
 
 
@@ -3564,7 +3564,7 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin):
                     "this conversation will [bold]NOT be saved[/bold] to disk and "
                     "cannot be resumed later. Searching past sessions is also disabled.\n"
                     f"  Reason: {e}\n"
-                    "  Fix the state.db store (e.g. `hermes update` to rebuild the venv) to restore persistence."
+                    "  Fix the state.db store (e.g. `oc update` to rebuild the venv) to restore persistence."
                 )
             except Exception:
                 # Never let the warning path itself break startup.
@@ -7679,10 +7679,10 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin):
 
                 if not user_entries:
                     print("No user plugins installed.")
-                    print("  Install one: hermes plugins install owner/repo")
+                    print("  Install one: oc plugins install owner/repo")
                     print(f"  Or drop a plugin directory into {display_hermes_home()}/plugins/")
                     if bundled_count:
-                        print(f"  ({bundled_count} bundled plugins available — see: hermes plugins list)")
+                        print(f"  ({bundled_count} bundled plugins available — see: oc plugins list)")
                 else:
                     # Loaded-plugin details (tools/hooks/commands counts, errors)
                     # keyed by name, when available.
@@ -7712,8 +7712,8 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin):
                         error = f" — {info['error']}" if info.get("error") else ""
                         print(f"  {glyph} {name}{ver}{label}{detail}{error}")
                     if bundled_count:
-                        print(f"  (+{bundled_count} bundled — see: hermes plugins list)")
-                    print("  Enable/disable: hermes plugins enable/disable <name>")
+                        print(f"  (+{bundled_count} bundled — see: oc plugins list)")
+                    print("  Enable/disable: oc plugins enable/disable <name>")
             except Exception as e:
                 print(f"Plugin system error: {e}")
         elif canonical == "rollback":
@@ -8773,7 +8773,7 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin):
                 _cprint(f"  💳 {_d(_msg)}")
             else:
                 _cprint(f"  💳 {_d('Not logged into Nous Portal.')}")
-                print("  Run `hermes portal` to log in, then /billing.")
+                print("  Run `oc portal` to log in, then /billing.")
             return
 
         # Any sub-arg is intentionally ignored — always open the menu.
@@ -9137,7 +9137,7 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin):
         )
         _cprint(f"  {_d(_scope_msg)}")
         if not getattr(self, "_app", None):
-            print("  Run `hermes portal` and approve terminal billing, then retry.")
+            print("  Run `oc portal` and approve terminal billing, then retry.")
             return
         confirm_choices = [
             ("yes", "Re-authorize now", "open the portal to grant billing access"),
@@ -11579,7 +11579,7 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin):
             )
             print(f"  hermes --resume {self.session_id}{profile_flag}")
             if session_title:
-                print(f"  hermes -c \"{session_title}\"{profile_flag}")
+                print(f"  oc -c \"{session_title}\"{profile_flag}")
             print()
             print(f"Session:        {self.session_id}")
             if session_title:
@@ -14129,7 +14129,7 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin):
             print(
                 "Error: stdin (fd 0) is not available.\n"
                 "This can happen with certain Python installations (e.g. uv-managed cPython on macOS).\n"
-                "Try reinstalling Python via pyenv or Homebrew, then re-run: hermes setup"
+                "Try reinstalling Python via pyenv or Homebrew, then re-run: oc setup"
             )
             _run_cleanup()
             self._print_exit_summary()
@@ -14196,7 +14196,7 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin):
                     f"\nError: stdin is not usable ({_stdin_err}).\n"
                     "This can happen with certain Python installations (e.g. uv-managed cPython on macOS)\n"
                     "where kqueue cannot register fd 0.\n"
-                    "Try reinstalling Python via pyenv or Homebrew, then re-run: hermes setup"
+                    "Try reinstalling Python via pyenv or Homebrew, then re-run: oc setup"
                 )
             else:
                 raise

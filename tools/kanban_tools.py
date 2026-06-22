@@ -846,7 +846,7 @@ def _maybe_auto_subscribe(conn: Any, task_id: str) -> bool:
     Gated by ``kanban.auto_subscribe_on_create`` in config.yaml (default
     True). Disable to mirror pre-feature behaviour, e.g. when the
     originating user/chat opted out via the per-platform notification
-    toggle (see ``hermes dashboard``).
+    toggle (see ``oc dashboard``).
 
     Subscription paths:
 

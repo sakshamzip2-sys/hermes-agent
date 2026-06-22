@@ -5,14 +5,14 @@ edge — no new core tool). Dispatch many headless agent sessions to run detache
 watch their state from one place (working / needs-input / done / failed), follow
 one live, and stop it — without a long-lived supervisor daemon.
 
-Each session is a detached worker process (``hermes agents _worker``) that
-builds a headless ``AIAgent`` like ``hermes -z`` and self-reports into a
+Each session is a detached worker process (``oc agents _worker``) that
+builds a headless ``AIAgent`` like ``oc -z`` and self-reports into a
 standalone SQLite registry (``<root>/oc_agents.db``). Liveness is reconciled on
 every read, so a crashed worker shows as ``failed`` rather than a ghost.
 
 Surfaces
 --------
-* ``hermes agents dispatch|list|show|logs|attach|stop|rm|pin`` — terminal.
+* ``oc agents dispatch|list|show|logs|attach|stop|rm|pin`` — terminal.
 * ``/agents`` — in-session slash command (list/show).
 """
 
@@ -53,7 +53,7 @@ def _handle_slash(raw_args: str):
     if sub in ("list", ""):
         sessions = supervisor.snapshot(include_done=False)
         if not sessions:
-            return "No active background sessions. Start one: hermes agents dispatch \"<task>\""
+            return "No active background sessions. Start one: oc agents dispatch \"<task>\""
         lines = ["Active background sessions:"]
         for s in sessions:
             lines.append(f"  {s['id']}  {s['status']:<12} {s['name']}")
@@ -79,7 +79,7 @@ def _handle_slash(raw_args: str):
             return "usage: /agents dispatch <task>"
         task = raw_args.split(None, 1)[1]
         sid = supervisor.dispatch(task)
-        return f"agent {sid}: dispatched in background. Watch: hermes agents show {sid}"
+        return f"agent {sid}: dispatched in background. Watch: oc agents show {sid}"
 
     return _SLASH_HELP
 

@@ -27,7 +27,7 @@ export async function runExternalSetup({ args, ctx, done, launcher, suspend }: R
   })
 
   if (result.error) {
-    transcript.sys(`error launching hermes: ${result.error}`)
+    transcript.sys(`error launching OpenComputer: ${result.error}`)
     patchUiState({ status: 'setup required' })
 
     return

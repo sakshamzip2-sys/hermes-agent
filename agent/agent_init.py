@@ -82,7 +82,7 @@ def _build_codex_gpt55_autoraise_notice(autoraise: Dict[str, float]) -> str:
         f"ℹ Codex gpt-5.5 caps context at 272K, so auto-compaction was raised "
         f"to {to_pct}% (from {from_pct}%) to use more of the window before "
         f"summarizing.\n"
-        f"  Opt back out: hermes config set compression.codex_gpt55_autoraise false"
+        f"  Opt back out: oc config set compression.codex_gpt55_autoraise false"
     )
 
 

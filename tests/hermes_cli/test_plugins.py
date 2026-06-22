@@ -755,6 +755,10 @@ class TestPluginHooks:
             ),
         )
         monkeypatch.setenv("HERMES_HOME", str(tmp_path / "hermes_test"))
+        # Hermetic: this unit test exercises only its own plugin's hooks, so
+        # neutralize the shipped DEFAULT_ENABLED_PLUGINS loadout (some of whose
+        # plugins also register api-request hooks).
+        monkeypatch.setattr("hermes_cli.plugins.DEFAULT_ENABLED_PLUGINS", frozenset())
 
         mgr = PluginManager()
         mgr.discover_and_load()

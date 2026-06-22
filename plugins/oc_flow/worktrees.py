@@ -1,6 +1,6 @@
 """Per-subagent git worktree isolation for flows.
 
-v2 already isolates a whole CLI session with ``hermes -w``. This module brings
+v2 already isolates a whole CLI session with ``oc -w``. This module brings
 the same isolation down to an individual flow subagent: ``agent(prompt,
 worktree=True)`` runs that subagent in its own ``.worktrees/<name>`` checkout on
 a throwaway branch, so several agents editing files in ``parallel()`` never

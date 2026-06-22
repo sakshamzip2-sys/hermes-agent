@@ -8,7 +8,7 @@ variables, runs in the background, and is resumable.
 
 Surfaces
 --------
-* ``hermes flow run|list|show|logs|stop|examples`` — terminal command.
+* ``oc flow run|list|show|logs|stop|examples`` — terminal command.
 * ``/flow`` — in-session slash command (list/show/run).
 
 Persistence lives in a standalone SQLite DB (``<root>/oc_flow.db``) so runs are
@@ -54,7 +54,7 @@ def _handle_slash(raw_args: str):
     if sub in ("list", ""):
         runs = db.list_runs(limit=15)
         if not runs:
-            return "No flow runs yet. Run one with: hermes flow run <script.py>"
+            return "No flow runs yet. Run one with: oc flow run <script.py>"
         lines = ["Recent flows:"]
         for r in runs:
             lines.append(f"  {r['id']}  {r['status']:<10} {r['agent_count']:>3} agents  {r['name']}")
@@ -88,7 +88,7 @@ def _handle_slash(raw_args: str):
             return f"flow: script not found: {script}"
         outcome = run_flow(script_path=script)
         if outcome.status == "completed":
-            return f"flow {outcome.run_id}: completed ({outcome.agent_count} agents). See: hermes flow show {outcome.run_id}"
+            return f"flow {outcome.run_id}: completed ({outcome.agent_count} agents). See: oc flow show {outcome.run_id}"
         return f"flow {outcome.run_id}: {outcome.status} — {outcome.error or ''}"
 
     return _SLASH_HELP
