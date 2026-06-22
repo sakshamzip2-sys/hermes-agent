@@ -1,5 +1,12 @@
 # Coding Router profile config.
 #
+# Self-contained: this profile bundles its own pinned copies of the three skills it
+# runs on (skills/claude-code, skills/codex, skills/swe-delegation) and ships a
+# .no-bundled-skills marker so the global skill sync is skipped. The profile copies
+# are the source of truth for this profile; they may intentionally diverge from the
+# repo's global skills/autonomous-ai-agents/{claude-code,codex}. This is what lets
+# the profile behave identically on any host (local and the 24/7 VM).
+#
 # SOUL.md (in this same profile home) holds the durable identity: a delegator that
 # routes coding work between Claude Code (the PLANNER) and Codex (the EXECUTOR) and
 # verifies the result. This file holds the model and named personality overlays. A

@@ -64,9 +64,10 @@ that returns only a short "plan ready for approval" line, not the plan itself.)
 terminal(command="claude -p 'Read this repo and output the COMPLETE implementation plan as your final message for: <TASK>. List the exact files to change, the full change in each, and how to verify. Do NOT edit any files.' --allowedTools 'Read Glob Grep' --output-format json --max-turns 8", workdir="<repo>", timeout=180)
 ```
 
-Parse `result` from the JSON; that text is THE PLAN. If it is vague, send a refining
-prompt before moving on. For multi-turn planning, run Claude Code interactively in
-tmux and use `/plan` (Shift+Tab to plan mode), `/context`, and `ultrathink`.
+Parse `result` from the JSON; that text is THE PLAN. This print-mode call needs no
+PTY (it is one-shot and exits). If the plan is vague, send a refining prompt before
+moving on. For a live multi-turn planning session, switch to the tmux interactive
+mode above and use `/plan` (Shift+Tab to plan mode), `/context`, and `ultrathink`.
 
 The user grows the planner over time via the repo's `CLAUDE.md`, `.claude/rules/*.md`,
 and `.claude/agents/*` — that is where Claude Code is configured into a better

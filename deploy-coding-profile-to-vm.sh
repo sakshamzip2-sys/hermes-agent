@@ -21,7 +21,11 @@ PROFILE_SRC="$HERE/profile_templates/coding"
 
 echo "==> Target VM: $VM"
 echo "==> 1/4 installing claude-code + codex CLIs on the VM"
-ssh -o ConnectTimeout=15 "$VM" 'npm install -g @anthropic-ai/claude-code @openai/codex >/dev/null 2>&1; \
+ssh -o ConnectTimeout=15 "$VM" 'if npm install -g @anthropic-ai/claude-code @openai/codex; then \
+    echo "    npm install: OK"; \
+  else \
+    rc=$?; echo "    npm install: FAILED (rc=$rc) — fix before continuing" >&2; exit "$rc"; \
+  fi; \
   echo "    claude: $(claude --version 2>/dev/null || echo MISSING)"; \
   echo "    codex:  $(codex --version 2>/dev/null || echo MISSING)"; \
   echo "    tmux:   $(tmux -V 2>/dev/null || echo MISSING)"'
