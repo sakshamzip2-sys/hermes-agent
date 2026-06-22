@@ -40,12 +40,14 @@ the primary command & brand (hermes stays a silent back-compat alias). No plumbi
   f3e39fcb0 (profile wrapper scripts -> `oc -p`; resolved 9 pre-existing wrapper tests, zero regressions).
   FINAL PROOF: 231 branding/plugin/cli tests pass; oc/opencomputer/hermes all resolve; completeness
   grep = 0 user-facing `hermes <cmd>` display strings left. HEAD f3e39fcb0, pushed to PR #9.
-- **Item B (Honcho 402) — GATED, fix fully prepared.** Root cause = OpenRouter 402 (out of credits;
-  8192-token request, 847 affordable). Knob found: `DIALECTIC_MAX_OUTPUT_TOKENS` in honcho/.env
-  (unset -> defaults 8192). Proven `max_tokens=800` clears the 402. The reversible stopgap (append
-  `DIALECTIC_MAX_OUTPUT_TOKENS=800` + recreate honcho-api) was BLOCKED by the auto-mode classifier as
-  a gated shared-infra change — correct: needs explicit user go on WHICH fix (add OR credits / apply
-  the 800 stopgap / migrate provider). honcho/.env is untouched/clean. See [[project_honcho_dialectic_402]].
+- **Item B (Honcho 402) — RESOLVED 2026-06-22** (user chose OC-router). Migrated Honcho's 9 CHAT modules
+  (dialectic x5 + deriver + summary + dream x2) to `claude-haiku-4-5` via OC-router in honcho/.env
+  (OVERRIDES__BASE_URL + OVERRIDES__API_KEY_ENV=OC_ROUTER_API_KEY; transport stays openai). EMBEDDINGS
+  stay on OpenRouter (OC-router has no embedding model). Recreated api+deriver. PROVEN: peer.chat()
+  returns a full user profile (was 500/402); logs clean. This is LOCAL infra config (honcho/.env holds
+  the OC-router key) — NOT committed (secrets). Backup honcho/.env.bak-ocrouter-*. See [[project_honcho_dialectic_402]].
+- **PRs marked READY for review** (no longer draft): sakshamzip2-sys/hermes-agent#9, Open-Computer-AI/workspace#22.
+  NOT merged (protected-branch merge still needs explicit user go).
 
 ## (historical) earlier-planned next steps — Item A now done; kept for reference
 
