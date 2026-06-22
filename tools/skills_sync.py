@@ -41,7 +41,7 @@ SKILLS_DIR = HERMES_HOME / "skills"
 MANIFEST_FILE = SKILLS_DIR / ".bundled_manifest"
 
 # Marker file written by `oc profile create --no-skills` (named profiles)
-# and by the installer's `--no-skills` flag (the default ~/.oc profile).
+# and by the installer's `--no-skills` flag (the default ~/.hermes profile).
 # When present in HERMES_HOME, sync_skills() is a no-op so neither the
 # installer, `oc update`, nor a direct sync re-injects bundled skills.
 # Delete the file to opt back in. Mirrors
