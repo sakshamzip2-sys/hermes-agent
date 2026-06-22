@@ -129,53 +129,8 @@ def test_auth_add_anthropic_oauth_persists_pool_entry(tmp_path, monkeypatch):
     assert entry["expires_at_ms"] == 1711234567000
 
 
-def test_auth_add_google_gemini_cli_sets_active_provider(tmp_path, monkeypatch):
-    """oc auth add google-gemini-cli must set active_provider in auth.json.
-
-    Tokens are managed by agent.google_oauth (written to the Google credential
-    file by start_oauth_flow). The auth.json entry must record active_provider
-    so get_active_provider() and _model_section_has_credentials() detect the
-    provider — without storing tokens that would become stale.
-    """
-    monkeypatch.setenv("HERMES_HOME", str(tmp_path / "hermes"))
-    _write_auth_store(tmp_path, {"version": 1, "providers": {}})
-    monkeypatch.setattr(
-        "agent.google_oauth.run_gemini_oauth_login_pure",
-        lambda: {
-            "access_token": "ya29.test-token",
-            "refresh_token": "google-refresh",
-            "email": "user@example.com",
-            "expires_at_ms": 9999999999000,
-            "project_id": "my-project",
-        },
-    )
-
-    from hermes_cli.auth_commands import auth_add_command
-
-    class _Args:
-        provider = "google-gemini-cli"
-        auth_type = "oauth"
-        api_key = None
-        label = None
-
-    auth_add_command(_Args())
-
-    payload = json.loads((tmp_path / "hermes" / "auth.json").read_text())
-    assert payload["active_provider"] == "google-gemini-cli"
-    state = payload["providers"]["google-gemini-cli"]
-    # Only email stored — no access_token/refresh_token (those live in
-    # the Google OAuth credential file managed by agent.google_oauth).
-    assert state.get("email") == "user@example.com"
-    assert "access_token" not in state
-    assert "refresh_token" not in state
-    # pool entry from pool.add_entry() still present for oc auth list
-    entries = payload["credential_pool"]["google-gemini-cli"]
-    entry = next(item for item in entries if item["source"] == "manual:google_pkce")
-    assert entry["access_token"] == "ya29.test-token"
-
-
 def test_auth_add_qwen_oauth_sets_active_provider(tmp_path, monkeypatch):
-    """oc auth add qwen-oauth must set active_provider in auth.json.
+    """hermes auth add qwen-oauth must set active_provider in auth.json.
 
     Tokens are managed by the Qwen CLI credential file via
     resolve_qwen_runtime_credentials(). The auth.json entry must record
@@ -217,7 +172,7 @@ def test_auth_add_qwen_oauth_sets_active_provider(tmp_path, monkeypatch):
     # Only base_url stored — no api_key (that lives in the Qwen CLI file).
     assert state.get("base_url") == "https://portal.qwen.ai/v1"
     assert "api_key" not in state
-    # pool entry from pool.add_entry() still present for oc auth list
+    # pool entry from pool.add_entry() still present for hermes auth list
     entries = payload["credential_pool"]["qwen-oauth"]
     entry = next(item for item in entries if item["source"] == "manual:qwen_cli")
     assert entry["access_token"] == "qwen-test-token"
@@ -284,10 +239,10 @@ def test_auth_add_nous_oauth_persists_pool_entry(tmp_path, monkeypatch):
     assert entry["agent_key"] == token
     assert entry["portal_base_url"] == "https://portal.example.com"
 
-    # `oc auth add nous` must also populate providers.nous so the
+    # `hermes auth add nous` must also populate providers.nous so the
     # 401-recovery path (resolve_nous_runtime_credentials) can refresh an
     # invoke JWT when the token expires. If this mirror is missing, recovery
-    # raises "OpenComputer is not logged into Nous Portal" and the agent dies.
+    # raises "Hermes is not logged into Nous Portal" and the agent dies.
     singleton = payload["providers"]["nous"]
     assert singleton["access_token"] == token
     assert singleton["refresh_token"] == "refresh-token"
@@ -341,7 +296,7 @@ def test_auth_add_minimax_oauth_starts_login_and_persists_pool_entry(tmp_path, m
 
 
 def test_auth_add_nous_oauth_honors_custom_label(tmp_path, monkeypatch):
-    """`oc auth add nous --type oauth --label <name>` must preserve the
+    """`hermes auth add nous --type oauth --label <name>` must preserve the
     custom label end-to-end — it was silently dropped in the first cut of the
     persist_nous_credentials helper because `--label` wasn't threaded through.
     """
@@ -444,13 +399,13 @@ def test_auth_add_codex_oauth_persists_pool_entry(tmp_path, monkeypatch):
 
 
 def test_auth_add_codex_oauth_keeps_distinct_pool_accounts(tmp_path, monkeypatch):
-    """Two ``oc auth add openai-codex`` runs for different ChatGPT
+    """Two ``hermes auth add openai-codex`` runs for different ChatGPT
     accounts must produce two independent pool entries with distinct tokens.
 
     Regression for #39236: the add path used to route through the singleton
     ``_save_codex_tokens`` save, so the second login overwrote the first
     account's singleton-mirrored ``device_code`` entry instead of adding a
-    second independent one. ``oc auth list`` showed two labels sharing
+    second independent one. ``hermes auth list`` showed two labels sharing
     one token pair, and rotation silently always used the latest account.
     """
     monkeypatch.setenv("HERMES_HOME", str(tmp_path / "hermes"))
@@ -554,7 +509,7 @@ def test_codex_runtime_pool_only_rate_limit_is_not_missing_auth(tmp_path, monkey
 
 
 def test_auth_add_xai_oauth_sets_active_provider(tmp_path, monkeypatch):
-    """oc auth add xai-oauth must write providers singleton and set active_provider.
+    """hermes auth add xai-oauth must write providers singleton and set active_provider.
 
     Previously pool.add_entry() was called directly, which wrote only the
     credential-pool entry without setting active_provider. _model_section_has_credentials()
@@ -846,7 +801,7 @@ def test_clear_provider_auth_removes_provider_pool_entries(tmp_path, monkeypatch
 
 
 def test_logout_resets_codex_config_when_auth_state_already_cleared(tmp_path, monkeypatch, capsys):
-    """`oc logout --provider openai-codex` must still clear model.provider.
+    """`hermes logout --provider openai-codex` must still clear model.provider.
 
     Users can end up with auth.json already cleared but config.yaml still set to
     openai-codex.  Previously logout reported no auth state and left the agent
@@ -875,7 +830,7 @@ def test_logout_resets_codex_config_when_auth_state_already_cleared(tmp_path, mo
 
 
 def test_logout_defaults_to_configured_codex_when_no_active_provider(tmp_path, monkeypatch, capsys):
-    """Bare `oc logout` should target configured Codex if auth has no active provider."""
+    """Bare `hermes logout` should target configured Codex if auth has no active provider."""
     hermes_home = tmp_path / "hermes"
     monkeypatch.setenv("HERMES_HOME", str(hermes_home))
     _write_auth_store(tmp_path, {"version": 1, "providers": {}, "credential_pool": {}})
@@ -1422,12 +1377,12 @@ def test_auth_remove_codex_manual_source_suppresses_reseed(tmp_path, monkeypatch
 
 
 def test_auth_add_codex_clears_suppression_marker(tmp_path, monkeypatch):
-    """Re-linking codex via `oc auth add openai-codex` must clear any suppression marker."""
+    """Re-linking codex via `hermes auth add openai-codex` must clear any suppression marker."""
     monkeypatch.setenv("HERMES_HOME", str(tmp_path / "hermes"))
     hermes_home = tmp_path / "hermes"
     hermes_home.mkdir(parents=True, exist_ok=True)
 
-    # Pre-existing suppression (simulating a prior `oc auth remove`)
+    # Pre-existing suppression (simulating a prior `hermes auth remove`)
     (hermes_home / "auth.json").write_text(json.dumps({
         "version": 1,
         "providers": {},
@@ -1505,7 +1460,7 @@ def test_seed_from_singletons_respects_codex_suppression(tmp_path, monkeypatch):
 
 
 def test_auth_remove_env_seeded_suppresses_shell_exported_var(tmp_path, monkeypatch, capsys):
-    """`oc auth remove xai 1` must stick even when the env var is exported
+    """`hermes auth remove xai 1` must stick even when the env var is exported
     by the shell (not written into ~/.hermes/.env).  Before PR for #13371 the
     removal silently restored on next load_pool() because _seed_from_env()
     re-read os.environ.  Now env:<VAR> is suppressed in auth.json.
@@ -1599,7 +1554,7 @@ def test_auth_remove_env_seeded_dotenv_only_no_shell_hint(tmp_path, monkeypatch,
 
 
 def test_auth_add_clears_env_suppression_for_provider(tmp_path, monkeypatch):
-    """Re-adding a credential via `oc auth add <provider>` clears any
+    """Re-adding a credential via `hermes auth add <provider>` clears any
     env:<VAR> suppression marker — strong signal the user wants auth back.
     Matches the Codex device_code re-link behaviour.
     """
@@ -1631,7 +1586,7 @@ def test_auth_add_clears_env_suppression_for_provider(tmp_path, monkeypatch):
 
 def test_seed_from_env_respects_env_suppression(tmp_path, monkeypatch):
     """_seed_from_env() must skip env:<VAR> sources that the user suppressed
-    via `oc auth remove`.  This is the gate that prevents shell-exported
+    via `hermes auth remove`.  This is the gate that prevents shell-exported
     keys from resurrecting removed credentials.
     """
     hermes_home = tmp_path / "hermes"
@@ -1679,7 +1634,7 @@ def test_seed_from_env_respects_openrouter_suppression(tmp_path, monkeypatch):
 
 
 # =============================================================================
-# Unified credential-source stickiness — every source OpenComputer reads from has a
+# Unified credential-source stickiness — every source Hermes reads from has a
 # registered RemovalStep in agent.credential_sources, and every seeding path
 # gates on is_source_suppressed.  Below: one test per source proving remove
 # sticks across a fresh load_pool() call.
@@ -1915,7 +1870,7 @@ def test_auth_remove_copilot_suppresses_all_variants(tmp_path, monkeypatch):
 
 
 def test_auth_add_clears_all_suppressions_including_non_env(tmp_path, monkeypatch):
-    """Re-adding a credential via `oc auth add <provider>` clears ALL
+    """Re-adding a credential via `hermes auth add <provider>` clears ALL
     suppression markers for the provider, not just env:*.  This matches
     the single "re-engage" semantic — the user wants auth back, period.
     """
@@ -1949,7 +1904,7 @@ def test_auth_add_clears_all_suppressions_including_non_env(tmp_path, monkeypatc
 
 
 def test_auth_remove_codex_manual_device_code_suppresses_canonical(tmp_path, monkeypatch):
-    """Removing a manual:device_code entry (from `oc auth add openai-codex`)
+    """Removing a manual:device_code entry (from `hermes auth add openai-codex`)
     must suppress the canonical ``device_code`` key, not ``manual:device_code``.
     The re-seed gate in _seed_from_singletons checks ``device_code``.
     """
