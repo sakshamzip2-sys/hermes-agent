@@ -238,7 +238,7 @@ def test_docker_extra_args_is_bridged_everywhere():
 
     ``terminal.docker_extra_args`` in config.yaml passes extra flags verbatim
     to ``docker run`` (e.g. ``--gpus=all``, ``--shm-size=16g``).  The key was
-    present in DEFAULT_CONFIG, TERMINAL_CONFIG_ENV_MAP (so ``hermes config
+    present in DEFAULT_CONFIG, TERMINAL_CONFIG_ENV_MAP (so ``oc config
     set`` bridged it), terminal_tool._get_env_config (reads
     TERMINAL_DOCKER_EXTRA_ARGS), and DockerEnvironment (applies extra_args) --
     but it was MISSING from cli.py's env_mappings and gateway/run.py's

@@ -270,7 +270,7 @@ def test_cli_rm_guards_live_session(agents_db, capsys):
 
 
 def test_cli_dispatch_with_agent_type(agents_db, tmp_path, monkeypatch):
-    """`hermes agents dispatch --agent <type>` seeds the session from a definition."""
+    """`oc agents dispatch --agent <type>` seeds the session from a definition."""
     monkeypatch.setenv("HERMES_AGENTS_DIR", str(tmp_path))
     (tmp_path / "rev.md").write_text(
         "---\nname: reviewer\ntoolsets: [read_file]\nmodel: claude-haiku-4-5\n---\nYou are a reviewer."

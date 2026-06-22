@@ -48,7 +48,7 @@ class TestGatewayLifecyclePattern:
         assert _contains_gateway_lifecycle_command(text), f"Should match: {text!r}"
 
     @pytest.mark.parametrize("text", [
-        "kill hermes gateway process",
+        "kill oc gateway process",
         "pkill -f hermes.*gateway",
     ])
     def test_kill_commands(self, text):
@@ -85,7 +85,7 @@ class TestCronCreateLifecycleBlock:
         args = Namespace(
             cron_command="create",
             schedule="30m",
-            prompt="Upgrade hermes then run hermes gateway restart",
+            prompt="Upgrade hermes then run oc gateway restart",
             name=None,
             deliver=None,
             repeat=None,
@@ -195,7 +195,7 @@ class TestCronCreateLifecycleBlock:
 # ---------------------------------------------------------------------------
 
 class TestGatewaySelfTargetingGuard:
-    """Verify hermes gateway stop/restart refuse when _HERMES_GATEWAY=1."""
+    """Verify oc gateway stop/restart refuse when _HERMES_GATEWAY=1."""
 
     def test_stop_refuses_inside_gateway(self, monkeypatch):
         monkeypatch.setenv("_HERMES_GATEWAY", "1")
@@ -292,7 +292,7 @@ class TestTerminalToolGatewayLifecycleGuard:
         "systemctl restart hermes-gateway",
         "systemctl --user restart hermes-gateway",
         "systemctl stop hermes-gateway.service",
-        "hermes gateway restart",
+        "oc gateway restart",
         "launchctl kickstart gui/501/ai.hermes.gateway",
         "pkill -f hermes.*gateway",
     ])

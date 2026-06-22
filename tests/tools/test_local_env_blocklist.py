@@ -488,10 +488,10 @@ class TestSanePathIncludesHomebrew:
 
 
 class TestHermesBinDirOnPath:
-    """The hermes install dir is reachable in the terminal subshell PATH.
+    """The oc install dir is reachable in the terminal subshell PATH.
 
     Plugins shelling out to bare ``hermes`` via the terminal tool must work
-    even when the gateway was launched without the hermes install dir on
+    even when the gateway was launched without the oc install dir on
     PATH (systemd, service managers, cron). See the discussion that motivated
     _resolve_hermes_bin_dir / _prepend_hermes_bin_dir.
     """

@@ -1417,7 +1417,7 @@ class TestConnectionConfigResolution(unittest.TestCase):
 
     def test_falls_back_to_platform_config_extra(self):
         """When env vars are absent, settings come from PlatformConfig.extra —
-        the same dict gateway.config populates and `hermes config show` reads."""
+        the same dict gateway.config populates and `oc config show` reads."""
         from gateway.config import PlatformConfig
         from plugins.platforms.email.adapter import EmailAdapter
         cfg = PlatformConfig(enabled=True)

@@ -1,7 +1,7 @@
 """Tests for the unified provider catalog (hermes_cli.provider_catalog).
 
 These are invariant tests, not snapshots: they assert the parity *contract*
-between what ``hermes model`` shows (``CANONICAL_PROVIDERS``) and what the
+between what ``oc model`` shows (``CANONICAL_PROVIDERS``) and what the
 catalog exposes, plus how each provider's ``auth_type`` maps to a desktop tab —
 never a specific provider count or a frozen vendor list (both change over time).
 """
@@ -16,16 +16,16 @@ from hermes_cli.provider_catalog import (
 
 
 def test_catalog_covers_every_hermes_model_provider():
-    """PARITY CONTRACT: the catalog == the `hermes model` universe."""
+    """PARITY CONTRACT: the catalog == the `oc model` universe."""
     slugs = {d.slug for d in provider_catalog()}
     for entry in CANONICAL_PROVIDERS:
         assert entry.slug in slugs, (
-            f"{entry.slug} is shown in `hermes model` but missing from provider_catalog()"
+            f"{entry.slug} is shown in `oc model` but missing from provider_catalog()"
         )
 
 
 def test_catalog_has_no_providers_outside_hermes_model():
-    """The catalog must not invent providers `hermes model` doesn't show."""
+    """The catalog must not invent providers `oc model` doesn't show."""
     canonical = {e.slug for e in CANONICAL_PROVIDERS}
     for d in provider_catalog():
         assert d.slug in canonical, f"{d.slug} in catalog but not in CANONICAL_PROVIDERS"

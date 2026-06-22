@@ -158,7 +158,7 @@ def _base_xai_mocks(monkeypatch, tmp_path):
 
 
 class TestShowStatusXaiOAuth:
-    """xAI OAuth row in hermes status."""
+    """xAI OAuth row in oc status."""
 
     # ------------------------------------------------------------------
     # Logged-in branch

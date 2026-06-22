@@ -1,5 +1,5 @@
 """End-to-end provider parity contract: the desktop Providers tabs must show
-the SAME provider universe as ``hermes model`` (the CLI/TUI picker).
+the SAME provider universe as ``oc model`` (the CLI/TUI picker).
 
 This is the single load-bearing invariant of the unified provider catalog:
 
@@ -50,7 +50,7 @@ def _accounts_tab_providers() -> set[str]:
 
 
 def test_every_hermes_model_provider_is_configurable_in_desktop():
-    """PARITY CONTRACT: GUI (keys ∪ accounts) ⊇ `hermes model` universe."""
+    """PARITY CONTRACT: GUI (keys ∪ accounts) ⊇ `oc model` universe."""
     gui = _keys_tab_providers() | _accounts_tab_providers()
     missing = [
         e.slug
@@ -58,7 +58,7 @@ def test_every_hermes_model_provider_is_configurable_in_desktop():
         if e.slug not in _EXEMPT and e.slug not in gui
     ]
     assert not missing, (
-        "providers shown in `hermes model` but not configurable in the desktop "
+        "providers shown in `oc model` but not configurable in the desktop "
         f"Providers tabs: {missing}"
     )
 

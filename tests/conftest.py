@@ -427,7 +427,7 @@ def tmp_dir(tmp_path):
 
 @pytest.fixture()
 def mock_config():
-    """Return a minimal hermes config dict suitable for unit tests."""
+    """Return a minimal oc config dict suitable for unit tests."""
     return {
         "model": "test/mock-model",
         "toolsets": ["terminal", "file"],
@@ -753,7 +753,7 @@ def _live_system_guard(request, monkeypatch):
         cmd_str = _cmd_to_string(cmd)
         low = cmd_str.lower()
         if "update" in low and (
-            # hermes update / hermes update --gateway / setsid bash -c ... hermes update
+            # oc update / oc update --gateway / setsid bash -c ... oc update
             ("hermes" in low and "update" in low.split())
             or
             # python -m hermes_cli.main update --gateway

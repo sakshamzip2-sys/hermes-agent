@@ -589,7 +589,7 @@ class TestHasAzureIdentityCredentials:
 
 
 # ---------------------------------------------------------------------------
-# describe_active_credential — used by hermes doctor + oc auth
+# describe_active_credential — used by oc doctor + oc auth
 # ---------------------------------------------------------------------------
 
 

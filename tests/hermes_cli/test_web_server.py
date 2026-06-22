@@ -1009,7 +1009,7 @@ class TestWebServerEndpoints:
         def fail_spawn(*_args, **_kwargs):
             nonlocal spawned
             spawned = True
-            raise AssertionError("docker update guard should not spawn hermes update")
+            raise AssertionError("docker update guard should not spawn oc update")
 
         monkeypatch.setattr(web_server, "detect_install_method", lambda _root: "docker")
         monkeypatch.setattr(web_server, "_spawn_hermes_action", fail_spawn)
@@ -1044,7 +1044,7 @@ class TestWebServerEndpoints:
         def fail_spawn(*_args, **_kwargs):
             nonlocal spawned
             spawned = True
-            raise AssertionError("managed runtime update guard should not spawn hermes update")
+            raise AssertionError("managed runtime update guard should not spawn oc update")
 
         def fail_detect(*_args, **_kwargs):
             nonlocal detected
@@ -1305,7 +1305,7 @@ class TestWebServerEndpoints:
         as a provider card, even when it has no hand entry in OPTIONAL_ENV_VARS.
 
         Regression for the GUI⇄CLI drift: openai-api, kilocode, novita,
-        tencent-tokenhub, copilot were configurable via `hermes model` but
+        tencent-tokenhub, copilot were configurable via `oc model` but
         invisible in the desktop Providers → API keys tab.
         """
         from hermes_cli.provider_catalog import provider_catalog
@@ -2021,7 +2021,7 @@ class TestWebServerEndpoints:
         self, monkeypatch
     ):
         """A live in-flight gateway restart is reused instead of spawning a
-        second racing ``hermes gateway restart`` child (e.g. when a stale
+        second racing ``oc gateway restart`` child (e.g. when a stale
         cached frontend also fires its own restart call)."""
         import hermes_cli.web_server as ws
 
@@ -2411,7 +2411,7 @@ class TestWebServerEndpoints:
         """A custom endpoint that requires auth must persist model.api_key (where
         the runtime reads it) AND register a named custom_providers entry so the
         endpoint reappears as a ready row in the picker — matching the
-        ``hermes model`` custom flow. Regression for the desktop loop where a
+        ``oc model`` custom flow. Regression for the desktop loop where a
         keyed custom endpoint could never be configured from the GUI."""
         from hermes_cli.config import load_config
 
@@ -2570,7 +2570,7 @@ class TestWebServerEndpoints:
 
     def test_recommended_default_nous_honors_free_tier(self, monkeypatch):
         """For a free-tier Nous user, the recommended default must be a free
-        model (mirroring `hermes model`), not the first curated paid entry."""
+        model (mirroring `oc model`), not the first curated paid entry."""
         import hermes_cli.models as models_mod
 
         monkeypatch.setattr(models_mod, "get_curated_nous_model_ids", lambda: ["paid/expensive", "free/cheap"])
@@ -2990,7 +2990,7 @@ class TestNewEndpoints:
         resp = self.client.get("/api/profiles/default/setup-command")
 
         assert resp.status_code == 200
-        assert resp.json()["command"] == "hermes setup"
+        assert resp.json()["command"] == "oc setup"
 
     def test_profiles_create_creates_wrapper_alias_when_safe(self, monkeypatch, tmp_path):
         import hermes_cli.profiles as profiles_mod
@@ -3011,7 +3011,7 @@ class TestNewEndpoints:
         assert wrapper_path.exists()
         lines = [line.strip() for line in wrapper_path.read_text().splitlines() if line.strip()]
         if is_windows:
-            assert lines == ["@echo off", "hermes -p writer %*"]
+            assert lines == ["@echo off", "oc -p writer %*"]
         else:
             assert lines == ["#!/bin/sh", 'exec /opt/hermes/bin/hermes -p writer "$@"']
 

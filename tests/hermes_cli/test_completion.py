@@ -196,7 +196,7 @@ class TestGenerateZsh:
 class TestGenerateFish:
     def test_disables_file_completion(self):
         out = generate_fish(_make_parser())
-        assert "complete -c hermes -f" in out
+        assert "complete -c oc -f" in out
 
     def test_top_level_commands_present(self):
         out = generate_fish(_make_parser())

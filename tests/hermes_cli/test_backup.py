@@ -1590,7 +1590,7 @@ class TestQuickSnapshot:
         assert snap_id is not None
 
 # ---------------------------------------------------------------------------
-# Pre-update backup (hermes update safety net)
+# Pre-update backup (oc update safety net)
 # ---------------------------------------------------------------------------
 
     # -- security: path traversal regression coverage -----------------------
@@ -1865,7 +1865,7 @@ class TestRunPreUpdateBackup:
 
     def test_default_enabled_creates_backup(self, hermes_home, capsys):
         """With the new safe default (``pre_update_backup: true``), every
-        ``hermes update`` creates a backup before any destructive step
+        ``oc update`` creates a backup before any destructive step
         runs — the cost is a few minutes of zip time vs. the alternative
         of silent total data loss of ``~/.hermes/`` observed in #48200
         when an update step computes a wrong path and the user had no
