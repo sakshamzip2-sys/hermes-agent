@@ -74,3 +74,16 @@ Correctness · Completeness · Robustness · Security · Simplicity · Tests
   => zero regressions from this work.
 - GATED (unchanged): live per-channel send needs the user's bot tokens + sends external
   messages. Mechanism verified by tests + boot smoke; live verification is the user's step.
+- (independent adversarial review) Verdict 4/5, ZERO confirmed bugs. Concurrency 5/5 (contextvar
+  + copy_context), cache 5/5 (slug folded into signature), isolation 4/5, channel-agnostic 4/5
+  (all adapters converge on _handle_message_with_agent; Discord plugin also calls handle_message).
+  Only gap: tests were unit-level (3/5). FOLDED IN: hardened the override to be exception-safe
+  (moved inside the agent-run try) + added tests/test_persona_integration.py (4 tests: copy_context
+  thread propagation, concurrent isolation, real SessionDB profile-vs-shared isolation, cache-sig
+  distinctness). Now 47 persona tests; boot smoke on the real GatewayRunner passes.
+
+## DONE
+Rubric PASS (all applicable dims >=4; 0 open correctness/security; out-of-band = yes, the
+mechanism solves the request). Only the live per-channel SEND remains, which is a Gate (the
+user's bot tokens + external messages), not a code gap. Reproduce:
+`uv run python -m pytest tests/test_persona_bindings.py tests/test_agent_command.py tests/test_persona_runtime.py tests/test_persona_integration.py -q -p no:cacheprovider`
