@@ -1,0 +1,3 @@
+Coding router profile: runs with exactly the bundled skills in this profile
+(claude-code, codex, swe-delegation). No global bundled-skill sync, so the
+profile is self-contained and behaves identically on any host (local + VM).
