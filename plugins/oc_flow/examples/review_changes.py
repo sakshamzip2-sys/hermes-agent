@@ -2,11 +2,11 @@
 adversarially verify each finding.
 
 Run it:
-    hermes flow run plugins/oc_flow/examples/review_changes.py \
+    oc flow run plugins/oc_flow/examples/review_changes.py \
         --args '["path/to/a.py", "path/to/b.py"]'
 
 Smoke-test the machinery without spending tokens:
-    OC_FLOW_FAKE_AGENT=1 hermes flow run plugins/oc_flow/examples/review_changes.py \
+    OC_FLOW_FAKE_AGENT=1 oc flow run plugins/oc_flow/examples/review_changes.py \
         --args '["a.py","b.py"]'
 
 Injected helpers available in this namespace: agent, parallel, pipeline,

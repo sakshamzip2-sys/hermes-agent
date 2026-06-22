@@ -16,7 +16,7 @@ TIPS = [
     "/rollback lists filesystem checkpoints — restore files the agent modified to any prior state.",
     "/rollback diff 2 previews what changed since checkpoint 2 without restoring anything.",
     "/rollback 2 src/file.py restores a single file from a specific checkpoint.",
-    "/title \"my project\" names your session — resume it later with /resume or hermes -c.",
+    "/title \"my project\" names your session — resume it later with /resume or oc -c.",
     "/resume picks up where you left off in a previously named session.",
     "/queue <prompt> queues a message for the next turn without interrupting the current one.",
     "/undo removes the last user/assistant exchange from the conversation.",
@@ -63,7 +63,7 @@ TIPS = [
     "Pasting 5+ lines auto-saves to a file and inserts a compact reference instead.",
 
     # --- CLI Flags ---
-    "oc -c resumes your most recent CLI session. hermes -c \"project name\" resumes by title.",
+    "oc -c resumes your most recent CLI session. oc -c \"project name\" resumes by title.",
     "oc -w creates an isolated git worktree — perfect for parallel agent workflows.",
     "oc -w -q \"Fix issue #42\" combines worktree isolation with a one-shot query.",
     "oc chat -t web,terminal enables only specific toolsets for a focused session.",
@@ -72,7 +72,7 @@ TIPS = [
     "oc chat --max-turns 200 overrides the default 90-iteration limit per turn.",
     "oc chat --checkpoints enables filesystem snapshots before every destructive file change.",
     "oc --yolo bypasses all dangerous command approval prompts for the entire session.",
-    "oc chat --source telegram tags the session for filtering in hermes sessions list.",
+    "oc chat --source telegram tags the session for filtering in oc sessions list.",
     "oc -p work chat runs under a specific profile without changing your default.",
 
     # --- CLI Subcommands ---
@@ -118,7 +118,7 @@ TIPS = [
     "Set fallback_model in config.yaml to automatically fail over to a backup provider.",
     "Set privacy.redact_pii: true to hash user IDs and phone numbers before sending to the LLM.",
     "Set browser.record_sessions: true to auto-record browser sessions as WebM videos.",
-    "Set worktree: true in config.yaml to always create a git worktree (same as hermes -w).",
+    "Set worktree: true in config.yaml to always create a git worktree (same as oc -w).",
     "Set security.website_blocklist.enabled: true to block specific domains from web tools.",
     "Set cron.wrap_response: false to deliver raw agent output without the cron header/footer.",
     "HERMES_TIMEZONE overrides the server timezone with any IANA timezone string.",
@@ -431,9 +431,9 @@ TIPS = [
     'oc chat --pass-session-id injects the session ID into the system prompt so the agent can self-reference it.',
     'oc chat --image path/to/pic.png attaches a local image to a single -q query without a separate upload step.',
     'oc chat --ignore-user-config skips the active user config — reproducible bug reports and CI runs.',
-    "oc chat --source tool tags programmatic chats so they don't clutter hermes sessions list.",
+    "oc chat --source tool tags programmatic chats so they don't clutter oc sessions list.",
     'oc dump --show-keys includes redacted API key fingerprints for deeper support debugging.',
-    'oc sessions rename <ID> "new title" renames any past session; hermes sessions delete <ID> removes one.',
+    'oc sessions rename <ID> "new title" renames any past session; oc sessions delete <ID> removes one.',
     'oc import restores a session export or profile archive produced by sessions export or profile export.',
     'oc fallback manages the fallback_model chain interactively — no hand-editing config.yaml.',
     'oc pairing rotates the DM pairing token — the first messager after rotation claims access to the bot.',
@@ -467,7 +467,7 @@ TIPS = [
     'TIRITH_FAIL_OPEN env var overrides the tirith_fail_open config — a quick toggle without editing config.yaml.',
 
     # --- Sessions & Source Tags ---
-    '--source tool chats are excluded from hermes sessions list by default — set --source explicitly to see them.',
+    '--source tool chats are excluded from oc sessions list by default — set --source explicitly to see them.',
     'Session IDs are timestamp-prefixed (20250305_091523_abcd) so sorting works naturally in ls and jq.',
 
     # --- Misc ---

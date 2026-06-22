@@ -7,7 +7,7 @@ effort, memory scope, preloaded skills) so the same definition can be reused as:
 
   * a ``delegate_task`` subagent (``agent_type="code-reviewer"``),
   * an ``oc_teams`` teammate (``hermes team spawn … --agent code-reviewer``), and
-  * an ``oc_agents`` background session (``hermes agents dispatch … --agent …``).
+  * an ``oc_agents`` background session (``oc agents dispatch … --agent …``).
 
 Field coverage differs by seam: persona/toolsets/model/provider apply to all
 three. The ``memory`` scope and ``permissionMode`` apply only to the

@@ -1235,7 +1235,7 @@ def _setup_worktree(repo_root: str = None) -> Optional[Dict[str, str]]:
     repo_root = repo_root or _git_repo_root()
     if not repo_root:
         print("\033[31m✗ --worktree requires being inside a git repository.\033[0m")
-        print("  cd into your project repo first, then run hermes -w")
+        print("  cd into your project repo first, then run oc -w")
         return None
 
     short_id = uuid.uuid4().hex[:8]
@@ -8773,7 +8773,7 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin):
                 _cprint(f"  💳 {_d(_msg)}")
             else:
                 _cprint(f"  💳 {_d('Not logged into Nous Portal.')}")
-                print("  Run `hermes portal` to log in, then /billing.")
+                print("  Run `oc portal` to log in, then /billing.")
             return
 
         # Any sub-arg is intentionally ignored — always open the menu.
@@ -9137,7 +9137,7 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin):
         )
         _cprint(f"  {_d(_scope_msg)}")
         if not getattr(self, "_app", None):
-            print("  Run `hermes portal` and approve terminal billing, then retry.")
+            print("  Run `oc portal` and approve terminal billing, then retry.")
             return
         confirm_choices = [
             ("yes", "Re-authorize now", "open the portal to grant billing access"),
@@ -11579,7 +11579,7 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin):
             )
             print(f"  hermes --resume {self.session_id}{profile_flag}")
             if session_title:
-                print(f"  hermes -c \"{session_title}\"{profile_flag}")
+                print(f"  oc -c \"{session_title}\"{profile_flag}")
             print()
             print(f"Session:        {self.session_id}")
             if session_title:

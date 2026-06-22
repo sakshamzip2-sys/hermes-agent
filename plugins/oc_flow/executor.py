@@ -2,7 +2,7 @@
 
 The runtime's ``agent(prompt)`` helper ultimately calls :func:`run_agent_task`,
 which builds a real v2 ``AIAgent`` with full config/credential resolution — the
-same way ``hermes -z`` (oneshot) builds one — and runs a single conversation.
+same way ``oc -z`` (oneshot) builds one — and runs a single conversation.
 
 Two design choices make the rest of the system testable and safe:
 

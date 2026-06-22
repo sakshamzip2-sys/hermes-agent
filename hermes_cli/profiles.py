@@ -14,7 +14,7 @@ Usage::
     oc profile create coder --clone  # also copy config, .env, SOUL.md, skills
     oc profile create coder --clone-all  # full copy of source profile
     coder chat                           # use via wrapper alias
-    hermes -p coder chat                 # or via flag
+    oc -p coder chat                 # or via flag
     oc profile use coder             # set as sticky default
     oc profile delete coder          # remove profile + alias + service
 """

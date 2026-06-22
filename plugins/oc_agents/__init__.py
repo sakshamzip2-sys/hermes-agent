@@ -6,7 +6,7 @@ watch their state from one place (working / needs-input / done / failed), follow
 one live, and stop it — without a long-lived supervisor daemon.
 
 Each session is a detached worker process (``oc agents _worker``) that
-builds a headless ``AIAgent`` like ``hermes -z`` and self-reports into a
+builds a headless ``AIAgent`` like ``oc -z`` and self-reports into a
 standalone SQLite registry (``<root>/oc_agents.db``). Liveness is reconciled on
 every read, so a crashed worker shows as ``failed`` rather than a ghost.
 

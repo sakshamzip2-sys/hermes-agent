@@ -846,7 +846,7 @@ export default function SystemPage() {
             )}
             {!portal?.logged_in && (
               <p className="text-xs text-muted-foreground">
-                Log in with <span className="font-mono">hermes portal</span>.
+                Log in with <span className="font-mono">oc portal</span>.
               </p>
             )}
           </CardContent>
@@ -954,7 +954,7 @@ export default function SystemPage() {
               </Link>
               <span className="ml-auto">
                 New credentials:{" "}
-                <span className="font-mono">hermes memory setup</span>
+                <span className="font-mono">oc memory setup</span>
               </span>
             </div>
 

@@ -569,13 +569,13 @@ def _rule_repeated_failures(task, events, runs, now, cfg) -> list[Diagnostic]:
         # Spawn is failing specifically — profile setup issue.
         actions.append(DiagnosticAction(
             kind="cli_hint",
-            label=f"Verify profile: hermes -p {assignee} doctor",
+            label=f"Verify profile: oc -p {assignee} doctor",
             payload={"command": f"oc -p {assignee} doctor"},
             suggested=True,
         ))
         actions.append(DiagnosticAction(
             kind="cli_hint",
-            label=f"Fix profile auth: hermes -p {assignee} auth",
+            label=f"Fix profile auth: oc -p {assignee} auth",
             payload={"command": f"oc -p {assignee} auth"},
         ))
     elif most_recent_outcome in {"timed_out", "crashed"}:

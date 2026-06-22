@@ -12,7 +12,7 @@ from typing import Callable
 def build_login_parser(subparsers, *, cmd_login: Callable) -> None:
     """Attach the deprecated ``login`` subcommand to ``subparsers``.
 
-    ``hermes login`` was removed in favor of ``hermes auth`` / ``oc model``
+    ``hermes login`` was removed in favor of ``oc auth`` / ``oc model``
     (the runtime handler in ``hermes_cli/auth.py::login_command`` just prints a
     deprecation message and exits).  The subparser is kept registered so that
     old scripts/aliases invoking ``hermes login [--flags]`` still receive the

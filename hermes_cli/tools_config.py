@@ -3742,7 +3742,7 @@ def _configure_mcp_tools_interactive(config: dict):
             continue
 
         # Compute new include list (the chosen tools). We standardize on
-        # tools.include across the codebase (catalog installs, hermes mcp
+        # tools.include across the codebase (catalog installs, oc mcp
         # configure, and this UI) so a server\'s on-disk config shape doesn\'t
         # depend on which UI the user touched last.
         chosen_names = [tool_names[i] for i in sorted(chosen)]

@@ -2,7 +2,7 @@
 
 Spawned by :mod:`plugins.oc_agents.supervisor` as a separate, detached process
 (``oc agents _worker --id <id>``). It reads the session row, builds a
-headless ``AIAgent`` exactly like ``hermes -z`` (oneshot) does, runs one
+headless ``AIAgent`` exactly like ``oc -z`` (oneshot) does, runs one
 conversation, streams a cheap "latest activity" summary into the DB so the row
 stays informative, and records the final result/status.
 

@@ -4437,7 +4437,7 @@ class APIServerAdapter(BasePlatformAdapter):
         except Exception as exc:  # noqa: BLE001
             errors["summary"] = str(exc)
 
-        # Enrich each member with its background session's hermes chat session
+        # Enrich each member with its background session's oc chat session
         # id so the frontend can offer "continue chatting" per teammate. Every
         # member is pre-seeded with an empty id so the field is always present,
         # and each lookup is isolated so one failure can't drop the key from the

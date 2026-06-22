@@ -223,7 +223,7 @@ def show_status(args):
     elif nous_inference_present:
         nous_label = "not logged in (Nous inference key configured)"
     else:
-        nous_label = "not logged in (run: hermes portal)"
+        nous_label = "not logged in (run: oc portal)"
     print(
         f"  {'Nous Portal':<12}  {check_mark(nous_logged_in)} "
         f"{nous_label}"

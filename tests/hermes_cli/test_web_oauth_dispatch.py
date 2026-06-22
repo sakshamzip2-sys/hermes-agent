@@ -149,7 +149,7 @@ def test_oauth_provider_status_uses_profile_query(tmp_path, monkeypatch):
         "id": "fake-oauth",
         "name": "Fake OAuth",
         "flow": "pkce",
-        "cli_command": "hermes auth add fake-oauth",
+        "cli_command": "oc auth add fake-oauth",
         "docs_url": "https://example.com",
         "status_fn": fake_status,
     },)
