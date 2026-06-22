@@ -686,7 +686,7 @@ class S6ServiceManager:
         lines.append("export HERMES_S6_SUPERVISED_CHILD=1")
         # ``--replace`` makes the supervised gateway authoritative for its
         # profile's HERMES_HOME. Without it, a gateway started OUTSIDE s6
-        # (a stray ``hermes gateway run`` from a shell, an agent action, or
+        # (a stray ``oc gateway run`` from a shell, an agent action, or
         # the Open WebUI helper) grabs the per-HERMES_HOME PID lock first;
         # the supervised slot then execs a bare ``gateway run``, hits the
         # "Another gateway instance is already running" guard, exits

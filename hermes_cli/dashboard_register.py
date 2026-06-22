@@ -216,7 +216,7 @@ def _print_post_register_hint(
         print("  at its /login page.")
     else:
         print("  To require Nous login (e.g. exposing on your LAN or a public host):")
-        print("    hermes dashboard --host 0.0.0.0")
+        print("    oc dashboard --host 0.0.0.0")
         print("  …then log in at the dashboard's /login page.")
     print()
     print(
