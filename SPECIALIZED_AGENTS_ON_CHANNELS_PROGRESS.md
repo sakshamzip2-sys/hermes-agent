@@ -60,3 +60,17 @@ Correctness · Completeness · Robustness · Security · Simplicity · Tests
   (a) `/agent <slug>` rotates to a fresh session_id on bind + load history from profile_db when
   bound; (b) include persona slug in `_agent_config_signature` so a cached default agent is not
   reused for a bound run.
+- (build) Phase 1 (bindings+catalog, 28 tests) + Phase 2 (/agent command, 9 tests) committed.
+  Phase 3 (native turn application) in run.py: __init__ profile-db cache; _resolve_chat_persona
+  + _get_persona_profile_db helpers; handle_message sets HERMES_HOME override + profile dir
+  (reset in finally) and loads history from the profile db when bound; _run_agent threads
+  persona_slug/persona_db -> turn_db (3 refs), gbrain drop + resolve_agent_overrides
+  toolsets/model, slug folded into agent-cache signature, disable_memory_provider, followup
+  call threads it through; proxy path forwards slug as oc_agent_id. Runtime tests (6) added.
+- (verify) 43 persona tests PASS; 35 existing dispatch/session/hygiene tests PASS; ruff clean;
+  gateway.run imports cleanly (boot smoke). Broad-suite failures (wecom, update_command, tui
+  custom-provider, telegram-escaping) PROVEN pre-existing: identical with my run.py edits
+  stashed; failing cases pass in isolation (pollution) or are rebrand string mismatches.
+  => zero regressions from this work.
+- GATED (unchanged): live per-channel send needs the user's bot tokens + sends external
+  messages. Mechanism verified by tests + boot smoke; live verification is the user's step.

@@ -2439,6 +2439,13 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             # hermes_state.get_last_init_error() for slash-command error strings.
             logger.warning("SQLite session store not available: %s", e)
 
+        # Per-chat specialized-agent (persona) support: a chat bound via /agent
+        # runs as a gallery agent with its own isolated agent-profiles/<slug>/state.db.
+        # Cache one SessionDB per slug (its own sqlite connection), like the
+        # api_server's _get_agent_profile_db. Created lazily under the BASE home.
+        self._persona_profile_dbs: Dict[str, Any] = {}
+        self._persona_profile_dbs_lock = threading.Lock()
+
         # Opportunistic state.db maintenance: prune ended sessions older
         # than sessions.retention_days + optional VACUUM. Tracks last-run
         # in state_meta so it only actually executes once per
@@ -3179,6 +3186,62 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             overrides = None
         route["request_overrides"] = overrides or {}
         return route
+
+    # ------------------------------------------------------------------
+    # Per-chat specialized-agent (persona) resolution
+    # ------------------------------------------------------------------
+
+    def _resolve_chat_persona(self, source) -> tuple:
+        """Resolve the specialized agent a chat is bound to via ``/agent``.
+
+        Returns ``(slug, profile_dir)`` resolved under the BASE home, or
+        ``(None, None)`` for the default agent. Falls back to an operator
+        per-platform default (``personas:`` in config). MUST be called OUTSIDE
+        any per-turn HERMES_HOME override so the profile dir resolves under the
+        real home rather than a profile dir.
+        """
+        try:
+            from gateway import persona_bindings as pb
+            slug = pb.get_bound_slug(source)
+            if not slug:
+                try:
+                    cfg = _load_gateway_config()
+                except Exception:
+                    cfg = None
+                slug = pb.default_slug_for_platform(getattr(source, "platform", None), cfg)
+            if not slug or not pb.agent_exists(slug):
+                return None, None
+            from hermes_constants import get_hermes_home
+            return slug, get_hermes_home() / "agent-profiles" / slug
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.debug("persona resolve failed: %s", exc)
+            return None, None
+
+    def _get_persona_profile_db(self, slug: str, profile_dir):
+        """Cached SessionDB for ``agent-profiles/<slug>/state.db``.
+
+        One sqlite connection per slug (double-checked locking), mirroring the
+        api_server's ``_get_agent_profile_db``. The bound agent persists its
+        turns here, giving full per-agent transcript isolation. Returns None on
+        failure (caller falls back to the shared db rather than crashing a turn).
+        """
+        cache = self._persona_profile_dbs
+        db = cache.get(slug)
+        if db is not None:
+            return db
+        with self._persona_profile_dbs_lock:
+            db = cache.get(slug)
+            if db is not None:
+                return db
+            try:
+                from hermes_state import SessionDB
+                profile_dir.mkdir(parents=True, exist_ok=True)
+                db = SessionDB(db_path=profile_dir / "state.db")
+                cache[slug] = db
+                return db
+            except Exception as exc:
+                logger.warning("persona profile db unavailable for %s: %s", slug, exc)
+                return None
 
     async def _handle_adapter_fatal_error(self, adapter: BasePlatformAdapter) -> None:
         """React to an adapter failure after startup.
@@ -8481,7 +8544,32 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         
         # Set session context variables for tools (task-local, concurrency-safe)
         _session_env_tokens = self._set_session_env(context)
-        
+
+        # Per-chat specialized agent (persona): if this chat is bound via /agent,
+        # run the whole turn under the agent's profile home so its SOUL/membrane,
+        # skills, and isolated state.db load — the same capability the web UI gets
+        # from oc_agent_id. The HERMES_HOME override is a contextvar; copy_context()
+        # at the agent executor dispatch propagates it into the worker thread.
+        # Reset in the finally below.
+        _persona_slug, _persona_dir = self._resolve_chat_persona(source)
+        _persona_db = None
+        _persona_home_token = None
+        if _persona_slug and _persona_dir is not None:
+            _persona_db = self._get_persona_profile_db(_persona_slug, _persona_dir)
+            if _persona_db is None:
+                _persona_slug = None  # fail open to the default agent
+            else:
+                try:
+                    from hermes_constants import set_hermes_home_override
+                    from gateway.session_context import set_session_profile_dir
+                    _persona_home_token = set_hermes_home_override(str(_persona_dir))
+                    set_session_profile_dir(str(_persona_dir))
+                except Exception as _pexc:
+                    logger.warning(
+                        "persona home override failed for %s: %s", _persona_slug, _pexc
+                    )
+                    _persona_home_token = None
+
         # Read privacy.redact_pii from config (re-read per message)
         _redact_pii = False
         persist_user_message = None
@@ -8595,8 +8683,17 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             except Exception as e:
                 logger.warning("[Gateway] Failed to auto-load skill(s) %s: %s", _skill_names, e)
 
-        # Load conversation history from transcript
-        history = self.session_store.load_transcript(session_entry.session_id)
+        # Load conversation history from transcript. For a persona-bound chat,
+        # load from the agent's OWN profile db (same shaping as load_transcript)
+        # so its transcript stays isolated even across restarts / cache eviction.
+        if _persona_db is not None:
+            try:
+                history = _persona_db.get_messages_as_conversation(session_entry.session_id)
+            except Exception as _hxe:
+                logger.debug("persona history load failed; using shared store: %s", _hxe)
+                history = self.session_store.load_transcript(session_entry.session_id)
+        else:
+            history = self.session_store.load_transcript(session_entry.session_id)
         
         # -----------------------------------------------------------------
         # Session hygiene: auto-compress pathologically large transcripts
@@ -9081,6 +9178,8 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                 channel_prompt=event.channel_prompt,
                 persist_user_message=persist_user_message,
                 persist_user_timestamp=persist_user_timestamp,
+                persona_slug=_persona_slug,
+                persona_db=_persona_db,
             )
 
             # Stop persistent typing indicator now that the agent is done
@@ -9651,6 +9750,14 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                 "Try again or use /reset to start a fresh session."
             )
         finally:
+            # Restore the persona HERMES_HOME override (if any) BEFORE clearing
+            # session vars (clear_session_vars resets the profile-dir contextvar).
+            if _persona_home_token is not None:
+                try:
+                    from hermes_constants import reset_hermes_home_override
+                    reset_hermes_home_override(_persona_home_token)
+                except Exception:
+                    pass
             # Restore session context variables to their pre-handler state
             self._clear_session_env(_session_env_tokens)
 
@@ -13538,6 +13645,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         session_key: str = None,
         run_generation: Optional[int] = None,
         event_message_id: Optional[str] = None,
+        persona_slug: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Forward the message to a remote OpenComputer API server instead of
         running a local AIAgent.
@@ -13613,6 +13721,12 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             "messages": api_messages,
             "stream": True,
         }
+        # Persona-bound chat: forward the agent slug as oc_agent_id so the remote
+        # api_server runs this turn as the specialized agent (its SOUL, toolsets,
+        # model, isolated agent-profiles/<slug> memory) via its fully-tested
+        # oc_agent_id path. No-op for unbound chats.
+        if persona_slug:
+            body["oc_agent_id"] = persona_slug
 
         # Set up platform streaming if available -------------------------
         _stream_consumer = None
@@ -13828,9 +13942,19 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         channel_prompt: Optional[str] = None,
         persist_user_message: Optional[str] = None,
         persist_user_timestamp: Optional[float] = None,
+        persona_slug: Optional[str] = None,
+        persona_db: Optional[Any] = None,
     ) -> Dict[str, Any]:
         """
         Run the agent with the given message and context.
+
+        ``persona_slug``/``persona_db``: when this chat is bound to a specialized
+        agent via /agent, the agent runs as that gallery agent — its toolsets and
+        model come from the agent manifest, the external memory plane is disabled,
+        and the turn persists to ``persona_db`` (agent-profiles/<slug>/state.db).
+        The HERMES_HOME override that loads the agent's SOUL is set by the caller
+        (_handle_message_with_agent) and propagated into the worker thread via
+        copy_context().
         
         Returns the full result dict from run_conversation, including:
           - "final_response": str (the text to send back)
@@ -13852,6 +13976,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                 session_key=session_key,
                 run_generation=run_generation,
                 event_message_id=event_message_id,
+                persona_slug=persona_slug,
             )
 
         from run_agent import AIAgent
@@ -13869,6 +13994,33 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         enabled_toolsets = sorted(_get_platform_tools(user_config, platform_key))
         agent_cfg_local = user_config.get("agent") or {}
         disabled_toolsets = agent_cfg_local.get("disabled_toolsets") or None
+
+        # Specialized-agent (persona) overrides: when this chat is bound via
+        # /agent, intersect the agent manifest's declared toolsets with the
+        # platform-available set (a stale grant can never empty or break the
+        # toolset), drop the shared external-memory toolset (profile agents keep
+        # only their local memory), and remember the manifest model to apply
+        # after the per-turn route resolves. Pure + best-effort.
+        _persona_model_override = None
+        if persona_slug:
+            enabled_toolsets = [t for t in enabled_toolsets if t != "gbrain"]
+            try:
+                from tools.agent_defs import resolve_agent_overrides
+                _ov = resolve_agent_overrides(persona_slug) or {}
+                _pts = _ov.get("toolsets")
+                if _pts:
+                    _avail = set(enabled_toolsets)
+                    _resolved = [t for t in _pts if t in _avail]
+                    if _resolved:
+                        enabled_toolsets = _resolved
+                if _ov.get("model"):
+                    _persona_model_override = _ov["model"]
+                logger.info(
+                    "persona %s: toolsets=%s model=%s",
+                    persona_slug, enabled_toolsets, _persona_model_override,
+                )
+            except Exception as _oexc:  # pragma: no cover - never break a turn
+                logger.debug("persona overrides for %s failed: %s", persona_slug, _oexc)
 
         display_config = user_config.get("display", {})
         if not isinstance(display_config, dict):
@@ -14822,6 +14974,14 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
 
             turn_route = self._resolve_turn_agent_config(message, model, runtime_kwargs)
 
+            # Persona-bound chat: persist this turn to the agent's isolated db,
+            # and apply the agent manifest's model (only when the user/session
+            # didn't already pin one — turn_route["model"] flows to both the
+            # cache signature below and the AIAgent build).
+            _turn_db = persona_db if persona_db is not None else self._session_db
+            if persona_slug and _persona_model_override:
+                turn_route["model"] = _persona_model_override
+
             # Check agent cache — reuse the AIAgent from the previous message
             # in this session to preserve the frozen system prompt and tool
             # schemas for prompt cache hits.
@@ -14834,6 +14994,10 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                 user_id=getattr(source, "user_id", None),
                 user_id_alt=getattr(source, "user_id_alt", None),
             )
+            # A persona-bound run must never reuse a cached default agent (or a
+            # different persona's frozen SOUL/toolsets): fold the slug into the key.
+            if persona_slug:
+                _sig = (_sig, persona_slug)
             agent = None
             _cache_lock = getattr(self, "_agent_cache_lock", None)
             _cache = getattr(self, "_agent_cache", None)
@@ -14845,9 +15009,9 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             # when the agent was cached; on mismatch, invalidate the cache
             # so a fresh agent re-reads from disk. (#45966)
             _current_msg_count = None
-            if self._session_db is not None and session_id:
+            if _turn_db is not None and session_id:
                 try:
-                    _sess_row = self._session_db.get_session(session_id)
+                    _sess_row = _turn_db.get_session(session_id)
                     if _sess_row:
                         _current_msg_count = _sess_row.get("message_count", 0)
                 except Exception:
@@ -14920,8 +15084,13 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                     chat_type=source.chat_type,
                     thread_id=source.thread_id,
                     gateway_session_key=session_key,
-                    session_db=self._session_db,
+                    session_db=_turn_db,
                     fallback_model=self._fallback_model,
+                    # Persona-bound chats are local-only: their own SQLite/FTS5/
+                    # markdown memory, but NOT the shared external memory plane
+                    # (Honcho provider). The gbrain toolset is already filtered
+                    # out of enabled_toolsets above. Matches api_server.
+                    disable_memory_provider=bool(persona_slug),
                 )
                 if _cache_lock and _cache is not None:
                     with _cache_lock:
@@ -16294,6 +16463,8 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                     _interrupt_depth=_interrupt_depth + 1,
                     event_message_id=next_message_id,
                     channel_prompt=next_channel_prompt,
+                    persona_slug=persona_slug,
+                    persona_db=persona_db,
                 )
                 return _preserve_queued_followup_history_offset(result, followup_result)
         finally:
