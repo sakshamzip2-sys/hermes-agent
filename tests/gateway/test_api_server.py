@@ -3625,7 +3625,7 @@ class TestArtifactFileEndpoint:
     async def test_serves_registered_artifact_inline(self, adapter, tmp_path):
         f = tmp_path / "note.md"
         f.write_text("# Hello\n\nColorful **preview**.", encoding="utf-8")
-        adapter._collect_session_artifacts = lambda sid: [
+        adapter._collect_session_artifacts = lambda sid, db=None: [
             {"artifact_id": "a1", "path": str(f), "mime_type": "text/markdown"}
         ]
         async with TestClient(TestServer(self._app(adapter))) as cli:
@@ -3644,7 +3644,7 @@ class TestArtifactFileEndpoint:
         EXISTS but is not a session artifact, so it must 404, not 200."""
         f = tmp_path / "note.md"
         f.write_text("x", encoding="utf-8")
-        adapter._collect_session_artifacts = lambda sid: [
+        adapter._collect_session_artifacts = lambda sid, db=None: [
             {"artifact_id": "a1", "path": str(f), "mime_type": "text/markdown"}
         ]
         async with TestClient(TestServer(self._app(adapter))) as cli:
@@ -3655,7 +3655,7 @@ class TestArtifactFileEndpoint:
 
     @pytest.mark.asyncio
     async def test_missing_path_param_is_400(self, adapter):
-        adapter._collect_session_artifacts = lambda sid: []
+        adapter._collect_session_artifacts = lambda sid, db=None: []
         async with TestClient(TestServer(self._app(adapter))) as cli:
             resp = await cli.get("/api/v1/sessions/sess1/artifact-file")
             assert resp.status == 400
@@ -3663,7 +3663,7 @@ class TestArtifactFileEndpoint:
     @pytest.mark.asyncio
     async def test_registered_but_deleted_file_is_410(self, adapter, tmp_path):
         missing = tmp_path / "gone.md"  # registered but never written to disk
-        adapter._collect_session_artifacts = lambda sid: [
+        adapter._collect_session_artifacts = lambda sid, db=None: [
             {"artifact_id": "a1", "path": str(missing), "mime_type": "text/markdown"}
         ]
         async with TestClient(TestServer(self._app(adapter))) as cli:
@@ -3688,7 +3688,7 @@ class TestArtifactFileEndpoint:
         attachment disposition + nosniff — never inline as their real type."""
         f = tmp_path / fname
         f.write_text("<script>alert(document.cookie)</script>", encoding="utf-8")
-        adapter._collect_session_artifacts = lambda sid: [
+        adapter._collect_session_artifacts = lambda sid, db=None: [
             {"artifact_id": "a1", "path": str(f), "mime_type": mime}
         ]
         async with TestClient(TestServer(self._app(adapter))) as cli:
@@ -3705,7 +3705,7 @@ class TestArtifactFileEndpoint:
         """Allowlisted inert types stay inline but still carry nosniff."""
         f = tmp_path / "note.md"
         f.write_text("# ok", encoding="utf-8")
-        adapter._collect_session_artifacts = lambda sid: [
+        adapter._collect_session_artifacts = lambda sid, db=None: [
             {"artifact_id": "a1", "path": str(f), "mime_type": "text/markdown"}
         ]
         async with TestClient(TestServer(self._app(adapter))) as cli:
@@ -3715,6 +3715,66 @@ class TestArtifactFileEndpoint:
             assert resp.status == 200
             assert "inline" in resp.headers.get("Content-Disposition", "")
             assert resp.headers.get("X-Content-Type-Options") == "nosniff"
+
+
+class TestArtifactFileWriteEndpoint:
+    """PUT /api/v1/sessions/{id}/artifact-file?path= — the editable preview's
+    Save. It may ONLY overwrite a file already registered as one of THIS
+    session's artifacts (so it can't be an arbitrary-write primitive)."""
+
+    def _app(self, adapter):
+        mws = [mw for mw in (cors_middleware, security_headers_middleware) if mw is not None]
+        app = web.Application(middlewares=mws)
+        app["api_server_adapter"] = adapter
+        app.router.add_put(
+            "/api/v1/sessions/{session_id}/artifact-file",
+            adapter._handle_artifact_file_write,
+        )
+        return app
+
+    @pytest.mark.asyncio
+    async def test_overwrites_registered_artifact(self, adapter, tmp_path):
+        f = tmp_path / "note.md"
+        f.write_text("# old", encoding="utf-8")
+        adapter._collect_session_artifacts = lambda sid, db=None: [
+            {"artifact_id": "a1", "path": str(f), "mime_type": "text/markdown"}
+        ]
+        async with TestClient(TestServer(self._app(adapter))) as cli:
+            resp = await cli.put(
+                "/api/v1/sessions/sess1/artifact-file",
+                params={"path": str(f)},
+                data="# new content\n\nEdited.",
+            )
+            assert resp.status == 200
+            assert (await resp.json())["ok"] is True
+            assert f.read_text(encoding="utf-8") == "# new content\n\nEdited."
+
+    @pytest.mark.asyncio
+    async def test_unregistered_path_404_and_no_write(self, adapter, tmp_path):
+        """An unregistered path must 404 AND must not be written — the
+        arbitrary-write guard."""
+        registered = tmp_path / "note.md"
+        registered.write_text("ok", encoding="utf-8")
+        victim = tmp_path / "victim.txt"
+        victim.write_text("ORIGINAL", encoding="utf-8")
+        adapter._collect_session_artifacts = lambda sid, db=None: [
+            {"artifact_id": "a1", "path": str(registered), "mime_type": "text/markdown"}
+        ]
+        async with TestClient(TestServer(self._app(adapter))) as cli:
+            resp = await cli.put(
+                "/api/v1/sessions/sess1/artifact-file",
+                params={"path": str(victim)},
+                data="HACKED",
+            )
+            assert resp.status == 404
+            assert victim.read_text(encoding="utf-8") == "ORIGINAL"
+
+    @pytest.mark.asyncio
+    async def test_missing_path_param_is_400(self, adapter):
+        adapter._collect_session_artifacts = lambda sid, db=None: []
+        async with TestClient(TestServer(self._app(adapter))) as cli:
+            resp = await cli.put("/api/v1/sessions/sess1/artifact-file", data="x")
+            assert resp.status == 400
 
 
 class TestListSessionsAgentScoping:
@@ -3770,3 +3830,228 @@ class TestListSessionsAgentScoping:
             data = await resp.json()
             assert data["data"][0]["id"] == "SHARED"
             shared.list_sessions_rich.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# Web-UI skill-slug expansion (/app skill invocation via header)
+# ---------------------------------------------------------------------------
+
+
+class TestWebuiSkillExpansion:
+    """Tests for the X-OpenComputer-Client: webui skill-slug expansion path.
+
+    Verifies three key behaviours:
+      (a) webui header + known skill slug → user_message is expanded (contains
+          skill content / differs from the raw "/slug args" input).
+      (b) webui header + unrecognised "/foo" → user_message passes through
+          completely unchanged (no 500, no silent drop).
+      (c) No header (generic OpenAI-compat caller) + known skill slug →
+          user_message passes through completely unchanged.
+
+    Patch targets use ``agent.skill_commands.*`` because the production code
+    imports those names lazily inside the ``try`` block via
+    ``from agent.skill_commands import ...``.  Patching at the source module
+    is the correct way to intercept lazy imports.
+    """
+
+    @pytest.mark.asyncio
+    async def test_webui_known_skill_expands_message(self, adapter):
+        """(a) webui header + known skill slug → message is expanded."""
+        captured: dict = {}
+
+        async def _mock_run_agent(**kwargs):
+            captured["user_message"] = kwargs.get("user_message", "")
+            return (
+                {"final_response": "done", "messages": [], "api_calls": 1},
+                {"input_tokens": 1, "output_tokens": 1, "total_tokens": 2},
+            )
+
+        EXPANDED_CONTENT = '[IMPORTANT: The user has invoked the "xlsx" skill, make a budget]'
+
+        with (
+            patch.object(adapter, "_run_agent", side_effect=_mock_run_agent),
+            patch(
+                "agent.skill_commands.resolve_skill_command_key",
+                return_value="/xlsx",
+            ),
+            patch(
+                "agent.skill_commands.build_skill_invocation_message",
+                return_value=EXPANDED_CONTENT,
+            ),
+        ):
+            app = _create_app(adapter)
+            async with TestClient(TestServer(app)) as cli:
+                resp = await cli.post(
+                    "/v1/chat/completions",
+                    json={
+                        "model": "open-computer",
+                        "messages": [
+                            {"role": "user", "content": "/xlsx make a budget"}
+                        ],
+                    },
+                    headers={"X-OpenComputer-Client": "webui"},
+                )
+            assert resp.status == 200
+
+        assert "user_message" in captured
+        assert captured["user_message"] == EXPANDED_CONTENT
+        assert captured["user_message"] != "/xlsx make a budget"
+
+    @pytest.mark.asyncio
+    async def test_webui_unknown_slash_passthrough(self, adapter):
+        """(b) webui header + unrecognised /foo → message passes through unchanged."""
+        captured: dict = {}
+
+        async def _mock_run_agent(**kwargs):
+            captured["user_message"] = kwargs.get("user_message", "")
+            return (
+                {"final_response": "done", "messages": [], "api_calls": 1},
+                {"input_tokens": 1, "output_tokens": 1, "total_tokens": 2},
+            )
+
+        with (
+            patch.object(adapter, "_run_agent", side_effect=_mock_run_agent),
+            # resolve_skill_command_key returns None → not a known skill
+            patch(
+                "agent.skill_commands.resolve_skill_command_key",
+                return_value=None,
+            ),
+        ):
+            app = _create_app(adapter)
+            async with TestClient(TestServer(app)) as cli:
+                resp = await cli.post(
+                    "/v1/chat/completions",
+                    json={
+                        "model": "open-computer",
+                        "messages": [
+                            {"role": "user", "content": "/notaskill hello"}
+                        ],
+                    },
+                    headers={"X-OpenComputer-Client": "webui"},
+                )
+            assert resp.status == 200
+
+        assert captured.get("user_message") == "/notaskill hello"
+
+    @pytest.mark.asyncio
+    async def test_no_header_known_skill_passthrough(self, adapter):
+        """(c) No X-OpenComputer-Client header → skill expansion gate is skipped."""
+        captured: dict = {}
+
+        async def _mock_run_agent(**kwargs):
+            captured["user_message"] = kwargs.get("user_message", "")
+            return (
+                {"final_response": "done", "messages": [], "api_calls": 1},
+                {"input_tokens": 1, "output_tokens": 1, "total_tokens": 2},
+            )
+
+        resolve_calls: list = []
+
+        def _spy_resolve(command):
+            resolve_calls.append(command)
+            return "/xlsx"
+
+        with (
+            patch.object(adapter, "_run_agent", side_effect=_mock_run_agent),
+            patch(
+                "agent.skill_commands.resolve_skill_command_key",
+                side_effect=_spy_resolve,
+            ),
+        ):
+            app = _create_app(adapter)
+            async with TestClient(TestServer(app)) as cli:
+                resp = await cli.post(
+                    "/v1/chat/completions",
+                    json={
+                        "model": "open-computer",
+                        "messages": [
+                            {"role": "user", "content": "/xlsx make a budget"}
+                        ],
+                    },
+                    # Deliberately no X-OpenComputer-Client header
+                )
+            assert resp.status == 200
+
+        # The header gate must fire before the import, so resolve is never called
+        assert resolve_calls == [], (
+            "resolve_skill_command_key should NOT be called without webui header"
+        )
+        assert captured.get("user_message") == "/xlsx make a budget"
+
+    @pytest.mark.asyncio
+    async def test_webui_skill_expansion_error_fallback(self, adapter):
+        """If skill loading raises, the original message is preserved (no 500)."""
+        captured: dict = {}
+
+        async def _mock_run_agent(**kwargs):
+            captured["user_message"] = kwargs.get("user_message", "")
+            return (
+                {"final_response": "done", "messages": [], "api_calls": 1},
+                {"input_tokens": 1, "output_tokens": 1, "total_tokens": 2},
+            )
+
+        with (
+            patch.object(adapter, "_run_agent", side_effect=_mock_run_agent),
+            patch(
+                "agent.skill_commands.resolve_skill_command_key",
+                return_value="/xlsx",
+            ),
+            patch(
+                "agent.skill_commands.build_skill_invocation_message",
+                side_effect=RuntimeError("skill file not found"),
+            ),
+        ):
+            app = _create_app(adapter)
+            async with TestClient(TestServer(app)) as cli:
+                resp = await cli.post(
+                    "/v1/chat/completions",
+                    json={
+                        "model": "open-computer",
+                        "messages": [
+                            {"role": "user", "content": "/xlsx make a budget"}
+                        ],
+                    },
+                    headers={"X-OpenComputer-Client": "webui"},
+                )
+            assert resp.status == 200
+
+        # Must fall back to original message — never a 500
+        assert captured.get("user_message") == "/xlsx make a budget"
+
+    @pytest.mark.asyncio
+    async def test_webui_plain_text_no_slash_passthrough(self, adapter):
+        """Plain (non-slash) messages with the webui header are forwarded unchanged."""
+        captured: dict = {}
+
+        async def _mock_run_agent(**kwargs):
+            captured["user_message"] = kwargs.get("user_message", "")
+            return (
+                {"final_response": "done", "messages": [], "api_calls": 1},
+                {"input_tokens": 1, "output_tokens": 1, "total_tokens": 2},
+            )
+
+        resolve_calls: list = []
+
+        with (
+            patch.object(adapter, "_run_agent", side_effect=_mock_run_agent),
+            patch(
+                "agent.skill_commands.resolve_skill_command_key",
+                side_effect=lambda c: resolve_calls.append(c) or "/xlsx",
+            ),
+        ):
+            app = _create_app(adapter)
+            async with TestClient(TestServer(app)) as cli:
+                resp = await cli.post(
+                    "/v1/chat/completions",
+                    json={
+                        "model": "open-computer",
+                        "messages": [
+                            {"role": "user", "content": "just a plain message"}
+                        ],
+                    },
+                    headers={"X-OpenComputer-Client": "webui"},
+                )
+            assert resp.status == 200
+
+        assert resolve_calls == [], "Skill check must not run for non-slash messages"
+        assert captured.get("user_message") == "just a plain message"
