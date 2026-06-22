@@ -17,8 +17,22 @@
 # heavy coding (Claude Code and Codex do that on their own models, configured
 # separately by the user). A strong, instruction-faithful Claude model keeps the
 # router disciplined about the plan-then-execute protocol and the safety gates.
-# Bump to claude-opus-4-8 for the hardest orchestration; sonnet is the default.
-model: claude-sonnet-4-6
+# Bump `default` to claude-opus-4-8 for the hardest orchestration; sonnet is the default.
+#
+# The provider is pinned to OC-router (the standing routing target) so the CLI launch
+# (`oc -p coding`) routes a claude-* model correctly. A bare `model: <name>` string
+# would lose the provider and auto-route claude-* names to the anthropic endpoint.
+# SECRET: the api_key is NOT committed here. Supply it ONE of two ways before a live
+# CLI run: add `api_key: <your OC-router key>` under this block in your installed
+# ~/.hermes/profiles/coding/config.yaml (like the default ~/.hermes/config.yaml does),
+# or run the profile through the gateway/web UI, which already has the key.
+model:
+  default: claude-sonnet-4-6
+  provider: custom
+  base_url: https://router.tryopencomputer.com/v1
+  api_mode: chat_completions
+  max_tokens: 32000
+  context_length: 200000
 
 personalities:
   plan-first: "Plan-first mode: lean hard on the planner. Get a full, ordered plan from Claude Code and review it before any execution. Do not route to Codex until the plan is concrete and the constraints are explicit."

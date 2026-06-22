@@ -78,9 +78,16 @@ def test_soul_loads_through_the_real_loader_in_isolated_home(tmp_path):
     assert "LOADED" in r.stdout, f"stdout={r.stdout!r} stderr={r.stderr[-800:]!r}"
 
 
-def test_config_has_model_and_named_personalities():
+def test_config_pins_provider_and_keeps_no_secret():
+    """The model block pins the provider so the CLI (`oc -p coding`) routes a claude-*
+    model to OC-router correctly (a bare string would mis-route to the anthropic
+    endpoint). The api_key is a secret and must NOT be committed in the template."""
     cfg = yaml.safe_load(CONFIG.read_text(encoding="utf-8"))
-    assert isinstance(cfg.get("model"), str) and cfg["model"], "no model set"
+    model = cfg.get("model")
+    assert isinstance(model, dict), "model must pin a provider block, not be a bare string"
+    assert isinstance(model.get("default"), str) and model["default"], "no model name set"
+    assert model.get("provider") and model.get("base_url"), "provider/base_url must be pinned"
+    assert "api_key" not in model, "api_key must NOT be committed; supply via local config/.env"
     personalities = cfg.get("personalities") or {}
     assert len(personalities) >= 2, "router profile needs named personalities"
     for name, text in personalities.items():
