@@ -125,4 +125,8 @@ class TestApprovalCommandWiring:
     def test_sse_api_path_redacts_before_enqueue(self):
         from gateway.platforms import api_server
 
-        self._assert_redacts_then_uses(api_server, "_approval_notify", "put_nowait")
+        # The fork's SSE `_approval_notify` enqueues via the `_enqueue(...)`
+        # helper (which wraps queue.put_nowait), not a bare put_nowait — so the
+        # sink to look for after redaction is `_enqueue`. The security property
+        # is identical: the command is redacted before it reaches the queue.
+        self._assert_redacts_then_uses(api_server, "_approval_notify", "_enqueue")
