@@ -1904,11 +1904,24 @@ class APIServerAdapter(BasePlatformAdapter):
         return web.json_response({"object": "hermes.session", "session": self._session_response(session)}, status=201)
 
     async def _handle_get_session(self, request: "web.Request") -> "web.Response":
-        """GET /api/sessions/{session_id}."""
+        """GET /api/sessions/{session_id}.
+
+        An agent-scoped chat (its gateway-streamed turns) persists in that
+        agent's own profile db, so honor the ``X-OpenComputer-Agent-Id`` header
+        and read from the profile db first, falling back to the shared db for
+        normal chats. Without this an agent chat 404s on open even though it is
+        listed in the agent's sidebar dropdown.
+        """
         auth_err = self._check_auth(request)
         if auth_err:
             return auth_err
-        session, err = self._get_existing_session_or_404(request.match_info["session_id"])
+        session_id = request.match_info["session_id"]
+        agent_db = self._agent_db_for_request(request)
+        if agent_db is not None:
+            session = agent_db.get_session(session_id)
+            if session is not None:
+                return web.json_response({"object": "hermes.session", "session": self._session_response(session)})
+        session, err = self._get_existing_session_or_404(session_id)
         if err:
             return err
         return web.json_response({"object": "hermes.session", "session": self._session_response(session)})
