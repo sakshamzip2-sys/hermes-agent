@@ -1078,12 +1078,16 @@ _SLACK_PRIORITY_ALIASES = ("btw", "bg")
 #   - outcomes / playbook / self_evolve / proactivity / commitments: the
 #     self-evolution loop plugin (SENSE→DREAM→EVOLVE) — power-user only.
 #   - flow / team / bgagents: the parallel-agents plugin (orchestrate/teams/bg).
+#   - platform: ops command (pause/resume/list a failing gateway platform) —
+#     low-frequency admin, routed via /oc so the new /agent command (chat as a
+#     specialized agent — the channel-persona feature) keeps its native slot.
 _SLACK_VIA_HERMES_ONLY = frozenset({
     "credits", "billing", "debug",
     "update", "version",
     "dream", "dream_all",
     "outcomes", "playbook", "self_evolve", "proactivity", "commitments",
     "flow", "team", "bgagents",
+    "platform",
 })
 
 
