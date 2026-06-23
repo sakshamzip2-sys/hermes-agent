@@ -44,7 +44,7 @@ def test_dashboard_run_resets_home_before_dropping_privileges() -> None:
 
     assert "#!/command/with-contenv sh" in text
     assert "export HOME=/opt/data" in text
-    assert "exec s6-setuidgid hermes oc dashboard" in text
+    assert "exec s6-setuidgid hermes hermes dashboard" in text
 
 
 def test_dashboard_run_does_not_derive_insecure_from_bind_host() -> None:
