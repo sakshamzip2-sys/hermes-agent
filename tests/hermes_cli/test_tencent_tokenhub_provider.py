@@ -162,7 +162,7 @@ class TestTencentTokenhubModelCatalog:
 
 
 # =============================================================================
-# CANONICAL_PROVIDERS (hermes model picker)
+# CANONICAL_PROVIDERS (oc model picker)
 # =============================================================================
 
 
@@ -381,7 +381,7 @@ class TestTencentTokenhubAuxiliary:
 
 
 class TestTencentTokenhubDoctor:
-    """Verify hermes doctor recognizes Tencent TokenHub env vars."""
+    """Verify oc doctor recognizes Tencent TokenHub env vars."""
 
     def test_provider_env_hints(self):
         from hermes_cli.doctor import _PROVIDER_ENV_HINTS

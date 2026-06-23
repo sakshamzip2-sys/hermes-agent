@@ -806,4 +806,4 @@ def _print_migration_report(report: dict, dry_run: bool):
             print_info("  hermes claw migrate --migrate-secrets")
             print()
             print_info("Or add your key manually:")
-            print_info("  hermes config set OPENROUTER_API_KEY sk-or-v1-...")
+            print_info("  oc config set OPENROUTER_API_KEY sk-or-v1-...")
