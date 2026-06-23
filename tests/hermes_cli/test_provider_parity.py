@@ -15,10 +15,10 @@ from fastapi.testclient import TestClient
 
 from hermes_cli.models import CANONICAL_PROVIDERS
 from hermes_cli.provider_catalog import provider_catalog
-from hermes_cli.web_server import _SESSION_TOKEN, app
+from hermes_cli.web_server import _SESSION_HEADER_NAME, _SESSION_TOKEN, app
 
 client = TestClient(app)
-HEADERS = {"X-Hermes-Session-Token": _SESSION_TOKEN}
+HEADERS = {_SESSION_HEADER_NAME: _SESSION_TOKEN}
 
 # `custom` is the bring-your-own-endpoint pseudo-provider configured inline via
 # the model picker's local-endpoint flow, not a fixed credential card. It is in

@@ -1067,7 +1067,21 @@ _SLACK_PRIORITY_ALIASES = ("btw", "bg")
 #   - credits: the billing/top-up surface; reached via /oc credits on Slack.
 #   - billing: the terminal-billing surface (buy/auto-reload/limit); /oc billing.
 #   - debug: the log/report upload surface; reached via /oc debug on Slack.
-_SLACK_VIA_HERMES_ONLY = frozenset({"credits", "billing", "debug"})
+# Low-frequency utility + power-user commands routed via /oc on Slack so the
+# scarce native slots go to high-frequency commands. These stay native on CLI,
+# TUI, Telegram, and Discord:
+#   - update / version: agent self-update + version check (rare, util).
+#   - dream / dream_all: the dreaming (background reflection) plugin surface.
+#   - outcomes / playbook / self_evolve / proactivity / commitments: the
+#     self-evolution loop plugin (SENSE→DREAM→EVOLVE) — power-user only.
+#   - flow / team / bgagents: the parallel-agents plugin (orchestrate/teams/bg).
+_SLACK_VIA_HERMES_ONLY = frozenset({
+    "credits", "billing", "debug",
+    "update", "version",
+    "dream", "dream_all",
+    "outcomes", "playbook", "self_evolve", "proactivity", "commitments",
+    "flow", "team", "bgagents",
+})
 
 
 def _sanitize_slack_name(raw: str) -> str:

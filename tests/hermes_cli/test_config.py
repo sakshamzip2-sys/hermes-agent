@@ -71,7 +71,14 @@ class TestLoadConfigDefaults:
             assert config["agent"]["max_turns"] == DEFAULT_CONFIG["agent"]["max_turns"]
             assert "max_turns" not in config
             assert "terminal" in config
-            assert config["terminal"]["backend"] == "local"
+            # The fork defaults terminal.backend to "auto" (prefer a
+            # kernel-isolated sandbox for agent code, fall back to local) — a
+            # deliberate security choice documented in DEFAULT_CONFIG. Assert
+            # against DEFAULT_CONFIG so this can't drift if the default changes.
+            assert (
+                config["terminal"]["backend"]
+                == DEFAULT_CONFIG["terminal"]["backend"]
+            )
             assert config["display"]["interim_assistant_messages"] is True
 
     def test_legacy_root_level_max_turns_migrates_to_agent_config(self, tmp_path):
