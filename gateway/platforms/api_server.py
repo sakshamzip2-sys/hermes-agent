@@ -2589,6 +2589,12 @@ class APIServerAdapter(BasePlatformAdapter):
             # POST /v1/runs/{run_id}/approval endpoint can resolve it, then emit
             # an approval.request SSE event the WebUI renders as an Approve card.
             event = dict(approval_data or {})
+            # Redact credentials/secrets from the command BEFORE it leaves the
+            # worker thread into the SSE queue — a raw command would leak secrets
+            # into the WebUI approval card. Parity with the other approval paths
+            # and the chat-platform path (upstream #48456).
+            from gateway.run import _redact_approval_command
+            event["command"] = _redact_approval_command(event.get("command"))
             self._run_approval_sessions[run_id] = approval_skey
             self._set_run_status(run_id, "waiting_for_approval",
                                  session_id=session_id, last_event="approval.request")
