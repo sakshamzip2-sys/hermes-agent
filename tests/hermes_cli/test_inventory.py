@@ -351,7 +351,7 @@ def test_picker_hints_adds_warning_to_skeleton_rows():
         assert "auth_type" in row
         assert "warning" in row
         # api_key providers get "paste X to activate" / others get the
-        # hermes model fallback.
+        # oc model fallback.
         assert (
             row["warning"].startswith("paste ")
             or row["warning"].startswith("run `oc model`")
@@ -687,4 +687,41 @@ def test_build_models_payload_no_max_models_returns_full_list():
     assert kilo_row["models"] == full_models
     assert kilo_row["total_models"] == 100
     assert len(kilo_row["models"]) == 100
+
+
+# ─── refresh flag (cache-bust) ─────────────────────────────────────────
+
+
+def test_build_models_payload_forwards_refresh_flag():
+    """build_models_payload must forward refresh= to list_authenticated_providers.
+
+    The desktop picker's "Refresh Models" control passes refresh=True; the
+    flag has to reach list_authenticated_providers so the per-provider
+    model-id cache gets busted. Default opens pass refresh=False.
+    """
+    captured: dict = {}
+
+    def _capture(*args, **kwargs):
+        captured["refresh"] = kwargs.get("refresh")
+        return []
+
+    with patch("hermes_cli.model_switch.list_authenticated_providers", side_effect=_capture):
+        build_models_payload(_empty_ctx())
+    assert captured["refresh"] is False
+
+    with patch("hermes_cli.model_switch.list_authenticated_providers", side_effect=_capture):
+        build_models_payload(_empty_ctx(), refresh=True)
+    assert captured["refresh"] is True
+
+
+def test_list_authenticated_providers_refresh_busts_cache():
+    """refresh=True clears the provider-model disk cache exactly once;
+    refresh=False leaves it untouched (so normal picker opens stay snappy)."""
+    from hermes_cli import model_switch
+
+    with patch("hermes_cli.models.clear_provider_models_cache") as clear:
+        model_switch.list_authenticated_providers(refresh=False)
+        assert clear.call_count == 0
+        model_switch.list_authenticated_providers(refresh=True)
+        assert clear.call_count == 1
 

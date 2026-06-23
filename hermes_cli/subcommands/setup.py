@@ -18,7 +18,7 @@ def build_setup_parser(subparsers, *, cmd_setup: Callable) -> None:
         "setup",
         help="Interactive setup wizard",
         description="Configure OpenComputer with an interactive wizard. "
-        "Run a specific section: hermes setup model|tts|terminal|gateway|tools|agent",
+        "Run a specific section: oc setup model|tts|terminal|gateway|tools|agent",
     )
     setup_parser.add_argument(
         "section",

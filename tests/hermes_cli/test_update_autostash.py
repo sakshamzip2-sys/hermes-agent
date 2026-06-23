@@ -889,7 +889,7 @@ def test_bootstrap_marker_not_autostashed_by_update(tmp_path):
     marker = tmp_path / ".hermes-bootstrap-complete"
     marker.write_text("")
 
-    # Exact flags used by hermes update (hermes_cli/main.py).
+    # Exact flags used by oc update (hermes_cli/main.py).
     git("stash", "push", "--include-untracked", "-m", "hermes-update-autostash")
 
     assert marker.exists(), (

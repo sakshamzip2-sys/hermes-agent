@@ -1,9 +1,9 @@
 {
-  "name": "opencomputer",
-  "productName": "OpenComputer",
+  "name": "hermes",
+  "productName": "Hermes",
   "private": true,
-  "version": "0.15.1",
-  "description": "Native desktop shell for OpenComputer.",
+  "version": "0.17.0",
+  "description": "Native desktop shell for Hermes Agent.",
   "author": "Nous Research",
   "type": "module",
   "main": "electron/main.cjs",
@@ -37,7 +37,7 @@
     "test:desktop:nsis": "node scripts/test-desktop.mjs nsis",
     "test:desktop:existing": "node scripts/test-desktop.mjs existing",
     "test:desktop:fresh": "node scripts/test-desktop.mjs fresh",
-    "test:desktop:platforms": "node --test electron/bootstrap-platform.test.cjs electron/hardening.test.cjs electron/backend-env.test.cjs electron/backend-probes.test.cjs electron/bootstrap-runner.test.cjs electron/connection-config.test.cjs electron/dashboard-token.test.cjs electron/gateway-ws-probe.test.cjs electron/oauth-net-request.test.cjs electron/desktop-uninstall.test.cjs electron/session-windows.test.cjs electron/workspace-cwd.test.cjs electron/fs-read-dir.test.cjs electron/git-root.test.cjs electron/windows-child-process.test.cjs electron/update-remote.test.cjs electron/update-rebuild.test.cjs electron/windows-user-env.test.cjs",
+    "test:desktop:platforms": "node --test electron/bootstrap-platform.test.cjs electron/hardening.test.cjs electron/backend-env.test.cjs electron/backend-probes.test.cjs electron/backend-ready.test.cjs electron/bootstrap-runner.test.cjs electron/connection-config.test.cjs electron/dashboard-token.test.cjs electron/gateway-ws-probe.test.cjs electron/oauth-net-request.test.cjs electron/desktop-uninstall.test.cjs electron/session-windows.test.cjs electron/link-title-window.test.cjs electron/workspace-cwd.test.cjs electron/fs-read-dir.test.cjs electron/git-root.test.cjs electron/windows-child-process.test.cjs electron/update-remote.test.cjs electron/update-rebuild.test.cjs electron/update-marker.test.cjs electron/update-relaunch.test.cjs electron/windows-user-env.test.cjs",
     "typecheck": "tsc -p . --noEmit",
     "lint": "eslint src/ electron/",
     "lint:fix": "eslint src/ electron/ --fix",
@@ -54,7 +54,7 @@
     "@dnd-kit/core": "^6.3.1",
     "@dnd-kit/sortable": "^10.0.0",
     "@dnd-kit/utilities": "^3.2.2",
-    "@opencomputer/shared": "file:../shared",
+    "@hermes/shared": "file:../shared",
     "@icons-pack/react-simple-icons": "=13.11.1",
     "@nanostores/react": "^1.1.0",
     "@nous-research/ui": "^0.13.0",
@@ -136,17 +136,17 @@
   "build": {
     "electronVersion": "40.10.2",
     "appId": "com.nousresearch.hermes",
-    "productName": "OpenComputer",
-    "executableName": "OpenComputer",
+    "productName": "Hermes",
+    "executableName": "Hermes",
     "protocols": [
       {
-        "name": "OpenComputer Protocol",
+        "name": "Hermes Protocol",
         "schemes": [
-          "opencomputer"
+          "hermes"
         ]
       }
     ],
-    "artifactName": "OpenComputer-${version}-${os}-${arch}.${ext}",
+    "artifactName": "Hermes-${version}-${os}-${arch}.${ext}",
     "icon": "assets/icon",
     "directories": {
       "output": "release"
@@ -187,11 +187,11 @@
       "entitlements": "electron/entitlements.mac.plist",
       "entitlementsInherit": "electron/entitlements.mac.inherit.plist",
       "extendInfo": {
-        "CFBundleDisplayName": "OpenComputer",
-        "CFBundleExecutable": "OpenComputer",
-        "CFBundleName": "OpenComputer",
-        "NSAudioCaptureUsageDescription": "OpenComputer uses audio capture for voice conversations.",
-        "NSMicrophoneUsageDescription": "OpenComputer uses the microphone for voice input and voice conversations."
+        "CFBundleDisplayName": "Hermes",
+        "CFBundleExecutable": "Hermes",
+        "CFBundleName": "Hermes",
+        "NSAudioCaptureUsageDescription": "Hermes uses audio capture for voice conversations.",
+        "NSMicrophoneUsageDescription": "Hermes uses the microphone for voice input and voice conversations."
       },
       "gatekeeperAssess": false,
       "hardenedRuntime": true,
@@ -201,7 +201,7 @@
       ]
     },
     "dmg": {
-      "title": "Install OpenComputer",
+      "title": "Install Hermes",
       "backgroundColor": "#f5f5f7",
       "iconSize": 96,
       "window": {
@@ -223,7 +223,7 @@
       ]
     },
     "win": {
-      "legalTrademarks": "OpenComputer",
+      "legalTrademarks": "Hermes",
       "target": [
         "nsis",
         "msi"
@@ -233,7 +233,7 @@
     "linux": {
       "category": "Development",
       "maintainer": "Nous Research <support@nousresearch.com>",
-      "synopsis": "Native desktop shell for OpenComputer.",
+      "synopsis": "Native desktop shell for Hermes Agent.",
       "target": [
         "AppImage",
         "deb",
@@ -244,8 +244,8 @@
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "perMachine": false,
-      "shortcutName": "OpenComputer",
-      "uninstallDisplayName": "OpenComputer",
+      "shortcutName": "Hermes",
+      "uninstallDisplayName": "Hermes",
       "warningsAsErrors": false
     }
   }

@@ -773,7 +773,7 @@ def install(
                 _report_gateway_start(f"direct spawn (PID {pid})")
         else:
             print("ℹ Gateway not started and no auto-start service installed.")
-            print("  Run later with: hermes gateway start")
+            print("  Run later with: oc gateway start")
         return
 
     task_name = get_task_name()
@@ -794,7 +794,7 @@ def install(
                 if start_now:
                     print("  Approve the Windows UAC prompt; the elevated install will start the gateway afterwards.")
                 else:
-                    print("  Approve the Windows UAC prompt, then run: hermes gateway status")
+                    print("  Approve the Windows UAC prompt, then run: oc gateway status")
                 return
             print("⚠ Falling back to Startup folder because elevation was unavailable or cancelled.")
         else:
@@ -816,7 +816,7 @@ def install(
                 _report_gateway_start(f"direct spawn (PID {pid})")
         else:
             print("ℹ Gateway not started now.")
-            print("  Start manually with: hermes gateway start")
+            print("  Start manually with: oc gateway start")
         _print_next_steps()
         return
 
@@ -835,7 +835,7 @@ def install(
                 if start_now:
                     print("  Approve the Windows UAC prompt; the elevated install will start the gateway afterwards.")
                 else:
-                    print("  Approve the Windows UAC prompt, then run: hermes gateway status")
+                    print("  Approve the Windows UAC prompt, then run: oc gateway status")
                 return
             print("⚠ Falling back to Startup folder because elevation was unavailable or cancelled.")
         else:
@@ -907,7 +907,7 @@ def _print_next_steps() -> None:
     hermes_home = Path(get_hermes_home()).resolve()
     print()
     print("Next steps:")
-    print("  hermes gateway status                      # Check status")
+    print("  oc gateway status                      # Check status")
     print(f"  type {hermes_home}\\logs\\gateway.log       # View logs")
 
 
@@ -933,7 +933,7 @@ def uninstall() -> None:
             if prompt_yes_no("  Open the UAC prompt now?", False):
                 if _launch_elevated_uninstall():
                     print("✓ Launched elevated OpenComputer gateway uninstall prompt.")
-                    print("  Approve the Windows UAC prompt, then run: hermes gateway status")
+                    print("  Approve the Windows UAC prompt, then run: oc gateway status")
                     return
                 print("⚠ Elevated uninstall prompt was unavailable or cancelled.")
             else:
@@ -1172,7 +1172,7 @@ def status(deep: bool = False) -> None:
     if not task_installed and not startup_installed and not pids:
         print()
         print("To install:")
-        print("  hermes gateway install")
+        print("  oc gateway install")
 
 
 def start() -> None:
@@ -1191,14 +1191,14 @@ def start() -> None:
 
         print("✗ Gateway service is not installed")
         if not prompt_yes_no("  Install it now so the gateway starts on login?", True):
-            print("  Run: hermes gateway install")
+            print("  Run: oc gateway install")
             return
         install(force=False)
         task_installed = is_task_registered()
         startup_installed = is_startup_entry_installed()
         if not task_installed and not startup_installed:
             print("⚠ Gateway install did not complete in this process.")
-            print("  If a UAC prompt opened, approve it, then run: hermes gateway start")
+            print("  If a UAC prompt opened, approve it, then run: oc gateway start")
             return
 
     if task_installed:
@@ -1302,10 +1302,54 @@ def stop() -> None:
         print("✗ No gateway was running")
 
 
+def _wait_for_gateway_absent(timeout_s: float = 30.0, interval_s: float = 0.5) -> bool:
+    """Block until no gateway process is detectable, or the timeout elapses.
+
+    ``stop()`` can return while the previous gateway is still draining
+    in-flight agents (the drain runs up to the restart-drain timeout). Uses the
+    authoritative ``get_running_pid()`` (lock + liveness + start-time +
+    gateway-shape) plus the now-strict ``_gateway_pids()`` scan so a relaunch
+    never races a still-alive old process.
+    """
+    from gateway.status import get_running_pid
+
+    deadline = time.monotonic() + max(timeout_s, interval_s)
+    while time.monotonic() < deadline:
+        if get_running_pid() is None and not _gateway_pids():
+            return True
+        time.sleep(interval_s)
+    return get_running_pid() is None and not _gateway_pids()
+
+
 def restart() -> None:
-    """Stop the gateway then start it again."""
+    """Stop the gateway then start it again.
+
+    Waits for the old gateway to be authoritatively gone before relaunching --
+    otherwise ``start()``'s "already running" guard sees the still-draining old
+    process and no-ops, and when that process later exits nothing replaces it (a
+    silent outage). Fails loudly if the process can't be cleared or the relaunch
+    doesn't produce a running gateway.
+    """
     _assert_windows()
+    from hermes_cli.gateway import kill_gateway_processes
+
     stop()
+
+    if not _wait_for_gateway_absent(timeout_s=30.0):
+        print("⚠ Gateway still present after stop; forcing termination before restart...")
+        kill_gateway_processes(all_profiles=False, force=True)
+        if not _wait_for_gateway_absent(timeout_s=10.0):
+            raise RuntimeError(
+                "Gateway process still detected after force kill; refusing to "
+                "start a duplicate. Investigate stray PIDs before retrying."
+            )
+
     # Give Windows a moment to release the listening port.
     time.sleep(1.0)
     start()
+
+    if not _wait_for_gateway_ready(timeout_s=15.0):
+        raise RuntimeError(
+            "Gateway restart did not produce a running gateway process. "
+            "Check logs/gateway.log and run `oc gateway status`."
+        )

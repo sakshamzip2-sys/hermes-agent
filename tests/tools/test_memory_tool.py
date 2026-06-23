@@ -249,7 +249,7 @@ class TestScanMemoryContent:
         assert _scan_memory_content("You are now set up for development") is None
 
     def test_hermes_config_mod_no_false_positives(self):
-        """Merely mentioning hermes config files should not trigger; only modify intent should."""
+        """Merely mentioning oc config files should not trigger; only modify intent should."""
         assert _scan_memory_content("Check .hermes/config.yaml for settings") is None
         assert _scan_memory_content("Read .hermes/SOUL.md for agent personality") is None
         assert _scan_memory_content("The .hermes/config.yaml file contains runtime options") is None
@@ -435,12 +435,33 @@ class TestMemoryToolDispatcher:
         assert result["success"] is True
 
     def test_replace_requires_old_text(self, store):
+        # Missing old_text on a single-op replace is recoverable, not a dead-end:
+        # return the current inventory + a retry instruction so the model can
+        # reissue with old_text set. (issues #43412, #49466)
+        store.add("memory", "fact A")
+        store.add("memory", "fact B")
         result = json.loads(memory_tool(action="replace", content="new", store=store))
         assert result["success"] is False
+        assert "old_text" in result["error"]
+        assert result["current_entries"] == ["fact A", "fact B"]
+        assert "usage" in result
 
     def test_remove_requires_old_text(self, store):
+        store.add("memory", "fact A")
         result = json.loads(memory_tool(action="remove", store=store))
         assert result["success"] is False
+        assert "old_text" in result["error"]
+        assert result["current_entries"] == ["fact A"]
+        assert "usage" in result
+
+    def test_replace_missing_content_still_distinct_error(self, store):
+        # When old_text IS present but content is missing, keep the original
+        # content-specific error (don't route through the old_text recovery path).
+        store.add("memory", "fact A")
+        result = json.loads(memory_tool(action="replace", old_text="fact A", store=store))
+        assert result["success"] is False
+        assert "content is required" in result["error"]
+        assert "current_entries" not in result
 
 
 class TestMemoryBatch:
