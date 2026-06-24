@@ -165,6 +165,54 @@ def test_skill_encodes_plan_execute_verify_protocol():
     assert "plan before execute" in low or "plan before" in low, (
         "protocol must establish plan-before-execute ordering"
     )
+    # The numbered steps must actually appear in PLAN -> EXECUTE -> REVIEW -> VERIFY
+    # order, not merely all be present somewhere (a shuffled loop would mis-route).
+    i_plan = low.find("delegate planning")
+    i_exec = low.find("delegate execution")
+    i_review = low.find("delegate review")
+    i_verify = low.find("verify (you")
+    assert -1 < i_plan < i_exec < i_review < i_verify, (
+        f"steps out of order: plan={i_plan} exec={i_exec} review={i_review} verify={i_verify}"
+    )
+
+
+def test_skill_uses_current_codex_flags_not_deprecated():
+    """Lock in the codex-CLI flag fix (codex >= 0.141): the executor command uses the
+    current --sandbox flags, the deprecated --full-auto / hidden --yolo never appear as
+    the canonical `codex exec` command form, and any mention of them is documented as a
+    deprecated/legacy alias. A regression back to the old flags fails red."""
+    swe = SKILL.read_text(encoding="utf-8")
+    codex_skill = (TEMPLATE / "skills" / "codex" / "SKILL.md").read_text(encoding="utf-8")
+    # The live executor command uses the current sandbox flag.
+    assert "codex exec --sandbox workspace-write" in swe, (
+        "executor command must use --sandbox workspace-write, not the deprecated --full-auto"
+    )
+    for doc in (swe, codex_skill):
+        # The deprecated/hidden flags must never be the actual command form.
+        assert "codex exec --full-auto" not in doc, "deprecated --full-auto used as a command"
+        assert "--yolo exec" not in doc and "codex --yolo" not in doc, (
+            "hidden --yolo alias used as a command"
+        )
+        low = doc.lower()
+        # Where mentioned at all, they are explained as deprecated / legacy aliases.
+        if "--full-auto" in low:
+            assert "deprecat" in low, "--full-auto must be documented as deprecated"
+        if "--yolo" in low:
+            assert any(w in low for w in ("legacy", "hidden", "alias", "deprecat")), (
+                "--yolo must be documented as a legacy/hidden alias"
+            )
+
+
+def test_skill_planner_and_reviewer_captures_are_hardened_read_only():
+    """Claim: the planner (Step 2) and reviewer (Step 4) print-mode captures enforce
+    read-only with BOTH an allow-list and an explicit deny-list, so they stay read-only
+    even under an accept-edits / bypass ambient permission mode. Dropping the deny-list
+    fails this test."""
+    text = SKILL.read_text(encoding="utf-8")
+    assert "--allowedTools 'Read Glob Grep'" in text, "read-only legs must whitelist read tools"
+    assert text.count("--disallowedTools 'Write Edit Bash'") >= 2, (
+        "both the planner and reviewer capture commands must deny Write/Edit/Bash"
+    )
 
 
 def test_skill_routes_claude_code_review_back_to_codex():
@@ -195,16 +243,31 @@ def test_skill_routes_claude_code_review_back_to_codex():
 def test_verify_loop_script_is_executable_and_well_formed():
     """verify-delegation-loop.sh is the only artifact that exercises the loop against
     the real CLIs (gated on live auth, so not invoked here). Guard its shape so a
-    regression that drops a phase or lets the planner write files is caught in CI
-    without a live LLM call."""
+    regression that drops a phase, skips the REVIEW stage, lets a read-only leg write
+    files, or reintroduces a deprecated flag is caught in CI without a live LLM call."""
     script = REPO / "verify-delegation-loop.sh"
     assert script.is_file(), "missing verify-delegation-loop.sh"
     assert os.access(script, os.X_OK), "verify-delegation-loop.sh must be executable"
     text = script.read_text(encoding="utf-8")
-    for marker in ("STEP 1: PLAN", "STEP 2: EXECUTE", "STEP 3: VERIFY"):
+    # The script must exercise the full loop the profile delivers, INCLUDING review.
+    for marker in ("STEP 1: PLAN", "STEP 2: EXECUTE", "STEP 3: REVIEW", "STEP 4: VERIFY"):
         assert marker in text, f"verify script missing phase: {marker}"
-    # Planner leg must be read-only (must NOT write files during planning).
-    assert "--allowedTools 'Read Glob Grep'" in text, "planner leg must be read-only"
+    # Both the planner and the reviewer legs must be hardened read-only.
+    assert text.count("--allowedTools 'Read Glob Grep'") >= 2, (
+        "both the planner and the reviewer legs must whitelist only read tools"
+    )
+    assert "--disallowedTools 'Write Edit Bash'" in text, (
+        "read-only legs must also deny Write/Edit/Bash"
+    )
+    # The review phase routes the executor's diff to Claude Code.
+    assert "diff --cached | claude -p" in text or "diff | claude -p" in text, (
+        "review phase must route the executor's diff to Claude Code"
+    )
+    # No deprecated codex flag in any ACTIVE command (claim 4). The flag name may still
+    # appear in an explanatory comment, so forbid the command form, not the bare token.
+    assert "exec --full-auto" not in text, (
+        "verify script must not invoke the deprecated `codex exec --full-auto`"
+    )
     # Executor fallback keeps the loop alive when Codex is unavailable.
     assert "fallback" in text.lower() or "fall back" in text.lower(), (
         "script must exercise/document the executor fallback so the loop never stalls"
