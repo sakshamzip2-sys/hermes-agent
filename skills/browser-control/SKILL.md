@@ -1,6 +1,6 @@
 ---
 name: browser-control
-description: Use when the user wants to drive a web browser: 'open this URL', 'go to that website', 'click the button', 'fill the form', 'take a screenshot of the page', 'scroll down', or 'read what's on the page'. Navigation and reading run autonomously; submitting forms that send data should be confirmed.
+description: "Use when the user wants to drive a web browser: 'open this URL', 'go to that website', 'click the button', 'fill the form', 'take a screenshot of the page', 'scroll down', or 'read what's on the page'. Navigation and reading run autonomously; submitting forms that send data should be confirmed."
 ---
 
 # Browser control

@@ -1,7 +1,7 @@
 ---
 name: cron-scheduling
 destructive: true
-description: Use when the user wants to schedule, automate, or manage recurring or timed tasks: 'run this every morning', 'schedule a daily report', 'every Monday at 9', 'set a reminder to', 'list my scheduled jobs / crons / automations', 'pause that job', 'resume the schedule', 'stop running X daily', or 'delete/remove that cron'. Covers the full cron set. Deleting a job is destructive and is confirmed before it runs.
+description: "Use when the user wants to schedule, automate, or manage recurring or timed tasks: 'run this every morning', 'schedule a daily report', 'every Monday at 9', 'set a reminder to', 'list my scheduled jobs / crons / automations', 'pause that job', 'resume the schedule', 'stop running X daily', or 'delete/remove that cron'. Covers the full cron set. Deleting a job is destructive and is confirmed before it runs."
 ---
 
 # Cron scheduling

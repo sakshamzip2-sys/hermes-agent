@@ -1,7 +1,7 @@
 ---
 name: skills-manage
 destructive: true
-description: Use when the user wants to inspect or manage an INDIVIDUAL skill (not run it, and not bundles): 'what skills do I have', 'list my skills', 'show me the xlsx skill', 'open the X skill', 'view a skill', 'create a new skill', 'edit this skill', or 'delete a skill'. Deleting a skill or its files is destructive and is confirmed first.
+description: "Use when the user wants to inspect or manage an INDIVIDUAL skill (not run it, and not bundles): 'what skills do I have', 'list my skills', 'show me the xlsx skill', 'open the X skill', 'view a skill', 'create a new skill', 'edit this skill', or 'delete a skill'. Deleting a skill or its files is destructive and is confirmed first."
 ---
 
 # Skills management

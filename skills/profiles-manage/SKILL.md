@@ -1,7 +1,7 @@
 ---
 name: profiles-manage
 destructive: true
-description: Use when the user wants to work with agent profiles/personas: 'list my profiles', 'what profiles do I have', 'switch to the finance profile', 'create a new profile', or 'delete that profile'. Deleting a profile wipes its home directory and is destructive, so it is confirmed first.
+description: "Use when the user wants to work with agent profiles/personas: 'list my profiles', 'what profiles do I have', 'switch to the finance profile', 'create a new profile', or 'delete that profile'. Deleting a profile wipes its home directory and is destructive, so it is confirmed first."
 ---
 
 # Profiles

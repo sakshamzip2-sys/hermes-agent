@@ -1,7 +1,7 @@
 ---
 name: gateway-control
 destructive: true
-description: Use when the user wants to check or control the running agent gateway/service: 'is the gateway up', 'gateway status', 'restart the gateway', or 'reload MCP servers'. Restart and reload interrupt the running service and are confirmed first.
+description: "Use when the user wants to check or control the running agent gateway/service: 'is the gateway up', 'gateway status', 'restart the gateway', or 'reload MCP servers'. Restart and reload interrupt the running service and are confirmed first."
 ---
 
 # Gateway control
