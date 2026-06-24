@@ -204,15 +204,23 @@ def test_skill_uses_current_codex_flags_not_deprecated():
 
 
 def test_skill_planner_and_reviewer_captures_are_hardened_read_only():
-    """Claim: the planner (Step 2) and reviewer (Step 4) print-mode captures enforce
-    read-only with BOTH an allow-list and an explicit deny-list, so they stay read-only
-    even under an accept-edits / bypass ambient permission mode. Dropping the deny-list
-    fails this test."""
+    """Claim: the planner (Step 2) and reviewer (Step 4) print-mode captures EACH enforce
+    read-only with both an allow-list and an explicit deny-list, so they stay read-only
+    even under an accept-edits / bypass ambient permission mode.
+
+    Asserted PER COMMAND SECTION, not as a global count: a global
+    count('--disallowedTools ...') >= 2 is satisfiable by one command plus a prose
+    mention, so it would NOT catch un-hardening the security-critical reviewer leg
+    alone. Splitting by step isolates each command so dropping the deny-list from
+    EITHER fails red."""
     text = SKILL.read_text(encoding="utf-8")
-    assert "--allowedTools 'Read Glob Grep'" in text, "read-only legs must whitelist read tools"
-    assert text.count("--disallowedTools 'Write Edit Bash'") >= 2, (
-        "both the planner and reviewer capture commands must deny Write/Edit/Bash"
-    )
+    plan_sec = text.split("Delegate PLANNING to Claude Code", 1)[1].split("### Step 3", 1)[0]
+    review_sec = text.split("Delegate REVIEW to Claude Code", 1)[1].split("### Step 5", 1)[0]
+    for name, sec in (("planner", plan_sec), ("reviewer", review_sec)):
+        assert "--allowedTools 'Read Glob Grep'" in sec, f"{name} capture must whitelist read tools"
+        assert "--disallowedTools 'Write Edit Bash'" in sec, (
+            f"{name} capture must also deny Write/Edit/Bash (belt-and-braces read-only)"
+        )
 
 
 def test_skill_routes_claude_code_review_back_to_codex():
