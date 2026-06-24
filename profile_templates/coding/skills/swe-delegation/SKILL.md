@@ -120,8 +120,9 @@ terminal(command="git -C <repo> diff | claude -p 'Review this diff against the p
 ```
 
 This is Claude Code's reviewer hat — the same agent that planned now audits what Codex
-built. For a deeper interactive pass, use the `claude-code` skill's `/review` and
-`/security-review` slash commands in a tmux session. The review default is REVISE over
+built. For a deeper pass, use the `claude-code` skill's `/review` and `/security-review`
+slash commands in a tmux session, or `claude ultrareview` for a cloud-hosted multi-agent
+review of the current branch or a PR. The review default is REVISE over
 PASS when unsure; treat tests as immutable (a reviewer never tells the executor to
 weaken a test to pass).
 

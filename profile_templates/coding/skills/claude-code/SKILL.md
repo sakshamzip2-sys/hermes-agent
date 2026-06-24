@@ -139,6 +139,8 @@ terminal(command="sleep 15 && tmux capture-pane -t claude-work -p -S -60")
 | `claude setup-token` | Set up long-lived auth token (requires subscription) |
 | `claude plugin` / `claude plugins` | Manage Claude Code plugins |
 | `claude auto-mode` | Inspect auto mode classifier configuration |
+| `claude ultrareview [target]` | Cloud-hosted multi-agent code review of the current branch (or a PR) |
+| `claude --bg` / `claude agents` | Start the session as a background agent / manage background agents |
 
 ## Print Mode Deep Dive
 

@@ -203,6 +203,31 @@ def test_skill_uses_current_codex_flags_not_deprecated():
             )
 
 
+def test_no_functional_skill_uses_deprecated_cli_flags_repo_wide():
+    """Repo-wide guard so the codex/claude flag drift can never recur in ANY skill, not
+    just the coding profile (the same drift was found AND fixed in the global
+    skills/autonomous-ai-agents/* copies). No functional SKILL.md may use the deprecated
+    `codex exec --full-auto` / hidden `--yolo` command form, or list `auto` as a valid
+    claude `--effort` value. Generated website docs are excluded — they regenerate from
+    these sources."""
+    roots = [REPO / "skills", REPO / "optional-skills", REPO / "profile_templates"]
+    offenders = []
+    for root in roots:
+        if not root.is_dir():
+            continue
+        for md in root.rglob("SKILL.md"):
+            text = md.read_text(encoding="utf-8", errors="replace")
+            rel = md.relative_to(REPO)
+            if "exec --full-auto" in text or "--yolo exec" in text or "codex --yolo" in text:
+                offenders.append(f"{rel}: deprecated codex flag command form")
+            for line in text.splitlines():
+                low = line.lower()
+                names_effort = ("--effort" in low) or ("/effort" in low) or ("effort_level" in low)
+                if names_effort and "`auto`" in line and "reject" not in low and "deprecat" not in low:
+                    offenders.append(f"{rel}: lists --effort `auto` as valid -> {line.strip()[:70]}")
+    assert not offenders, "deprecated CLI flags in functional skills:\n" + "\n".join(offenders)
+
+
 def test_skill_planner_and_reviewer_captures_are_hardened_read_only():
     """Claim: the planner (Step 2) and reviewer (Step 4) print-mode captures EACH enforce
     read-only with both an allow-list and an explicit deny-list, so they stay read-only
