@@ -162,7 +162,7 @@ class TestFindStaleDashboardPids:
             mock_run.return_value = MagicMock(
                 returncode=0,
                 stdout="\n".join([
-                    _ps_line(99999, "grep hermes dashboard"),
+                    _ps_line(99999, "grep oc dashboard"),
                     _ps_line(12345, "oc dashboard --port 9119"),
                 ]) + "\n",
                 stderr="",
@@ -176,7 +176,7 @@ class TestFindStaleDashboardPids:
             mock_run.return_value = MagicMock(
                 returncode=0,
                 stdout="\n".join([
-                    "notapid hermes dashboard --bad",
+                    "notapid oc dashboard --bad",
                     _ps_line(12345, "oc dashboard --port 9119"),
                     "   ",
                 ]) + "\n",
@@ -301,7 +301,7 @@ class TestKillStaleDashboardPosix:
 
     def test_permission_error_is_reported_not_raised(self, capsys):
         """os.kill raising PermissionError (e.g. another user's process)
-        must not abort hermes update — it's reported as a failure and we
+        must not abort oc update — it's reported as a failure and we
         move on."""
         def fake_kill(pid, sig):
             raise PermissionError("Operation not permitted")

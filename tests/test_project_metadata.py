@@ -128,7 +128,7 @@ def test_pyproject_aiohttp_pins_match_lazy_slack_pin():
     }
     assert not mismatches, (
         "pyproject.toml aiohttp pins must match "
-        "LAZY_DEPS['platform.slack'] to avoid hermes update downgrading "
+        "LAZY_DEPS['platform.slack'] to avoid oc update downgrading "
         "aiohttp before Slack's lazy refresh upgrades it again. "
         f"lazy aiohttp=={lazy_aiohttp}; mismatched extras: {mismatches}"
     )

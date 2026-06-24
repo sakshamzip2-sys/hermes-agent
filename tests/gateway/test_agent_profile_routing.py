@@ -196,6 +196,55 @@ async def test_messages_routed_to_profile_db(adapter, hermes_home):
         assert r2.status == 404
 
 
+@pytest.mark.asyncio
+async def test_get_session_routed_to_profile_db(adapter, hermes_home):
+    """GET a single session with the agent header reads the agent's profile db.
+
+    Regression: a gateway-streamed agent chat lives only in the agent's profile
+    db. Without honoring the header, _handle_get_session read the shared db and
+    404'd on open even though the chat was listed in the agent's sidebar
+    dropdown ("Chat not found").
+    """
+    atlas = adapter._get_agent_profile_db("atlas")
+    sid = "api_test_get_session"
+    atlas.create_session(sid, "api_server")
+    assert adapter._session_db.get_session(sid) is None  # not in the shared db
+
+    app = _create_session_app(adapter)
+    async with TestClient(TestServer(app)) as cli:
+        # WITH header → reads the atlas profile db → found.
+        r1 = await cli.get(
+            f"/api/sessions/{sid}",
+            headers={"X-OpenComputer-Agent-Id": "atlas"},
+        )
+        assert r1.status == 200
+        assert (await r1.json())["session"]["id"] == sid
+
+        # WITHOUT header → shared db → not there → 404 (isolation preserved).
+        r2 = await cli.get(f"/api/sessions/{sid}")
+        assert r2.status == 404
+
+
+@pytest.mark.asyncio
+async def test_get_session_falls_back_to_shared_db(adapter, hermes_home):
+    """A normal chat in the shared db is still readable even if an (irrelevant)
+    agent header is present and that profile db lacks the session."""
+    shared = adapter._session_db
+    sid = "api_test_shared_session"
+    shared.create_session(sid, "api_server")
+
+    app = _create_session_app(adapter)
+    async with TestClient(TestServer(app)) as cli:
+        # Header points at a profile db that does NOT have this session → the
+        # handler falls back to the shared db and still finds it.
+        r = await cli.get(
+            f"/api/sessions/{sid}",
+            headers={"X-OpenComputer-Agent-Id": "atlas"},
+        )
+        assert r.status == 200
+        assert (await r.json())["session"]["id"] == sid
+
+
 # ---------------------------------------------------------------------------
 # Delete purges BOTH dbs (the split-brain cleanup fix)
 # ---------------------------------------------------------------------------

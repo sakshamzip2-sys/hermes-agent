@@ -1,4 +1,4 @@
-"""Tests for the Command Installation check in hermes doctor."""
+"""Tests for the Command Installation check in oc doctor."""
 
 import sys
 import types

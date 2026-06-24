@@ -27,6 +27,7 @@ const sidebars: SidebarsConfig = {
         'user-guide/windows-native',
         'user-guide/windows-wsl-quickstart',
         'user-guide/configuration',
+        'user-guide/managed-scope',
         'user-guide/configuring-models',
         {
           type: 'category',
@@ -59,6 +60,7 @@ const sidebars: SidebarsConfig = {
           label: 'Core',
           items: [
             'user-guide/features/tools',
+            'user-guide/features/tool-search',
             'user-guide/features/skills',
             'user-guide/features/lsp',
             'user-guide/features/curator',
@@ -147,7 +149,6 @@ const sidebars: SidebarsConfig = {
                     'user-guide/skills/bundled/apple/apple-apple-reminders',
                     'user-guide/skills/bundled/apple/apple-findmy',
                     'user-guide/skills/bundled/apple/apple-imessage',
-                    'user-guide/skills/bundled/apple/apple-macos-computer-use',
                   ],
                 },
                 {
@@ -178,6 +179,15 @@ const sidebars: SidebarsConfig = {
                   collapsed: true,
                   items: [
                     'user-guide/skills/bundled/bundles-manage/bundles-manage-bundles-manage',
+                  ],
+                },
+                {
+                  type: 'category',
+                  label: 'computer-use',
+                  key: 'skills-bundled-computer-use',
+                  collapsed: true,
+                  items: [
+                    'user-guide/skills/bundled/computer-use/computer-use-computer-use',
                   ],
                 },
                 {
@@ -1243,6 +1253,7 @@ const sidebars: SidebarsConfig = {
                   key: 'skills-optional-web-development',
                   collapsed: true,
                   items: [
+                    'user-guide/skills/optional/web-development/web-development-cloudflare-temporary-deploy',
                     'user-guide/skills/optional/web-development/web-development-page-agent',
                   ],
                 },

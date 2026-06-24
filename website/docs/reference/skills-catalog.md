@@ -26,7 +26,6 @@ If a skill is missing from this list but present in the repo, the catalog is reg
 | [`apple-reminders`](/docs/user-guide/skills/bundled/apple/apple-apple-reminders) | Apple Reminders via remindctl: add, list, complete. | `apple/apple-reminders` |
 | [`findmy`](/docs/user-guide/skills/bundled/apple/apple-findmy) | Track Apple devices/AirTags via FindMy.app on macOS. | `apple/findmy` |
 | [`imessage`](/docs/user-guide/skills/bundled/apple/apple-imessage) | Send and receive iMessages/SMS via the imsg CLI on macOS. | `apple/imessage` |
-| [`macos-computer-use`](/docs/user-guide/skills/bundled/apple/apple-macos-computer-use) | Drive the macOS desktop in the background — screenshots, mouse, keyboard, scroll, drag — without stealing the user's cursor, keyboard focus, or Space. Works with any tool-capable model. Load this skill whenever the `computer_use` tool is... | `apple/macos-computer-use` |
 
 ## autonomous-ai-agents
 
@@ -48,6 +47,12 @@ If a skill is missing from this list but present in the repo, the catalog is reg
 | Skill | Description | Path |
 |-------|-------------|------|
 | [`bundles-manage`](/docs/user-guide/skills/bundled/bundles-manage/bundles-manage-bundles-manage) | Use when the user asks specifically about BUNDLES (a saved group of capabilities under one slash command): 'what bundles do I have', 'list my bundles', 'show the research bundle', or 'run a bundle'. Only for bundles; to view or manage an... | `bundles-manage` |
+
+## computer-use
+
+| Skill | Description | Path |
+|-------|-------------|------|
+| [`computer-use`](/docs/user-guide/skills/bundled/computer-use/computer-use-computer-use) | Drive the user's desktop in the background — clicking, typing, scrolling, dragging — without stealing the cursor, keyboard focus, or switching virtual desktops / Spaces. Cross-platform: macOS, Windows, Linux. Works with any tool-capable... | `computer-use` |
 
 ## creative
 
