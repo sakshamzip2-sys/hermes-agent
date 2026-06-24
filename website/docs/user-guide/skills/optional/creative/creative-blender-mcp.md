@@ -14,7 +14,7 @@ Control Blender directly from OpenComputer via socket connection to the blender-
 
 | | |
 |---|---|
-| Source | Optional — install with `opencomputer skills install official/creative/blender-mcp` |
+| Source | Optional — install with `oc skills install official/creative/blender-mcp` |
 | Path | `optional-skills/creative/blender-mcp` |
 | Version | `1.0.0` |
 | Author | alireza78a |

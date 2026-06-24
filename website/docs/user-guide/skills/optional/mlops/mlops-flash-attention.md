@@ -14,14 +14,13 @@ Optimizes transformer attention with Flash Attention for 2-4x speedup and 10-20x
 
 | | |
 |---|---|
-| Source | Optional — install with `opencomputer skills install official/mlops/flash-attention` |
+| Source | Optional — install with `oc skills install official/mlops/flash-attention` |
 | Path | `optional-skills/mlops/flash-attention` |
 | Version | `1.0.0` |
 | Author | Orchestra Research |
 | License | MIT |
 | Dependencies | `flash-attn`, `torch`, `transformers` |
 | Platforms | linux, macos |
-| Tags | `Optimization`, `Flash Attention`, `Attention Optimization`, `Memory Efficiency`, `Speed Optimization`, `Long Context`, `PyTorch`, `SDPA`, `H100`, `FP8`, `Transformers` |
 
 ## Reference: full SKILL.md
 

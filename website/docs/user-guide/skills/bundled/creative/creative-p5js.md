@@ -8,7 +8,7 @@ description: "p5"
 
 # P5Js
 
-p5.js sketches: gen art, shaders, interactive, 3D.
+p5.js coding toolkit: shaders (GLSL), WEBGL/3D, interactive sketches, and the p5.js API itself. For generative/algorithmic art (flow fields, particle systems, seeded randomness), prefer the algorithmic-art skill.
 
 ## Skill metadata
 
@@ -18,8 +18,6 @@ p5.js sketches: gen art, shaders, interactive, 3D.
 | Path | `skills/creative/p5js` |
 | Version | `1.0.0` |
 | Platforms | linux, macos, windows |
-| Tags | `creative-coding`, `generative-art`, `p5js`, `canvas`, `interactive`, `visualization`, `webgl`, `shaders`, `animation` |
-| Related skills | [`ascii-video`](/docs/user-guide/skills/bundled/creative/creative-ascii-video), [`manim-video`](/docs/user-guide/skills/bundled/creative/creative-manim-video), [`excalidraw`](/docs/user-guide/skills/bundled/creative/creative-excalidraw) |
 
 ## Reference: full SKILL.md
 

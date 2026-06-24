@@ -21,7 +21,6 @@ AudioCraft: MusicGen text-to-music, AudioGen text-to-sound.
 | License | MIT |
 | Dependencies | `audiocraft`, `torch>=2.0.0`, `transformers>=4.30.0` |
 | Platforms | linux, macos |
-| Tags | `Multimodal`, `Audio Generation`, `Text-to-Music`, `Text-to-Audio`, `MusicGen` |
 
 ## Reference: full SKILL.md
 

@@ -14,14 +14,13 @@ Managed vector database for production AI applications. Fully managed, auto-scal
 
 | | |
 |---|---|
-| Source | Optional — install with `opencomputer skills install official/mlops/pinecone` |
+| Source | Optional — install with `oc skills install official/mlops/pinecone` |
 | Path | `optional-skills/mlops/pinecone` |
 | Version | `1.0.0` |
 | Author | Orchestra Research |
 | License | MIT |
 | Dependencies | `pinecone-client` |
 | Platforms | linux, macos, windows |
-| Tags | `RAG`, `Pinecone`, `Vector Database`, `Managed Service`, `Serverless`, `Hybrid Search`, `Production`, `Auto-Scaling`, `Low Latency`, `Recommendations` |
 
 ## Reference: full SKILL.md
 

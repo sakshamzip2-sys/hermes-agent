@@ -14,13 +14,12 @@ Embed alibaba/page-agent into your own web application — a pure-JavaScript in-
 
 | | |
 |---|---|
-| Source | Optional — install with `opencomputer skills install official/web-development/page-agent` |
+| Source | Optional — install with `oc skills install official/web-development/page-agent` |
 | Path | `optional-skills/web-development/page-agent` |
 | Version | `1.0.0` |
 | Author | OpenComputer |
 | License | MIT |
 | Platforms | linux, macos, windows |
-| Tags | `web`, `javascript`, `agent`, `browser`, `gui`, `alibaba`, `embed`, `copilot`, `saas` |
 
 ## Reference: full SKILL.md
 

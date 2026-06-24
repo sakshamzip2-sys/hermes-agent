@@ -14,14 +14,12 @@ Index a codebase with GitNexus and serve an interactive knowledge graph via web 
 
 | | |
 |---|---|
-| Source | Optional — install with `opencomputer skills install official/research/gitnexus-explorer` |
+| Source | Optional — install with `oc skills install official/research/gitnexus-explorer` |
 | Path | `optional-skills/research/gitnexus-explorer` |
 | Version | `1.0.0` |
 | Author | OpenComputer + Teknium |
 | License | MIT |
 | Platforms | linux, macos, windows |
-| Tags | `gitnexus`, `code-intelligence`, `knowledge-graph`, `visualization` |
-| Related skills | [`native-mcp`](/docs/user-guide/skills/bundled/mcp/mcp-native-mcp), [`codebase-inspection`](/docs/user-guide/skills/bundled/github/github-codebase-inspection) |
 
 ## Reference: full SKILL.md
 

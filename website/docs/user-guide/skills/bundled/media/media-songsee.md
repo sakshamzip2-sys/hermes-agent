@@ -20,7 +20,6 @@ Audio spectrograms/features (mel, chroma, MFCC) via CLI.
 | Author | community |
 | License | MIT |
 | Platforms | linux, macos, windows |
-| Tags | `Audio`, `Visualization`, `Spectrogram`, `Music`, `Analysis` |
 
 ## Reference: full SKILL.md
 

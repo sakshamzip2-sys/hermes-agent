@@ -14,14 +14,13 @@ Fast tokenizers optimized for research and production. Rust-based implementation
 
 | | |
 |---|---|
-| Source | Optional — install with `opencomputer skills install official/mlops/huggingface-tokenizers` |
+| Source | Optional — install with `oc skills install official/mlops/huggingface-tokenizers` |
 | Path | `optional-skills/mlops/huggingface-tokenizers` |
 | Version | `1.0.0` |
 | Author | Orchestra Research |
 | License | MIT |
 | Dependencies | `tokenizers`, `transformers`, `datasets` |
 | Platforms | linux, macos, windows |
-| Tags | `Tokenization`, `HuggingFace`, `BPE`, `WordPiece`, `Unigram`, `Fast Tokenization`, `Rust`, `Custom Tokenizer`, `Alignment Tracking`, `Production` |
 
 ## Reference: full SKILL.md
 

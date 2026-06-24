@@ -14,14 +14,12 @@ Generate flat, minimal light/dark-aware SVG diagrams as standalone HTML files, u
 
 | | |
 |---|---|
-| Source | Optional — install with `opencomputer skills install official/creative/concept-diagrams` |
+| Source | Optional — install with `oc skills install official/creative/concept-diagrams` |
 | Path | `optional-skills/creative/concept-diagrams` |
 | Version | `0.1.0` |
 | Author | v1k22 (original PR), ported into hermes-agent |
 | License | MIT |
 | Platforms | linux, macos, windows |
-| Tags | `diagrams`, `svg`, `visualization`, `education`, `physics`, `chemistry`, `engineering` |
-| Related skills | [`architecture-diagram`](/docs/user-guide/skills/bundled/creative/creative-architecture-diagram), [`excalidraw`](/docs/user-guide/skills/bundled/creative/creative-excalidraw), `generative-widgets` |
 
 ## Reference: full SKILL.md
 

@@ -1,7 +1,7 @@
 ---
 title: "Honcho"
 sidebar_label: "Honcho"
-description: "Configure and use Honcho memory with OpenComputer -- cross-session user modeling, multi-profile peer isolation, observation config, dialectic reasoning, session su..."
+description: "Configure and use Honcho memory with OpenComputer -- cross-session user modeling, multi-profile peer isolation, observation config, dialectic reasoning, sess..."
 ---
 
 {/* This page is auto-generated from the skill's SKILL.md by website/scripts/generate-skill-docs.py. Edit the source SKILL.md, not this page. */}
@@ -14,14 +14,12 @@ Configure and use Honcho memory with OpenComputer -- cross-session user modeling
 
 | | |
 |---|---|
-| Source | Optional — install with `opencomputer skills install official/autonomous-ai-agents/honcho` |
+| Source | Optional — install with `oc skills install official/autonomous-ai-agents/honcho` |
 | Path | `optional-skills/autonomous-ai-agents/honcho` |
 | Version | `2.0.0` |
 | Author | OpenComputer |
 | License | MIT |
 | Platforms | linux, macos, windows |
-| Tags | `Honcho`, `Memory`, `Profiles`, `Observation`, `Dialectic`, `User-Modeling`, `Session-Summary` |
-| Related skills | [`hermes-agent`](/docs/user-guide/skills/bundled/autonomous-ai-agents/autonomous-ai-agents-hermes-agent) |
 
 ## Reference: full SKILL.md
 
@@ -47,14 +45,14 @@ Honcho provides AI-native cross-session user modeling. It learns who the user is
 ### Cloud (app.honcho.dev)
 
 ```bash
-opencomputer honcho setup
+opencomputer memory setup honcho
 # select "cloud", paste API key from https://app.honcho.dev
 ```
 
 ### Self-hosted
 
 ```bash
-opencomputer honcho setup
+opencomputer memory setup honcho
 # select "local", enter base URL (e.g. http://localhost:8000)
 ```
 

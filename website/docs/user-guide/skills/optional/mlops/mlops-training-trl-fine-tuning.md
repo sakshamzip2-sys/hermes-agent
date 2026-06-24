@@ -14,14 +14,13 @@ TRL: SFT, DPO, PPO, GRPO, reward modeling for LLM RLHF.
 
 | | |
 |---|---|
-| Source | Optional — install with `opencomputer skills install official/mlops/trl-fine-tuning` |
+| Source | Optional — install with `oc skills install official/mlops/trl-fine-tuning` |
 | Path | `optional-skills/mlops/training/trl-fine-tuning` |
 | Version | `1.0.0` |
 | Author | Orchestra Research |
 | License | MIT |
 | Dependencies | `trl`, `transformers`, `datasets`, `peft`, `accelerate`, `torch` |
 | Platforms | linux, macos, windows |
-| Tags | `Post-Training`, `TRL`, `Reinforcement Learning`, `Fine-Tuning`, `SFT`, `DPO`, `PPO`, `GRPO`, `RLHF`, `Preference Alignment`, `HuggingFace` |
 
 ## Reference: full SKILL.md
 

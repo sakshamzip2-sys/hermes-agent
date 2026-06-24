@@ -294,7 +294,16 @@ def derive_skill_meta(skill_path: Path, source_dir: Path, source_kind: str) -> d
     elif len(parts) == 3:
         category, sub, slug = parts
     else:
-        raise ValueError(f"Unexpected skill layout: {skill_path}")
+        # Deeply nested packs (e.g. knowledge-work/<area>/skills/<skill>/) carry a
+        # literal "skills" container segment and may nest several areas deep. Flatten
+        # them into the same category/sub/slug shape: top dir is the category, the leaf
+        # dir is the slug, and the middle becomes the sub (dropping any literal "skills"
+        # container segment, which is structure, not taxonomy). This keeps page_id
+        # (category-sub-slug) unique without changing the doc layout contract.
+        category = parts[0]
+        slug = parts[-1]
+        middle = [p for p in parts[1:-1] if p != "skills"]
+        sub = "-".join(middle) if middle else None
     return {
         "source_kind": source_kind,  # bundled | optional
         "category": category,

@@ -20,8 +20,6 @@ Generate images, video, and audio with ComfyUI — install, launch, manage nodes
 | Author | ['kshitijk4poor', 'alt-glitch', 'purzbeats'] |
 | License | MIT |
 | Platforms | macos, linux, windows |
-| Tags | `comfyui`, `image-generation`, `stable-diffusion`, `flux`, `sd3`, `wan-video`, `hunyuan-video`, `creative`, `generative-ai`, `video-generation` |
-| Related skills | [`stable-diffusion-image-generation`](/docs/user-guide/skills/optional/mlops/mlops-stable-diffusion), `image_gen` |
 
 ## Reference: full SKILL.md
 

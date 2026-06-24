@@ -14,14 +14,13 @@ Serverless GPU cloud platform for running ML workloads. Use when you need on-dem
 
 | | |
 |---|---|
-| Source | Optional — install with `opencomputer skills install official/mlops/modal` |
+| Source | Optional — install with `oc skills install official/mlops/modal` |
 | Path | `optional-skills/mlops/modal` |
 | Version | `1.0.0` |
 | Author | Orchestra Research |
 | License | MIT |
 | Dependencies | `modal>=0.64.0` |
 | Platforms | linux, macos, windows |
-| Tags | `Infrastructure`, `Serverless`, `GPU`, `Cloud`, `Deployment`, `Modal` |
 
 ## Reference: full SKILL.md
 

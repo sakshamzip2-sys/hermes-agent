@@ -17,7 +17,7 @@ Inspired by RAPTOR's 1800+ line OSS Forensics system.
 
 | | |
 |---|---|
-| Source | Optional — install with `opencomputer skills install official/security/oss-forensics` |
+| Source | Optional — install with `oc skills install official/security/oss-forensics` |
 | Path | `optional-skills/security/oss-forensics` |
 | Platforms | linux, macos, windows |
 

@@ -14,14 +14,13 @@ Open-source embedding database for AI applications. Store embeddings and metadat
 
 | | |
 |---|---|
-| Source | Optional — install with `opencomputer skills install official/mlops/chroma` |
+| Source | Optional — install with `oc skills install official/mlops/chroma` |
 | Path | `optional-skills/mlops/chroma` |
 | Version | `1.0.0` |
 | Author | Orchestra Research |
 | License | MIT |
 | Dependencies | `chromadb`, `sentence-transformers` |
 | Platforms | linux, macos, windows |
-| Tags | `RAG`, `Chroma`, `Vector Database`, `Embeddings`, `Semantic Search`, `Open Source`, `Self-Hosted`, `Document Retrieval`, `Metadata Filtering` |
 
 ## Reference: full SKILL.md
 

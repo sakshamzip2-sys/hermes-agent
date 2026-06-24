@@ -14,14 +14,13 @@ Simple Preference Optimization for LLM alignment. Reference-free alternative to 
 
 | | |
 |---|---|
-| Source | Optional — install with `opencomputer skills install official/mlops/simpo` |
+| Source | Optional — install with `oc skills install official/mlops/simpo` |
 | Path | `optional-skills/mlops/simpo` |
 | Version | `1.0.0` |
 | Author | Orchestra Research |
 | License | MIT |
 | Dependencies | `torch`, `transformers`, `datasets`, `trl`, `accelerate` |
 | Platforms | linux, macos, windows |
-| Tags | `Post-Training`, `SimPO`, `Preference Optimization`, `Alignment`, `DPO Alternative`, `Reference-Free`, `LLM Alignment`, `Efficient Training` |
 
 ## Reference: full SKILL.md
 

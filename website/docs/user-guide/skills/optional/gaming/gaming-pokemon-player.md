@@ -14,7 +14,7 @@ Play Pokemon via headless emulator + RAM reads.
 
 | | |
 |---|---|
-| Source | Optional — install with `opencomputer skills install official/gaming/pokemon-player` |
+| Source | Optional — install with `oc skills install official/gaming/pokemon-player` |
 | Path | `optional-skills/gaming/pokemon-player` |
 | Platforms | linux, macos, windows |
 

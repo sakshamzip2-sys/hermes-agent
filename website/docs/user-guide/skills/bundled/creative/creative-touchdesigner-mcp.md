@@ -20,8 +20,6 @@ Control a running TouchDesigner instance via twozero MCP — create operators, s
 | Author | kshitijk4poor |
 | License | MIT |
 | Platforms | linux, macos, windows |
-| Tags | `TouchDesigner`, `MCP`, `twozero`, `creative-coding`, `real-time-visuals`, `generative-art`, `audio-reactive`, `VJ`, `installation`, `GLSL` |
-| Related skills | [`native-mcp`](/docs/user-guide/skills/bundled/mcp/mcp-native-mcp), [`ascii-video`](/docs/user-guide/skills/bundled/creative/creative-ascii-video), [`manim-video`](/docs/user-guide/skills/bundled/creative/creative-manim-video), `opencomputer-video` |
 
 ## Reference: full SKILL.md
 

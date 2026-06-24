@@ -14,14 +14,12 @@ Execute plans via delegate_task subagents (2-stage review).
 
 | | |
 |---|---|
-| Source | Optional — install with `opencomputer skills install official/software-development/subagent-driven-development` |
+| Source | Optional — install with `oc skills install official/software-development/subagent-driven-development` |
 | Path | `optional-skills/software-development/subagent-driven-development` |
 | Version | `1.1.0` |
 | Author | OpenComputer (adapted from obra/superpowers) |
 | License | MIT |
 | Platforms | linux, macos, windows |
-| Tags | `delegation`, `subagent`, `implementation`, `workflow`, `parallel` |
-| Related skills | [`plan`](/docs/user-guide/skills/bundled/software-development/software-development-plan), [`requesting-code-review`](/docs/user-guide/skills/bundled/software-development/software-development-requesting-code-review), [`test-driven-development`](/docs/user-guide/skills/bundled/software-development/software-development-test-driven-development) |
 
 ## Reference: full SKILL.md
 

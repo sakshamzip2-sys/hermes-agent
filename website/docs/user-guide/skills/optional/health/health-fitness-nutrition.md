@@ -14,12 +14,11 @@ Gym workout planner and nutrition tracker. Search 690+ exercises by muscle, equi
 
 | | |
 |---|---|
-| Source | Optional — install with `opencomputer skills install official/health/fitness-nutrition` |
+| Source | Optional — install with `oc skills install official/health/fitness-nutrition` |
 | Path | `optional-skills/health/fitness-nutrition` |
 | Version | `1.0.0` |
 | License | MIT |
 | Platforms | linux, macos, windows |
-| Tags | `health`, `fitness`, `nutrition`, `gym`, `workout`, `diet`, `exercise` |
 
 ## Reference: full SKILL.md
 

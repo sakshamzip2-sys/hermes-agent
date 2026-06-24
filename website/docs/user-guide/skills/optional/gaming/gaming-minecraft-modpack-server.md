@@ -14,7 +14,7 @@ Host modded Minecraft servers (CurseForge, Modrinth).
 
 | | |
 |---|---|
-| Source | Optional — install with `opencomputer skills install official/gaming/minecraft-modpack-server` |
+| Source | Optional — install with `oc skills install official/gaming/minecraft-modpack-server` |
 | Path | `optional-skills/gaming/minecraft-modpack-server` |
 | Platforms | linux, macos |
 

@@ -14,13 +14,12 @@ Pixel art w/ era palettes (NES, Game Boy, PICO-8).
 
 | | |
 |---|---|
-| Source | Optional — install with `opencomputer skills install official/creative/pixel-art` |
+| Source | Optional — install with `oc skills install official/creative/pixel-art` |
 | Path | `optional-skills/creative/pixel-art` |
 | Version | `2.0.0` |
 | Author | dodo-reach |
 | License | MIT |
 | Platforms | linux, macos, windows |
-| Tags | `creative`, `pixel-art`, `arcade`, `snes`, `nes`, `gameboy`, `retro`, `image`, `video` |
 
 ## Reference: full SKILL.md
 

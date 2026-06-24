@@ -14,7 +14,7 @@ Shop catalog search, checkout, order tracking, returns.
 
 | | |
 |---|---|
-| Source | Optional — install with `hermes skills install official/productivity/shop` |
+| Source | Optional — install with `oc skills install official/productivity/shop` |
 | Path | `optional-skills/productivity/shop` |
 | Version | `1.0.1` |
 | Author | Joe Rinaldi Johnson (joerj123), Hermes Agent |
@@ -26,7 +26,7 @@ Shop catalog search, checkout, order tracking, returns.
 ## Reference: full SKILL.md
 
 :::info
-The following is the complete skill definition that Hermes loads when this skill is triggered. This is what the agent sees as instructions when the skill is active.
+The following is the complete skill definition that OpenComputer loads when this skill is triggered. This is what the agent sees as instructions when the skill is active.
 :::
 
 # Shop CLI Skill

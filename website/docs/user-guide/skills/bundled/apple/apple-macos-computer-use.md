@@ -21,8 +21,6 @@ Space. Works with any tool-capable model. Load this skill whenever the
 | Path | `skills/apple/macos-computer-use` |
 | Version | `1.0.0` |
 | Platforms | macos |
-| Tags | `computer-use`, `macos`, `desktop`, `automation`, `gui` |
-| Related skills | `browser` |
 
 ## Reference: full SKILL.md
 

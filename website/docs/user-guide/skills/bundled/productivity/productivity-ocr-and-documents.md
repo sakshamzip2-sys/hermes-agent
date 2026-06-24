@@ -20,8 +20,6 @@ Extract text from PDFs/scans (pymupdf, marker-pdf).
 | Author | OpenComputer |
 | License | MIT |
 | Platforms | linux, macos, windows |
-| Tags | `PDF`, `Documents`, `Research`, `Arxiv`, `Text-Extraction`, `OCR` |
-| Related skills | [`powerpoint`](/docs/user-guide/skills/bundled/productivity/productivity-powerpoint) |
 
 ## Reference: full SKILL.md
 

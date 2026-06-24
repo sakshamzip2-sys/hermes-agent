@@ -14,14 +14,13 @@ Optimizes LLM inference with NVIDIA TensorRT for maximum throughput and lowest l
 
 | | |
 |---|---|
-| Source | Optional — install with `opencomputer skills install official/mlops/tensorrt-llm` |
+| Source | Optional — install with `oc skills install official/mlops/tensorrt-llm` |
 | Path | `optional-skills/mlops/tensorrt-llm` |
 | Version | `1.0.0` |
 | Author | Orchestra Research |
 | License | MIT |
 | Dependencies | `tensorrt-llm`, `torch` |
 | Platforms | linux, macos |
-| Tags | `Inference Serving`, `TensorRT-LLM`, `NVIDIA`, `Inference Optimization`, `High Throughput`, `Low Latency`, `Production`, `FP8`, `INT4`, `In-Flight Batching`, `Multi-GPU` |
 
 ## Reference: full SKILL.md
 

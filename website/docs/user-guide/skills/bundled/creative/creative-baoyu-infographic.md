@@ -20,7 +20,6 @@ Infographics: 21 layouts x 21 styles (信息图, 可视化).
 | Author | 宝玉 (JimLiu) |
 | License | MIT |
 | Platforms | linux, macos, windows |
-| Tags | `infographic`, `visual-summary`, `creative`, `image-generation` |
 
 ## Reference: full SKILL.md
 

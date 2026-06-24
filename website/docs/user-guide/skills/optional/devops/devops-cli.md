@@ -14,13 +14,12 @@ Run 150+ AI apps via inference.sh CLI (infsh) — image generation, video creati
 
 | | |
 |---|---|
-| Source | Optional — install with `opencomputer skills install official/devops/cli` |
+| Source | Optional — install with `oc skills install official/devops/cli` |
 | Path | `optional-skills/devops/cli` |
 | Version | `1.0.0` |
 | Author | okaris |
 | License | MIT |
 | Platforms | linux, macos, windows |
-| Tags | `AI`, `image-generation`, `video`, `LLM`, `search`, `inference`, `FLUX`, `Veo`, `Claude` |
 
 ## Reference: full SKILL.md
 

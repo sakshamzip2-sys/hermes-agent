@@ -20,8 +20,6 @@ Dark-themed SVG architecture/cloud/infra diagrams as HTML.
 | Author | Cocoon AI (hello@cocoon-ai.com), ported by OpenComputer |
 | License | MIT |
 | Platforms | linux, macos, windows |
-| Tags | `architecture`, `diagrams`, `SVG`, `HTML`, `visualization`, `infrastructure`, `cloud` |
-| Related skills | [`concept-diagrams`](/docs/user-guide/skills/optional/creative/creative-concept-diagrams), [`excalidraw`](/docs/user-guide/skills/bundled/creative/creative-excalidraw) |
 
 ## Reference: full SKILL.md
 

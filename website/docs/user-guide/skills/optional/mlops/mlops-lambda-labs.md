@@ -14,14 +14,13 @@ Reserved and on-demand GPU cloud instances for ML training and inference. Use wh
 
 | | |
 |---|---|
-| Source | Optional — install with `opencomputer skills install official/mlops/lambda-labs` |
+| Source | Optional — install with `oc skills install official/mlops/lambda-labs` |
 | Path | `optional-skills/mlops/lambda-labs` |
 | Version | `1.0.0` |
 | Author | Orchestra Research |
 | License | MIT |
 | Dependencies | `lambda-cloud-client>=1.0.0` |
 | Platforms | linux, macos, windows |
-| Tags | `Infrastructure`, `GPU Cloud`, `Training`, `Inference`, `Lambda Labs` |
 
 ## Reference: full SKILL.md
 

@@ -14,13 +14,12 @@ Spaced-repetition flashcard system. Create cards from facts or text, chat with f
 
 | | |
 |---|---|
-| Source | Optional — install with `opencomputer skills install official/productivity/memento-flashcards` |
+| Source | Optional — install with `oc skills install official/productivity/memento-flashcards` |
 | Path | `optional-skills/productivity/memento-flashcards` |
 | Version | `1.0.0` |
 | Author | Memento AI |
 | License | MIT |
 | Platforms | macos, linux |
-| Tags | `Education`, `Flashcards`, `Spaced Repetition`, `Learning`, `Quiz`, `YouTube` |
 
 ## Reference: full SKILL.md
 

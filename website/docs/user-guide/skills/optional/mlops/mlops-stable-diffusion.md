@@ -14,14 +14,13 @@ State-of-the-art text-to-image generation with Stable Diffusion models via Huggi
 
 | | |
 |---|---|
-| Source | Optional — install with `opencomputer skills install official/mlops/stable-diffusion` |
+| Source | Optional — install with `oc skills install official/mlops/stable-diffusion` |
 | Path | `optional-skills/mlops/stable-diffusion` |
 | Version | `1.0.0` |
 | Author | Orchestra Research |
 | License | MIT |
 | Dependencies | `diffusers>=0.30.0`, `transformers>=4.41.0`, `accelerate>=0.31.0`, `torch>=2.0.0` |
 | Platforms | linux, macos, windows |
-| Tags | `Image Generation`, `Stable Diffusion`, `Diffusers`, `Text-to-Image`, `Multimodal`, `Computer Vision` |
 
 ## Reference: full SKILL.md
 

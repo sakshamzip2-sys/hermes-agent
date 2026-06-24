@@ -14,13 +14,12 @@ Canvas LMS integration — fetch enrolled courses and assignments using API toke
 
 | | |
 |---|---|
-| Source | Optional — install with `opencomputer skills install official/productivity/canvas` |
+| Source | Optional — install with `oc skills install official/productivity/canvas` |
 | Path | `optional-skills/productivity/canvas` |
 | Version | `1.0.0` |
 | Author | community |
 | License | MIT |
 | Platforms | linux, macos, windows |
-| Tags | `Canvas`, `LMS`, `Education`, `Courses`, `Assignments` |
 
 ## Reference: full SKILL.md
 
@@ -42,7 +41,7 @@ Read-only access to Canvas LMS for listing courses and assignments.
 2. Go to **Account → Settings** (click your profile icon, then Settings)
 3. Scroll to **Approved Integrations** and click **+ New Access Token**
 4. Name the token (e.g., "OpenComputer"), set an optional expiry, and click **Generate Token**
-5. Copy the token and add to `~/.hermes/.env`:
+5. Copy the token and add to `${HERMES_HOME:-~/.hermes}/.env`:
 
 ```
 CANVAS_API_TOKEN=your_token_here

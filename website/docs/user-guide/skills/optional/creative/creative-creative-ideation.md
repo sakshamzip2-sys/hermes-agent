@@ -14,13 +14,12 @@ Generate project ideas via creative constraints.
 
 | | |
 |---|---|
-| Source | Optional — install with `opencomputer skills install official/creative/creative-ideation` |
+| Source | Optional — install with `oc skills install official/creative/creative-ideation` |
 | Path | `optional-skills/creative/creative-ideation` |
 | Version | `1.0.0` |
 | Author | SHL0MS |
 | License | MIT |
 | Platforms | linux, macos, windows |
-| Tags | `Creative`, `Ideation`, `Projects`, `Brainstorming`, `Inspiration` |
 
 ## Reference: full SKILL.md
 

@@ -14,14 +14,13 @@ High-level PyTorch framework with Trainer class, automatic distributed training 
 
 | | |
 |---|---|
-| Source | Optional — install with `opencomputer skills install official/mlops/pytorch-lightning` |
+| Source | Optional — install with `oc skills install official/mlops/pytorch-lightning` |
 | Path | `optional-skills/mlops/pytorch-lightning` |
 | Version | `1.0.0` |
 | Author | Orchestra Research |
 | License | MIT |
 | Dependencies | `lightning`, `torch`, `transformers` |
 | Platforms | linux, macos, windows |
-| Tags | `PyTorch Lightning`, `Training Framework`, `Distributed Training`, `DDP`, `FSDP`, `DeepSpeed`, `High-Level API`, `Callbacks`, `Best Practices`, `Scalable` |
 
 ## Reference: full SKILL.md
 

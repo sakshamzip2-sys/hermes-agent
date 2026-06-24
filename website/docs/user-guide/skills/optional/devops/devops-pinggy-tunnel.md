@@ -14,14 +14,12 @@ Zero-install localhost tunnels over SSH via Pinggy.
 
 | | |
 |---|---|
-| Source | Optional — install with `opencomputer skills install official/devops/pinggy-tunnel` |
+| Source | Optional — install with `oc skills install official/devops/pinggy-tunnel` |
 | Path | `optional-skills/devops/pinggy-tunnel` |
 | Version | `0.1.0` |
 | Author | Teknium (teknium1), OpenComputer |
 | License | MIT |
 | Platforms | linux, macos, windows |
-| Tags | `Pinggy`, `Tunnel`, `Networking`, `SSH`, `Webhook`, `Localhost` |
-| Related skills | `cloudflared-quick-tunnel`, [`webhook-subscriptions`](/docs/user-guide/skills/bundled/devops/devops-webhook-subscriptions) |
 
 ## Reference: full SKILL.md
 

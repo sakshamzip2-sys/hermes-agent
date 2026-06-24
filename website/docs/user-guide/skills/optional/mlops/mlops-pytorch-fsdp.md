@@ -14,14 +14,13 @@ Expert guidance for Fully Sharded Data Parallel training with PyTorch FSDP - par
 
 | | |
 |---|---|
-| Source | Optional — install with `opencomputer skills install official/mlops/pytorch-fsdp` |
+| Source | Optional — install with `oc skills install official/mlops/pytorch-fsdp` |
 | Path | `optional-skills/mlops/pytorch-fsdp` |
 | Version | `1.0.0` |
 | Author | Orchestra Research |
 | License | MIT |
 | Dependencies | `torch>=2.0`, `transformers` |
 | Platforms | linux, macos |
-| Tags | `Distributed Training`, `PyTorch`, `FSDP`, `Data Parallel`, `Sharding`, `Mixed Precision`, `CPU Offloading`, `FSDP2`, `Large-Scale Training` |
 
 ## Reference: full SKILL.md
 

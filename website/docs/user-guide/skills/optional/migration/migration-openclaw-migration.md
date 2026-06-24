@@ -14,14 +14,12 @@ Migrate a user's OpenClaw customization footprint into OpenComputer. Imports Ope
 
 | | |
 |---|---|
-| Source | Optional — install with `opencomputer skills install official/migration/openclaw-migration` |
+| Source | Optional — install with `oc skills install official/migration/openclaw-migration` |
 | Path | `optional-skills/migration/openclaw-migration` |
 | Version | `1.0.0` |
 | Author | OpenComputer (Nous Research) |
 | License | MIT |
 | Platforms | linux, macos, windows |
-| Tags | `Migration`, `OpenClaw`, `OpenComputer`, `Memory`, `Persona`, `Import` |
-| Related skills | [`hermes-agent`](/docs/user-guide/skills/bundled/autonomous-ai-agents/autonomous-ai-agents-hermes-agent) |
 
 ## Reference: full SKILL.md
 

@@ -14,14 +14,13 @@ OpenAI's model connecting vision and language. Enables zero-shot image classific
 
 | | |
 |---|---|
-| Source | Optional — install with `opencomputer skills install official/mlops/clip` |
+| Source | Optional — install with `oc skills install official/mlops/clip` |
 | Path | `optional-skills/mlops/clip` |
 | Version | `1.0.0` |
 | Author | Orchestra Research |
 | License | MIT |
 | Dependencies | `transformers`, `torch`, `pillow` |
 | Platforms | linux, macos, windows |
-| Tags | `Multimodal`, `CLIP`, `Vision-Language`, `Zero-Shot`, `Image Classification`, `OpenAI`, `Image Search`, `Cross-Modal Retrieval`, `Content Moderation` |
 
 ## Reference: full SKILL.md
 

@@ -14,14 +14,13 @@ Extract structured data from LLM responses with Pydantic validation, retry faile
 
 | | |
 |---|---|
-| Source | Optional — install with `opencomputer skills install official/mlops/instructor` |
+| Source | Optional — install with `oc skills install official/mlops/instructor` |
 | Path | `optional-skills/mlops/instructor` |
 | Version | `1.0.0` |
 | Author | Orchestra Research |
 | License | MIT |
 | Dependencies | `instructor`, `pydantic`, `openai`, `anthropic` |
 | Platforms | linux, macos, windows |
-| Tags | `Prompt Engineering`, `Instructor`, `Structured Output`, `Pydantic`, `Data Extraction`, `JSON Parsing`, `Type Safety`, `Validation`, `Streaming`, `OpenAI`, `Anthropic` |
 
 ## Reference: full SKILL.md
 

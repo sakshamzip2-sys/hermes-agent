@@ -14,13 +14,12 @@ OSINT username search across 400+ social networks. Hunt down social media accoun
 
 | | |
 |---|---|
-| Source | Optional — install with `opencomputer skills install official/security/sherlock` |
+| Source | Optional — install with `oc skills install official/security/sherlock` |
 | Path | `optional-skills/security/sherlock` |
 | Version | `1.0.0` |
 | Author | unmodeled-tyler |
 | License | MIT |
 | Platforms | linux, macos, windows |
-| Tags | `osint`, `security`, `username`, `social-media`, `reconnaissance` |
 
 ## Reference: full SKILL.md
 

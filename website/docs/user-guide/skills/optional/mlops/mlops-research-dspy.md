@@ -14,14 +14,13 @@ DSPy: declarative LM programs, auto-optimize prompts, RAG.
 
 | | |
 |---|---|
-| Source | Optional — install with `opencomputer skills install official/mlops/dspy` |
+| Source | Optional — install with `oc skills install official/mlops/dspy` |
 | Path | `optional-skills/mlops/research/dspy` |
 | Version | `1.0.0` |
 | Author | Orchestra Research |
 | License | MIT |
 | Dependencies | `dspy`, `openai`, `anthropic` |
 | Platforms | linux, macos, windows |
-| Tags | `Prompt Engineering`, `DSPy`, `Declarative Programming`, `RAG`, `Agents`, `Prompt Optimization`, `LM Programming`, `Stanford NLP`, `Automatic Optimization`, `Modular AI` |
 
 ## Reference: full SKILL.md
 

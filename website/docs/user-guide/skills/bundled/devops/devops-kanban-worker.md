@@ -18,8 +18,6 @@ Pitfalls, examples, and edge cases for OpenComputer Kanban workers. The lifecycl
 | Path | `skills/devops/kanban-worker` |
 | Version | `2.0.0` |
 | Platforms | linux, macos, windows |
-| Tags | `kanban`, `multi-agent`, `collaboration`, `workflow`, `pitfalls` |
-| Related skills | [`kanban-orchestrator`](/docs/user-guide/skills/bundled/devops/devops-kanban-orchestrator) |
 
 ## Reference: full SKILL.md
 

@@ -19,7 +19,6 @@ Operate the Teams meeting summary pipeline via OpenComputer CLI — summarize me
 | Version | `1.1.0` |
 | Author | OpenComputer + Teknium |
 | License | MIT |
-| Tags | `Teams`, `Microsoft Graph`, `Meetings`, `Productivity`, `Operations` |
 
 ## Reference: full SKILL.md
 
@@ -50,7 +49,7 @@ Multilingual trigger examples (not exhaustive):
 
 ## Prerequisites
 
-Before using the pipeline, verify these are set in `~/.hermes/.env`:
+Before using the pipeline, verify these are set in `${HERMES_HOME:-~/.hermes}/.env`:
 
 ```bash
 MSGRAPH_TENANT_ID=...

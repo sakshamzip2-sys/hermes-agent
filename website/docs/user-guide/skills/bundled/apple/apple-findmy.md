@@ -20,7 +20,6 @@ Track Apple devices/AirTags via FindMy.app on macOS.
 | Author | OpenComputer |
 | License | MIT |
 | Platforms | macos |
-| Tags | `FindMy`, `AirTag`, `location`, `tracking`, `macOS`, `Apple` |
 
 ## Reference: full SKILL.md
 

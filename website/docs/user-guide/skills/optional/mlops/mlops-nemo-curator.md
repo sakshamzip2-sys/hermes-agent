@@ -14,14 +14,13 @@ GPU-accelerated data curation for LLM training. Supports text/image/video/audio.
 
 | | |
 |---|---|
-| Source | Optional — install with `opencomputer skills install official/mlops/nemo-curator` |
+| Source | Optional — install with `oc skills install official/mlops/nemo-curator` |
 | Path | `optional-skills/mlops/nemo-curator` |
 | Version | `1.0.0` |
 | Author | Orchestra Research |
 | License | MIT |
 | Dependencies | `nemo-curator`, `cudf`, `dask`, `rapids` |
 | Platforms | linux, macos |
-| Tags | `Data Processing`, `NeMo Curator`, `Data Curation`, `GPU Acceleration`, `Deduplication`, `Quality Filtering`, `NVIDIA`, `RAPIDS`, `PII Redaction`, `Multimodal`, `LLM Training Data` |
 
 ## Reference: full SKILL.md
 

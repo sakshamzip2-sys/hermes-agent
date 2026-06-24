@@ -14,13 +14,12 @@ Knowledge comics (知识漫画): educational, biography, tutorial.
 
 | | |
 |---|---|
-| Source | Optional — install with `opencomputer skills install official/creative/baoyu-comic` |
+| Source | Optional — install with `oc skills install official/creative/baoyu-comic` |
 | Path | `optional-skills/creative/baoyu-comic` |
 | Version | `1.56.1` |
 | Author | 宝玉 (JimLiu) |
 | License | MIT |
 | Platforms | linux, macos, windows |
-| Tags | `comic`, `knowledge-comic`, `creative`, `image-generation` |
 
 ## Reference: full SKILL.md
 

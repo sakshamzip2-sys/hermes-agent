@@ -14,14 +14,13 @@ Control LLM output with regex and grammars, guarantee valid JSON/XML/code genera
 
 | | |
 |---|---|
-| Source | Optional — install with `opencomputer skills install official/mlops/guidance` |
+| Source | Optional — install with `oc skills install official/mlops/guidance` |
 | Path | `optional-skills/mlops/guidance` |
 | Version | `1.0.0` |
 | Author | Orchestra Research |
 | License | MIT |
 | Dependencies | `guidance`, `transformers` |
 | Platforms | linux, macos, windows |
-| Tags | `Prompt Engineering`, `Guidance`, `Constrained Generation`, `Structured Output`, `JSON Validation`, `Grammar`, `Microsoft Research`, `Format Enforcement`, `Multi-Step Workflows` |
 
 ## Reference: full SKILL.md
 

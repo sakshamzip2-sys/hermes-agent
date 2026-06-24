@@ -1,5 +1,5 @@
 ---
-title: "Kanban Video Orchestrator — Plan, set up, and monitor a multi-agent video production pipeline backed by OpenComputer Kanban"
+title: "Kanban Video Orchestrator"
 sidebar_label: "Kanban Video Orchestrator"
 description: "Plan, set up, and monitor a multi-agent video production pipeline backed by OpenComputer Kanban"
 ---
@@ -14,14 +14,12 @@ Plan, set up, and monitor a multi-agent video production pipeline backed by Open
 
 | | |
 |---|---|
-| Source | Optional — install with `opencomputer skills install official/creative/kanban-video-orchestrator` |
+| Source | Optional — install with `oc skills install official/creative/kanban-video-orchestrator` |
 | Path | `optional-skills/creative/kanban-video-orchestrator` |
 | Version | `1.0.0` |
 | Author | ['SHL0MS', 'alt-glitch'] |
 | License | MIT |
 | Platforms | linux, macos, windows |
-| Tags | `video`, `kanban`, `multi-agent`, `orchestration`, `production-pipeline` |
-| Related skills | [`kanban-orchestrator`](/docs/user-guide/skills/bundled/devops/devops-kanban-orchestrator), [`kanban-worker`](/docs/user-guide/skills/bundled/devops/devops-kanban-worker), [`ascii-video`](/docs/user-guide/skills/bundled/creative/creative-ascii-video), [`manim-video`](/docs/user-guide/skills/bundled/creative/creative-manim-video), [`p5js`](/docs/user-guide/skills/bundled/creative/creative-p5js), [`comfyui`](/docs/user-guide/skills/bundled/creative/creative-comfyui), [`touchdesigner-mcp`](/docs/user-guide/skills/bundled/creative/creative-touchdesigner-mcp), [`blender-mcp`](/docs/user-guide/skills/optional/creative/creative-blender-mcp), [`pixel-art`](/docs/user-guide/skills/bundled/creative/creative-pixel-art), [`ascii-art`](/docs/user-guide/skills/bundled/creative/creative-ascii-art), [`songwriting-and-ai-music`](/docs/user-guide/skills/bundled/creative/creative-songwriting-and-ai-music), [`heartmula`](/docs/user-guide/skills/bundled/media/media-heartmula), [`songsee`](/docs/user-guide/skills/bundled/media/media-songsee), [`spotify`](/docs/user-guide/skills/bundled/media/media-spotify), [`youtube-content`](/docs/user-guide/skills/bundled/media/media-youtube-content), [`claude-design`](/docs/user-guide/skills/bundled/creative/creative-claude-design), [`excalidraw`](/docs/user-guide/skills/bundled/creative/creative-excalidraw), [`architecture-diagram`](/docs/user-guide/skills/bundled/creative/creative-architecture-diagram), [`concept-diagrams`](/docs/user-guide/skills/optional/creative/creative-concept-diagrams), [`baoyu-comic`](/docs/user-guide/skills/bundled/creative/creative-baoyu-comic), [`baoyu-infographic`](/docs/user-guide/skills/bundled/creative/creative-baoyu-infographic), [`humanizer`](/docs/user-guide/skills/bundled/creative/creative-humanizer), [`gif-search`](/docs/user-guide/skills/bundled/media/media-gif-search), [`meme-generation`](/docs/user-guide/skills/optional/creative/creative-meme-generation) |
 
 ## Reference: full SKILL.md
 
@@ -194,7 +192,7 @@ task graphs. See **[references/examples.md](https://github.com/NousResearch/herm
    right human-review gates.
 
 8. **Verify API keys BEFORE firing.** External APIs (TTS, image-gen,
-   image-to-video) need keys in `~/.hermes/.env` or the user's secret store.
+   image-to-video) need keys in `${HERMES_HOME:-~/.hermes}/.env` or the user's secret store.
    A worker that hits a missing-key error wastes a task slot. The setup
    script's `check_key` helper aborts cleanly if a required key is missing.
 

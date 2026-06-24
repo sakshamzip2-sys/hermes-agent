@@ -14,14 +14,12 @@ Evolve prompts/regex/SQL/code with Imbue's evolution loop.
 
 | | |
 |---|---|
-| Source | Optional — install with `opencomputer skills install official/research/darwinian-evolver` |
+| Source | Optional — install with `oc skills install official/research/darwinian-evolver` |
 | Path | `optional-skills/research/darwinian-evolver` |
 | Version | `0.1.0` |
 | Author | Bihruze (Asahi0x), OpenComputer |
 | License | MIT |
 | Platforms | linux, macos |
-| Tags | `evolution`, `optimization`, `prompt-engineering`, `research` |
-| Related skills | [`arxiv`](/docs/user-guide/skills/bundled/research/research-arxiv), [`jupyter-live-kernel`](/docs/user-guide/skills/bundled/data-science/data-science-jupyter-live-kernel) |
 
 ## Reference: full SKILL.md
 

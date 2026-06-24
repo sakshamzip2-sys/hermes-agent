@@ -14,13 +14,12 @@ Pharmaceutical research assistant for drug discovery workflows. Search bioactive
 
 | | |
 |---|---|
-| Source | Optional — install with `opencomputer skills install official/research/drug-discovery` |
+| Source | Optional — install with `oc skills install official/research/drug-discovery` |
 | Path | `optional-skills/research/drug-discovery` |
 | Version | `1.0.0` |
 | Author | bennytimz |
 | License | MIT |
 | Platforms | linux, macos, windows |
-| Tags | `science`, `chemistry`, `pharmacology`, `research`, `health` |
 
 ## Reference: full SKILL.md
 

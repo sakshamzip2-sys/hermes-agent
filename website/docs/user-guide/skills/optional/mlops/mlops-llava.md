@@ -14,14 +14,13 @@ Large Language and Vision Assistant. Enables visual instruction tuning and image
 
 | | |
 |---|---|
-| Source | Optional — install with `opencomputer skills install official/mlops/llava` |
+| Source | Optional — install with `oc skills install official/mlops/llava` |
 | Path | `optional-skills/mlops/llava` |
 | Version | `1.0.0` |
 | Author | Orchestra Research |
 | License | MIT |
 | Dependencies | `transformers`, `torch`, `pillow` |
 | Platforms | linux, macos, windows |
-| Tags | `LLaVA`, `Vision-Language`, `Multimodal`, `Visual Question Answering`, `Image Chat`, `CLIP`, `Vicuna`, `Conversational AI`, `Instruction Tuning`, `VQA` |
 
 ## Reference: full SKILL.md
 

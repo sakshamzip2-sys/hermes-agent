@@ -14,14 +14,13 @@ High-performance vector similarity search engine for RAG and semantic search. Us
 
 | | |
 |---|---|
-| Source | Optional — install with `opencomputer skills install official/mlops/qdrant` |
+| Source | Optional — install with `oc skills install official/mlops/qdrant` |
 | Path | `optional-skills/mlops/qdrant` |
 | Version | `1.0.0` |
 | Author | Orchestra Research |
 | License | MIT |
 | Dependencies | `qdrant-client>=1.12.0` |
 | Platforms | linux, macos, windows |
-| Tags | `RAG`, `Vector Search`, `Qdrant`, `Semantic Search`, `Embeddings`, `Similarity Search`, `HNSW`, `Production`, `Distributed` |
 
 ## Reference: full SKILL.md
 

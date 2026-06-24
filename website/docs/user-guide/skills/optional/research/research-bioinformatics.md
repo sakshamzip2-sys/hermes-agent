@@ -14,11 +14,10 @@ Gateway to 400+ bioinformatics skills from bioSkills and ClawBio. Covers genomic
 
 | | |
 |---|---|
-| Source | Optional — install with `opencomputer skills install official/research/bioinformatics` |
+| Source | Optional — install with `oc skills install official/research/bioinformatics` |
 | Path | `optional-skills/research/bioinformatics` |
 | Version | `1.0.0` |
 | Platforms | linux, macos |
-| Tags | `bioinformatics`, `genomics`, `sequencing`, `biology`, `research`, `science` |
 
 ## Reference: full SKILL.md
 

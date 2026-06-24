@@ -21,7 +21,6 @@ llama.cpp local GGUF inference + HF Hub model discovery.
 | License | MIT |
 | Dependencies | `llama-cpp-python>=0.2.0` |
 | Platforms | linux, macos, windows |
-| Tags | `llama.cpp`, `GGUF`, `Quantization`, `Hugging Face Hub`, `CPU Inference`, `Apple Silicon`, `Edge Deployment`, `AMD GPUs`, `Intel GPUs`, `NVIDIA`, `URL-first` |
 
 ## Reference: full SKILL.md
 

@@ -14,14 +14,13 @@ Facebook's library for efficient similarity search and clustering of dense vecto
 
 | | |
 |---|---|
-| Source | Optional — install with `opencomputer skills install official/mlops/faiss` |
+| Source | Optional — install with `oc skills install official/mlops/faiss` |
 | Path | `optional-skills/mlops/faiss` |
 | Version | `1.0.0` |
 | Author | Orchestra Research |
 | License | MIT |
 | Dependencies | `faiss-cpu`, `faiss-gpu`, `numpy` |
 | Platforms | linux, macos |
-| Tags | `RAG`, `FAISS`, `Similarity Search`, `Vector Search`, `Facebook AI`, `GPU Acceleration`, `Billion-Scale`, `K-NN`, `HNSW`, `High Performance`, `Large Scale` |
 
 ## Reference: full SKILL.md
 

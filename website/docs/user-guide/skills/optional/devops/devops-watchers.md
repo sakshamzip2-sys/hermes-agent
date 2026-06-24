@@ -14,13 +14,12 @@ Poll RSS, JSON APIs, and GitHub with watermark dedup.
 
 | | |
 |---|---|
-| Source | Optional — install with `opencomputer skills install official/devops/watchers` |
+| Source | Optional — install with `oc skills install official/devops/watchers` |
 | Path | `optional-skills/devops/watchers` |
 | Version | `1.0.0` |
 | Author | OpenComputer |
 | License | MIT |
 | Platforms | linux, macos |
-| Tags | `cron`, `polling`, `rss`, `github`, `http`, `automation`, `monitoring` |
 
 ## Reference: full SKILL.md
 
@@ -77,7 +76,7 @@ python $HERMES_HOME/skills/devops/watchers/scripts/watch_rss.py \
   --name hn --url https://news.ycombinator.com/rss --max 5
 ```
 
-Watch a GitHub repo (set `GITHUB_TOKEN` in `~/.hermes/.env` to avoid the 60 req/hr anonymous rate limit):
+Watch a GitHub repo (set `GITHUB_TOKEN` in `${HERMES_HOME:-~/.hermes}/.env` to avoid the 60 req/hr anonymous rate limit):
 
 ```bash
 python $HERMES_HOME/skills/devops/watchers/scripts/watch_github.py \

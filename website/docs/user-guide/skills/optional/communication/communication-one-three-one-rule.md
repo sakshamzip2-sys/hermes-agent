@@ -14,13 +14,12 @@ Structured decision-making framework for technical proposals and trade-off analy
 
 | | |
 |---|---|
-| Source | Optional — install with `opencomputer skills install official/communication/one-three-one-rule` |
+| Source | Optional — install with `oc skills install official/communication/one-three-one-rule` |
 | Path | `optional-skills/communication/one-three-one-rule` |
 | Version | `1.0.0` |
 | Author | Willard Moore |
 | License | MIT |
 | Platforms | linux, macos, windows |
-| Tags | `communication`, `decision-making`, `proposals`, `trade-offs` |
 
 ## Reference: full SKILL.md
 

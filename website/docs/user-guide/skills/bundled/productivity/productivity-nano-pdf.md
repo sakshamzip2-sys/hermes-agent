@@ -20,7 +20,6 @@ Edit PDF text/typos/titles via nano-pdf CLI (NL prompts).
 | Author | community |
 | License | MIT |
 | Platforms | linux, macos, windows |
-| Tags | `PDF`, `Documents`, `Editing`, `NLP`, `Productivity` |
 
 ## Reference: full SKILL.md
 

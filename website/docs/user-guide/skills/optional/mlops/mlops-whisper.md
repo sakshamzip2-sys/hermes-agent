@@ -14,14 +14,13 @@ OpenAI's general-purpose speech recognition model. Supports 99 languages, transc
 
 | | |
 |---|---|
-| Source | Optional — install with `opencomputer skills install official/mlops/whisper` |
+| Source | Optional — install with `oc skills install official/mlops/whisper` |
 | Path | `optional-skills/mlops/whisper` |
 | Version | `1.0.0` |
 | Author | Orchestra Research |
 | License | MIT |
 | Dependencies | `openai-whisper`, `transformers`, `torch` |
 | Platforms | linux, macos |
-| Tags | `Whisper`, `Speech Recognition`, `ASR`, `Multimodal`, `Multilingual`, `OpenAI`, `Speech-To-Text`, `Transcription`, `Translation`, `Audio Processing` |
 
 ## Reference: full SKILL.md
 
