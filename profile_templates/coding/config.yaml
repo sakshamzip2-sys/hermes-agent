@@ -22,10 +22,17 @@
 # The provider is pinned to OC-router (the standing routing target) so the CLI launch
 # (`oc -p coding`) routes a claude-* model correctly. A bare `model: <name>` string
 # would lose the provider and auto-route claude-* names to the anthropic endpoint.
-# SECRET: the api_key is NOT committed here. Supply it ONE of two ways before a live
-# CLI run: add `api_key: <your OC-router key>` under this block in your installed
-# ~/.hermes/profiles/coding/config.yaml (like the default ~/.hermes/config.yaml does),
-# or run the profile through the gateway/web UI, which already has the key.
+# SECRET: the api_key is NOT committed here. The CLI, gateway, and web UI all read
+# model.api_key from THIS profile's installed config.yaml
+# (~/.hermes/profiles/coding/config.yaml) through the same provider-resolution path —
+# there is no separate gateway-held key. Before a live CLI run, supply it in that
+# installed file (never in this committed template), ONE of two ways:
+#   - preferred (keeps the secret out of the config file): put
+#     `OC_ROUTER_API_KEY=<your key>` in the profile's 0600 .env and set
+#     `api_key: ${OC_ROUTER_API_KEY}` below — config load expands ${VAR} from the
+#     profile .env (hermes_cli/config.py _expand_env_vars).
+#   - direct: set `api_key: <your OC-router key>` below (like the default
+#     ~/.hermes/config.yaml does).
 model:
   default: claude-sonnet-4-6
   provider: custom

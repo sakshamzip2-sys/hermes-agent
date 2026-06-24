@@ -81,17 +81,49 @@ def test_soul_loads_through_the_real_loader_in_isolated_home(tmp_path):
 def test_config_pins_provider_and_keeps_no_secret():
     """The model block pins the provider so the CLI (`oc -p coding`) routes a claude-*
     model to OC-router correctly (a bare string would mis-route to the anthropic
-    endpoint). The api_key is a secret and must NOT be committed in the template."""
+    endpoint). The api_key is a secret and must NOT be committed in the template.
+
+    These assert the EXACT routing-critical values, not mere truthiness: the runtime
+    branches on provider=="custom" (claude-* goes to OC-router, not api.anthropic.com)
+    and on api_mode=="chat_completions" (OC-router speaks the OpenAI chat-completions
+    wire; agent_runtime_helpers.py builds base_url + '/chat/completions'). A regression
+    to provider:anthropic or a dropped api_mode would silently mis-route and still pass
+    a truthiness check, so pin the values."""
     cfg = yaml.safe_load(CONFIG.read_text(encoding="utf-8"))
     model = cfg.get("model")
     assert isinstance(model, dict), "model must pin a provider block, not be a bare string"
     assert isinstance(model.get("default"), str) and model["default"], "no model name set"
-    assert model.get("provider") and model.get("base_url"), "provider/base_url must be pinned"
+    assert model["default"].startswith("claude-"), "router runs a claude-* model on OC-router"
+    assert model.get("provider") == "custom", (
+        "provider must be 'custom' so claude-* routes to OC-router, not api.anthropic.com"
+    )
+    assert str(model.get("base_url", "")).rstrip("/").endswith("router.tryopencomputer.com/v1"), (
+        "base_url must pin the OC-router endpoint"
+    )
+    assert model.get("api_mode") == "chat_completions", (
+        "OC-router speaks the OpenAI chat-completions wire; api_mode must pin it"
+    )
     assert "api_key" not in model, "api_key must NOT be committed; supply via local config/.env"
     personalities = cfg.get("personalities") or {}
     assert len(personalities) >= 2, "router profile needs named personalities"
     for name, text in personalities.items():
         assert isinstance(text, str) and text.strip(), f"empty personality: {name}"
+
+
+def test_config_personalities_encode_the_routing_modes():
+    """The named personalities are the router's plan-first / execute-fast / review
+    modes. The 'review' overlay is the config-level expression of the user's reviewer
+    contract (Claude Code reviews Codex's output; default REVISE over PASS; tests
+    immutable), so assert it by name and by behavior, not just by count."""
+    cfg = yaml.safe_load(CONFIG.read_text(encoding="utf-8"))
+    personalities = {k.lower(): (v or "") for k, v in (cfg.get("personalities") or {}).items()}
+    assert {"plan-first", "execute-fast", "review"}.issubset(personalities), (
+        f"router needs plan-first/execute-fast/review modes, got {sorted(personalities)}"
+    )
+    review = personalities["review"].lower()
+    assert "review" in review and ("revise" in review or "bug" in review), (
+        "the 'review' mode must establish the skeptical-reviewer behavior"
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -135,13 +167,61 @@ def test_skill_encodes_plan_execute_verify_protocol():
     )
 
 
+def test_skill_routes_claude_code_review_back_to_codex():
+    """The user's defining loop: after Codex executes, Claude Code REVIEWS the diff
+    (code review, security, QA) and those findings route BACK to Codex to fix, looping
+    until clean. Assert the skill encodes this as a first-class step with a concrete
+    review command, not just a passive slash-command mention. This is the half of the
+    vision the original skill was missing (router-runs-tests only)."""
+    text = SKILL.read_text(encoding="utf-8")
+    low = text.lower()
+    # Claude Code is cast as the reviewer, not only the planner.
+    assert "reviewer" in low, "Claude Code must be cast as the reviewer, not only the planner"
+    # A concrete review pass routes the executor's diff to Claude Code, read-only.
+    assert "diff | claude -p" in text, (
+        "skill must route the executor's diff to a Claude Code review pass"
+    )
+    # Security and QA are part of the encoded review, not absent.
+    assert "security" in low, "review must cover security"
+    assert "qa" in low, "review must cover QA"
+    # The reviewer's findings loop BACK to the executor, not just raw test failures.
+    assert "back to" in low and ("feedback" in low or "findings" in low), (
+        "review findings must route back to the executor (Codex) in the loop"
+    )
+    # The full loop is spelled out: plan -> execute -> review -> verify -> feedback.
+    assert "review" in low and "verify" in low and "feedback" in low
+
+
+def test_verify_loop_script_is_executable_and_well_formed():
+    """verify-delegation-loop.sh is the only artifact that exercises the loop against
+    the real CLIs (gated on live auth, so not invoked here). Guard its shape so a
+    regression that drops a phase or lets the planner write files is caught in CI
+    without a live LLM call."""
+    script = REPO / "verify-delegation-loop.sh"
+    assert script.is_file(), "missing verify-delegation-loop.sh"
+    assert os.access(script, os.X_OK), "verify-delegation-loop.sh must be executable"
+    text = script.read_text(encoding="utf-8")
+    for marker in ("STEP 1: PLAN", "STEP 2: EXECUTE", "STEP 3: VERIFY"):
+        assert marker in text, f"verify script missing phase: {marker}"
+    # Planner leg must be read-only (must NOT write files during planning).
+    assert "--allowedTools 'Read Glob Grep'" in text, "planner leg must be read-only"
+    # Executor fallback keeps the loop alive when Codex is unavailable.
+    assert "fallback" in text.lower() or "fall back" in text.lower(), (
+        "script must exercise/document the executor fallback so the loop never stalls"
+    )
+
+
 def test_skill_grants_terminal_lifecycle_control():
-    """User requirement: Hermes opens/forks/ends tmux terminals and decides when."""
+    """User requirement: Hermes opens/forks/ends tmux terminals and decides when.
+    Assert the lifecycle is a real, structured section carrying all four verbs, not a
+    stray word-presence match."""
     low = SKILL.read_text(encoding="utf-8").lower()
     assert "tmux" in low, "skill must cover tmux terminals"
-    assert "fork" in low, "Hermes must be able to fork a terminal/session"
-    assert "kill-session" in low or "end" in low, "Hermes must be able to end a terminal"
-    assert "lifecycle" in low, "skill must define the terminal lifecycle the router owns"
+    assert "kill-session" in low, "Hermes must end terminals with kill-session (real command)"
+    assert "## terminal lifecycle" in low, "lifecycle must be a first-class section"
+    section = low.split("## terminal lifecycle", 1)[1].split("\n## ", 1)[0]
+    for verb in ("**open**", "**keep", "**fork**", "**end**"):
+        assert verb in section, f"terminal-lifecycle section missing the {verb!r} verb"
 
 
 def test_skill_makes_hermes_aware_of_slash_commands():
